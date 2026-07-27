@@ -72,6 +72,13 @@ function runMigrations(db: Database.Database): void {
       exception_message TEXT DEFAULT '',
       stack_trace TEXT DEFAULT '',
       log_text TEXT DEFAULT '',
+      runtime TEXT DEFAULT '',
+      runtime_version TEXT DEFAULT '',
+      framework TEXT DEFAULT '',
+      environment TEXT DEFAULT '',
+      server_name TEXT DEFAULT '',
+      release TEXT DEFAULT '',
+      error_severity TEXT DEFAULT 'error',
       unity_version TEXT DEFAULT '',
       platform TEXT DEFAULT '',
       device_model TEXT DEFAULT '',
@@ -117,10 +124,20 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_crash_reports_app_version ON crash_reports(app_version);
     CREATE INDEX IF NOT EXISTS idx_crash_attachments_report_id ON crash_attachments(crash_report_id);
     CREATE INDEX IF NOT EXISTS idx_symbols_build_guid ON symbols(build_guid);
+    CREATE INDEX IF NOT EXISTS idx_crash_reports_runtime ON crash_reports(runtime);
   `);
 
   // v2 migration: add dump_info column
   addColumnIfNotExists(db, 'crash_reports', 'dump_info', "TEXT DEFAULT ''");
+
+  // v3 migration: add generic runtime fields
+  addColumnIfNotExists(db, 'crash_reports', 'runtime', "TEXT DEFAULT ''");
+  addColumnIfNotExists(db, 'crash_reports', 'runtime_version', "TEXT DEFAULT ''");
+  addColumnIfNotExists(db, 'crash_reports', 'framework', "TEXT DEFAULT ''");
+  addColumnIfNotExists(db, 'crash_reports', 'environment', "TEXT DEFAULT ''");
+  addColumnIfNotExists(db, 'crash_reports', 'server_name', "TEXT DEFAULT ''");
+  addColumnIfNotExists(db, 'crash_reports', 'release', "TEXT DEFAULT ''");
+  addColumnIfNotExists(db, 'crash_reports', 'error_severity', "TEXT DEFAULT 'error'");
 }
 
 export function closeDb(): void {

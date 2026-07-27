@@ -18,6 +18,13 @@ export interface CrashReport {
   exception_message: string;
   stack_trace: string;
   log_text: string;
+  runtime: string;
+  runtime_version: string;
+  framework: string;
+  environment: string;
+  server_name: string;
+  release: string;
+  error_severity: string;
   unity_version: string;
   platform: string;
   device_model: string;
@@ -40,6 +47,15 @@ export interface CrashReportInput {
   exception_message?: string;
   stack_trace?: string;
   log_text?: string;
+  // Generic runtime fields (unified crash reporter)
+  runtime?: string;
+  runtime_version?: string;
+  framework?: string;
+  environment?: string;
+  server_name?: string;
+  release?: string;
+  error_severity?: string;
+  // Original fields (backward compatible)
   unity_version?: string;
   platform?: string;
   device_model?: string;
@@ -96,6 +112,10 @@ export interface DashboardStats {
     app_version: string;
     count: number;
   }>;
+  runtime_distribution: Array<{
+    runtime: string;
+    count: number;
+  }>;
   daily_trend: Array<{
     date: string;
     count: number;
@@ -116,6 +136,8 @@ export interface CrashGroupQuery {
   status?: string;
   platform?: string;
   app_version?: string;
+  runtime?: string;
+  environment?: string;
   search?: string;
   start_date?: string;
   end_date?: string;

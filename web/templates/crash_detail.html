@@ -130,8 +130,40 @@
 
       <!-- Player Log -->
       <section class="bg-surface-900 rounded-xl p-5 border border-gray-800" x-show="latestReport?.log_text">
-        <h2 class="text-sm font-semibold text-gray-300 mb-3">📝 Player Log</h2>
+        <h2 class="text-sm font-semibold text-gray-300 mb-3">📝 Log Output</h2>
         <pre class="stack-trace text-gray-400 bg-surface-950 rounded-lg p-4 max-h-96 overflow-y-auto" x-text="latestReport.log_text"></pre>
+      </section>
+
+      <!-- Runtime Info -->
+      <section class="bg-surface-900 rounded-xl p-5 border border-gray-800" x-show="latestReport?.runtime || latestReport?.framework || latestReport?.environment">
+        <h2 class="text-sm font-semibold text-gray-300 mb-3">🔧 Runtime & Environment</h2>
+        <div class="grid grid-cols-2 md:grid-cols-3 gap-3 text-sm">
+          <div class="bg-surface-950 rounded-lg p-3" x-show="latestReport?.runtime">
+            <p class="text-xs text-gray-500">Runtime</p>
+            <p class="text-gray-200 font-medium" x-text="latestReport?.runtime || '-'"></p>
+            <p class="text-xs text-gray-600" x-show="latestReport?.runtime_version" x-text="'v' + latestReport.runtime_version"></p>
+          </div>
+          <div class="bg-surface-950 rounded-lg p-3" x-show="latestReport?.framework">
+            <p class="text-xs text-gray-500">Framework</p>
+            <p class="text-gray-200 font-medium" x-text="latestReport?.framework || '-'"></p>
+          </div>
+          <div class="bg-surface-950 rounded-lg p-3" x-show="latestReport?.environment">
+            <p class="text-xs text-gray-500">Environment</p>
+            <p class="text-gray-200 font-medium" x-text="latestReport?.environment || '-'"></p>
+          </div>
+          <div class="bg-surface-950 rounded-lg p-3" x-show="latestReport?.server_name">
+            <p class="text-xs text-gray-500">Server / App</p>
+            <p class="text-gray-200 font-medium" x-text="latestReport?.server_name || '-'"></p>
+          </div>
+          <div class="bg-surface-950 rounded-lg p-3" x-show="latestReport?.release">
+            <p class="text-xs text-gray-500">Release</p>
+            <p class="text-gray-200 font-medium font-mono text-xs" x-text="latestReport?.release || '-'"></p>
+          </div>
+          <div class="bg-surface-950 rounded-lg p-3" x-show="latestReport?.error_severity">
+            <p class="text-xs text-gray-500">Severity</p>
+            <p class="text-gray-200 font-medium" x-text="latestReport?.error_severity || 'error'"></p>
+          </div>
+        </div>
       </section>
 
       <!-- Attachments with download buttons -->

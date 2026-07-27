@@ -7,6 +7,7 @@ import { requestLogger, errorHandler } from './middleware.js';
 import crashReportHandler from './handler/crash_report.js';
 import symbolHandler from './handler/symbol.js';
 import downloadHandler from './handler/download.js';
+import unityHandler from './handler/unity.js';
 import webHandler from './handler/web.js';
 
 initDb();
@@ -21,6 +22,7 @@ app.set('trust proxy', true);
 
 app.use('/api/v1', downloadHandler);
 app.use('/api/v1', crashReportHandler);
+app.use('/api/v1', unityHandler);
 app.use('/api/v1', symbolHandler);
 app.use('/web', webHandler);
 app.get('/', (_req, res) => res.redirect('/web/'));

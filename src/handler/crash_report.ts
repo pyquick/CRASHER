@@ -98,6 +98,10 @@ function extractFormReport(body: Record<string, unknown>): CrashReportInput {
   const input: CrashReportInput = {
     exception_type: s('exception_type'), exception_message: s('exception_message'),
     stack_trace: s('stack_trace'), log_text: s('log_text'),
+    runtime: s('runtime'), runtime_version: s('runtime_version'),
+    framework: s('framework'), environment: s('environment'),
+    server_name: s('server_name'), release: s('release'),
+    error_severity: s('error_severity'),
     unity_version: s('unity_version'), platform: s('platform'),
     device_model: s('device_model'), os_version: s('os_version'),
     gpu_name: s('gpu_name'), cpu_name: s('cpu_name'),

@@ -142,10 +142,11 @@ export function createReport(
   const stmt = getDb().prepare(`
     INSERT INTO crash_reports (
       group_id, exception_type, exception_message, stack_trace, log_text,
+      runtime, runtime_version, framework, environment, server_name, release, error_severity,
       unity_version, platform, device_model, os_version, gpu_name, cpu_name,
       memory_mb, app_version, bundle_id, scene_name, custom_data,
       client_ip, client_timestamp, created_at, dump_info
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const result = stmt.run(
@@ -154,6 +155,13 @@ export function createReport(
     input.exception_message ?? '',
     input.stack_trace ?? '',
     input.log_text ?? '',
+    input.runtime ?? '',
+    input.runtime_version ?? '',
+    input.framework ?? '',
+    input.environment ?? '',
+    input.server_name ?? '',
+    input.release ?? '',
+    input.error_severity ?? 'error',
     input.unity_version ?? '',
     input.platform ?? '',
     input.device_model ?? '',
@@ -417,6 +425,16 @@ export function getDashboardStats(): DashboardStats {
     )
     .all() as DashboardStats['daily_trend'];
 
+  const runtimeDistribution = db
+    .prepare(
+      `SELECT runtime, COUNT(*) as count
+       FROM crash_reports
+       WHERE runtime != ''
+       GROUP BY runtime
+       ORDER BY count DESC`
+    )
+    .all() as DashboardStats['runtime_distribution'];
+
   return {
     total_crashes: totalCrashes,
     total_groups: totalGroups,
@@ -427,6 +445,7 @@ export function getDashboardStats(): DashboardStats {
     top_crashes: topCrashes,
     platform_distribution: platformDistribution,
     version_distribution: versionDistribution,
+    runtime_distribution: runtimeDistribution,
     daily_trend: dailyTrend,
   };
 }

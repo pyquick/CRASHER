@@ -39,6 +39,29 @@
         </select>
       </div>
       <div>
+        <label class="block text-xs text-gray-500 mb-1">Runtime</label>
+        <select x-model="filters.runtime" @change="load()"
+                class="bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500">
+          <option value="">All</option>
+          <option value="node">Node.js</option>
+          <option value="browser">Browser</option>
+          <option value="python">Python</option>
+          <option value="go">Go</option>
+          <option value="unity">Unity</option>
+          <option value="csharp">C#</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Environment</label>
+        <select x-model="filters.environment" @change="load()"
+                class="bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500">
+          <option value="">All</option>
+          <option value="production">Production</option>
+          <option value="staging">Staging</option>
+          <option value="development">Development</option>
+        </select>
+      </div>
+      <div>
         <label class="block text-xs text-gray-500 mb-1">Sort</label>
         <select x-model="filters.sort_by" @change="load()"
                 class="bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500">
@@ -132,7 +155,7 @@
       loading: false,
       platforms: [],
       versions: [],
-      filters: { search: '', status: '', platform: '', app_version: '', sort_by: 'last_seen' },
+      filters: { search: '', status: '', platform: '', app_version: '', runtime: '', environment: '', sort_by: 'last_seen' },
 
       async init() {
         await Promise.all([this.loadPlatforms(), this.loadVersions(), this.load()]);
@@ -149,6 +172,8 @@
           if (this.filters.status) params.set('status', this.filters.status);
           if (this.filters.platform) params.set('platform', this.filters.platform);
           if (this.filters.app_version) params.set('app_version', this.filters.app_version);
+          if (this.filters.runtime) params.set('runtime', this.filters.runtime);
+          if (this.filters.environment) params.set('environment', this.filters.environment);
           if (this.filters.search) params.set('search', this.filters.search);
 
           const res = await fetch('/api/v1/crash-groups?' + params.toString());
