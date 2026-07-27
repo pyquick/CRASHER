@@ -3,20 +3,24 @@ FROM node:24-alpine AS builder
 
 WORKDIR /app
 
+# better-sqlite3 compiles through node-gyp on Alpine.
+RUN apk add --no-cache python3 make g++
+
 COPY package.json package-lock.json ./
-RUN npm ci --omit=dev
+# TypeScript and its type definitions are development dependencies.
+RUN npm ci
 
 COPY tsconfig.json ./
 COPY src/ ./src/
 
-RUN npx tsc
+RUN npm run build
 
 # ---- Runtime Stage ----
 FROM node:24-alpine
 
 WORKDIR /app
 
-# Install runtime dependencies (better-sqlite3 needs build tools)
+# Build the better-sqlite3 native module, then remove the toolchain.
 RUN apk add --no-cache python3 make g++
 
 COPY package.json package-lock.json ./

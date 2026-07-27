@@ -4,7 +4,6 @@ import { randomBytes } from 'crypto';
 import { readFileSync } from 'fs';
 import { config } from '../config.js';
 import { ingestCrash } from '../service.js';
-import { getDb } from '../database.js';
 import * as store from '../store.js';
 import { parseDump } from '../dump/parser.js';
 import type { CrashReportInput } from '../model.js';
@@ -27,7 +26,7 @@ const upload = multer({
   limits: { fileSize: config.maxAttachmentSize, files: 10 },
 });
 
-// ── POST /crash-report ──
+// ── POST /crash-report (public — no auth required) ──
 
 router.post('/crash-report', upload.array('attachments', 10), handleCrashReport);
 
@@ -78,7 +77,7 @@ async function handleCrashReport(req: Request, res: Response): Promise<void> {
       if (parsedDumps.length > 0) dumpInfo = JSON.stringify(parsedDumps);
     }
 
-    const result = ingestCrash(input, clientIp, now, dumpInfo);
+    const result = await ingestCrash(input, clientIp, now, dumpInfo);
 
     if (allFiles.length > 0) {
       for (const file of allFiles) {
@@ -107,6 +106,7 @@ function extractFormReport(body: Record<string, unknown>): CrashReportInput {
     gpu_name: s('gpu_name'), cpu_name: s('cpu_name'),
     app_version: s('app_version'), bundle_id: s('bundle_id'),
     scene_name: s('scene_name'), client_timestamp: s('client_timestamp'),
+    build_guid: s('build_guid'),
   };
   if (body.memory_mb) input.memory_mb = parseInt(String(body.memory_mb), 10) || 0;
   if (body.custom_data) {
@@ -115,75 +115,5 @@ function extractFormReport(body: Record<string, unknown>): CrashReportInput {
   }
   return input;
 }
-
-// ── Query routes ──
-
-router.get('/crash-groups', (_req, res) => {
-  const q = _req.query;
-  res.json(store.listGroups({
-    page: parseInt(String(q.page), 10) || 1,
-    page_size: Math.min(parseInt(String(q.page_size), 10) || 20, 100),
-    status: q.status as string | undefined,
-    search: q.search as string | undefined,
-    start_date: q.start_date as string | undefined,
-    end_date: q.end_date as string | undefined,
-    sort_by: q.sort_by as string | undefined,
-    sort_order: (q.sort_order as 'asc' | 'desc') || 'desc',
-  }));
-});
-
-router.get('/crash-groups/:id', (req, res) => {
-  const id = parseInt(String(req.params.id), 10);
-  if (isNaN(id)) { res.status(400).json({ error: 'Invalid ID' }); return; }
-  const group = store.getGroupById(id);
-  if (!group) { res.status(404).json({ error: 'Not found' }); return; }
-  res.json({ ...group, recent_reports: store.listReports({ group_id: id, page: 1, page_size: 20 }).items });
-});
-
-router.put('/crash-groups/:id/status', (req, res) => {
-  const id = parseInt(String(req.params.id), 10);
-  if (isNaN(id)) { res.status(400).json({ error: 'Invalid ID' }); return; }
-  const { status, resolved_version } = req.body ?? {};
-  if (!['open', 'resolved', 'ignored'].includes(status)) {
-    res.status(400).json({ error: 'Invalid status', message: 'Status must be: open, resolved, ignored' });
-    return;
-  }
-  if (!store.updateGroupStatus(id, status, resolved_version)) { res.status(404).json({ error: 'Group not found' }); return; }
-  res.json({ success: true });
-});
-
-router.get('/crash-reports', (req, res) => {
-  const q = req.query;
-  res.json(store.listReports({
-    page: parseInt(String(q.page), 10) || 1,
-    page_size: Math.min(parseInt(String(q.page_size), 10) || 20, 100),
-    group_id: q.group_id ? parseInt(String(q.group_id), 10) : undefined,
-    platform: q.platform as string | undefined,
-    app_version: q.app_version as string | undefined,
-    start_date: q.start_date as string | undefined,
-    end_date: q.end_date as string | undefined,
-  }));
-});
-
-router.get('/crash-reports/:id', (req, res) => {
-  const id = parseInt(String(req.params.id), 10);
-  if (isNaN(id)) { res.status(400).json({ error: 'Invalid ID' }); return; }
-  const report = store.getReportById(id);
-  if (!report) { res.status(404).json({ error: 'Not found' }); return; }
-  const atts = store.getAttachmentsForReport(id);
-  res.json({ ...report, attachments: atts });
-});
-
-router.get('/stats/dashboard', (_req, res) => { res.json(store.getDashboardStats()); });
-
-// ── Analytics routes ──
-
-router.get('/platforms', (_req, res) => {
-  res.json((getDb().prepare("SELECT DISTINCT platform FROM crash_reports WHERE platform != '' ORDER BY platform").all() as any[]).map(r => r.platform));
-});
-
-router.get('/versions', (_req, res) => {
-  res.json((getDb().prepare("SELECT DISTINCT app_version FROM crash_reports WHERE app_version != '' ORDER BY app_version DESC LIMIT 50").all() as any[]).map(r => r.app_version));
-});
 
 export default router;

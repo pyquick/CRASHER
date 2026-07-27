@@ -30,6 +30,26 @@
                class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500">
       </div>
       <div>
+        <label class="block text-xs text-gray-500 mb-1">Symbol Type</label>
+        <select x-model="uploadForm.symbol_type"
+                class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500">
+          <option value="symbol_map">Unity SymbolMap</option>
+          <option value="elf">Android ELF / Debug Symbol</option>
+          <option value="dsym">iOS dSYM</option>
+          <option value="unknown">Auto detect</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Module Name (optional)</label>
+        <input type="text" x-model="uploadForm.module_name" placeholder="libil2cpp.so"
+               class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500">
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Architecture (optional)</label>
+        <input type="text" x-model="uploadForm.architecture" placeholder="arm64"
+               class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500">
+      </div>
+      <div>
         <label class="block text-xs text-gray-500 mb-1">File *</label>
         <input type="file" @change="onFileSelected($event)"
                class="w-full text-sm text-gray-400 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-gray-700 file:text-gray-200 hover:file:bg-gray-600 transition-colors">
@@ -73,6 +93,7 @@
         <tr class="border-b border-gray-800 text-gray-500 text-xs uppercase">
           <th class="text-left px-4 py-3 font-medium">Filename</th>
           <th class="text-left px-4 py-3 font-medium">Platform</th>
+          <th class="text-left px-4 py-3 font-medium hidden sm:table-cell">Type</th>
           <th class="text-left px-4 py-3 font-medium hidden sm:table-cell">Build GUID</th>
           <th class="text-left px-4 py-3 font-medium hidden md:table-cell">Size</th>
           <th class="text-left px-4 py-3 font-medium hidden md:table-cell">Uploaded</th>
@@ -84,6 +105,7 @@
           <tr class="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
             <td class="px-4 py-3 font-medium text-gray-200" x-text="item.filename"></td>
             <td class="px-4 py-3 text-gray-400" x-text="item.platform"></td>
+            <td class="px-4 py-3 text-gray-400 text-xs hidden sm:table-cell" x-text="item.symbol_type || 'unknown'"></td>
             <td class="px-4 py-3 text-gray-500 font-mono text-xs hidden sm:table-cell" x-text="item.build_guid"></td>
             <td class="px-4 py-3 text-gray-400 hidden md:table-cell" x-text="formatSize(item.file_size)"></td>
             <td class="px-4 py-3 text-gray-400 hidden md:table-cell" x-text="formatDate(item.uploaded_at)"></td>
@@ -115,7 +137,7 @@
       uploading: false,
       uploadMsg: '',
       uploadErr: false,
-      uploadForm: { platform: 'Android', build_guid: '', file: null },
+      uploadForm: { platform: 'Android', build_guid: '', symbol_type: 'unknown', module_name: '', architecture: '', file: null },
       filters: { platform: '' },
 
       async init() {
@@ -154,13 +176,16 @@
           formData.append('file', this.uploadForm.file);
           formData.append('platform', this.uploadForm.platform);
           formData.append('build_guid', this.uploadForm.build_guid);
+          formData.append('symbol_type', this.uploadForm.symbol_type);
+          formData.append('module_name', this.uploadForm.module_name);
+          formData.append('architecture', this.uploadForm.architecture);
 
           const res = await fetch('/api/v1/symbols', { method: 'POST', body: formData });
           if (res.ok) {
             this.uploadMsg = 'Symbol uploaded successfully!';
             this.uploadErr = false;
             this.showUpload = false;
-            this.uploadForm = { platform: 'Android', build_guid: '', file: null };
+            this.uploadForm = { platform: 'Android', build_guid: '', symbol_type: 'unknown', module_name: '', architecture: '', file: null };
             await this.load();
           } else {
             const err = await res.json();

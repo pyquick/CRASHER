@@ -84,6 +84,7 @@
           <th class="text-left px-4 py-3 font-medium">Exception</th>
           <th class="text-left px-4 py-3 font-medium hidden md:table-cell">Last Seen</th>
           <th class="text-left px-4 py-3 font-medium hidden sm:table-cell">Count</th>
+          <th class="text-left px-4 py-3 font-medium hidden sm:table-cell">Runtime</th>
           <th class="text-left px-4 py-3 font-medium">Status</th>
         </tr>
       </thead>
@@ -98,6 +99,14 @@
             <td class="px-4 py-3 text-gray-400 hidden md:table-cell" x-text="formatDate(item.last_seen)"></td>
             <td class="px-4 py-3 hidden sm:table-cell">
               <span class="font-mono text-gray-300" x-text="item.total_count"></span>
+            </td>
+            <td class="px-4 py-3 hidden sm:table-cell">
+              <span class="text-xs px-2 py-0.5 rounded font-medium"
+                    :class="item.runtime === 'unity' ? 'bg-purple-900/50 text-purple-300' : 'bg-gray-700 text-gray-300'"
+                    x-text="item.runtime ? item.runtime.toUpperCase() : 'OTHER'"
+                    x-show="item.runtime"></span>
+              <span class="text-xs px-2 py-0.5 rounded font-medium bg-gray-700 text-gray-300"
+                    x-show="!item.runtime">OTHER</span>
             </td>
             <td class="px-4 py-3">
               <span class="badge"

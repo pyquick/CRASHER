@@ -40,6 +40,11 @@ export interface CrashReport {
   client_timestamp: string;
   created_at: string;
   dump_info: string;
+  build_guid: string;
+  symbolicated_stack: string;
+  symbolication_info: string;
+  symbolication_status: string;
+  symbol_id: number | null;
 }
 
 export interface CrashReportInput {
@@ -68,6 +73,7 @@ export interface CrashReportInput {
   scene_name?: string;
   custom_data?: Record<string, unknown> | string;
   client_timestamp?: string;
+  build_guid?: string;
 }
 
 export interface CrashAttachment {
@@ -88,6 +94,11 @@ export interface Symbol {
   file_size: number;
   file_path: string;
   uploaded_at: string;
+  symbol_type?: string;
+  module_name?: string;
+  architecture?: string;
+  index_status?: string;
+  index_error?: string;
 }
 
 export interface DashboardStats {

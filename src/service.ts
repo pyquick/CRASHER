@@ -2,6 +2,8 @@ import { createHash } from 'crypto';
 import type { CrashReport, CrashReportInput } from './model.js';
 import * as store from './store.js';
 import { config } from './config.js';
+import { symbolicateUnityCrash } from './symbolication/service.js';
+import { notifyAlert } from './notification/service.js';
 
 /**
  * Compute a crash hash from exception type, first stack frame, and runtime.
@@ -81,12 +83,12 @@ function extractFirstFrame(stackTrace: string, runtime?: string): string {
  * If input.runtime is not set, automatically attempts to detect from the runtime_version
  * or platform context.
  */
-export function ingestCrash(
+export async function ingestCrash(
   input: CrashReportInput,
   clientIp: string,
   now: string,
   dumpInfo: string = ''
-): { report: CrashReport; groupId: number; isNewGroup: boolean } {
+): Promise<{ report: CrashReport; groupId: number; isNewGroup: boolean }> {
   // Auto-detect runtime if not specified
   if (!input.runtime) {
     if (input.unity_version) {
@@ -96,24 +98,46 @@ export function ingestCrash(
     }
   }
 
-  const hash = computeCrashHash(input);
+  // Use client timestamp if provided, otherwise server time
+  const effectiveTime = input.client_timestamp ?? now;
+
+  const symbolication = await symbolicateUnityCrash(input);
+  const groupingInput = symbolication.method
+    ? { ...input, stack_trace: symbolication.method }
+    : input;
+
+  const hash = computeCrashHash(groupingInput);
 
   let group = store.findGroupByHash(hash);
   let isNewGroup = false;
 
   if (group) {
-    store.updateGroupOnNewReport(group.id, now);
+    store.updateGroupOnNewReport(group.id, effectiveTime);
+    group = store.getGroupById(group.id)!;
   } else {
     group = store.createGroup(
       hash,
       input.exception_type,
       input.exception_message ?? '',
-      now
+      effectiveTime
     );
     isNewGroup = true;
   }
 
   const report = store.createReport(input, group.id, clientIp, now, dumpInfo);
+  if (input.runtime === 'unity') {
+    store.updateReportSymbolication(report.id, symbolication);
+  }
 
-  return { report, groupId: group.id, isNewGroup };
+  const savedReport = store.getReportById(report.id)!;
+  if (isNewGroup && config.alertOnNewGroup) {
+    void notifyAlert({ type: 'new_group', group, report: savedReport, symbolicatedMethod: symbolication.method });
+  } else if (
+    config.alertThresholdCount > 0 &&
+    group.total_count === config.alertThresholdCount
+  ) {
+    void notifyAlert({ type: 'threshold_reached', group, report: savedReport, symbolicatedMethod: symbolication.method });
+  }
+
+  return { report: savedReport, groupId: group.id, isNewGroup };
 }

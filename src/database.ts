@@ -138,6 +138,24 @@ function runMigrations(db: Database.Database): void {
   addColumnIfNotExists(db, 'crash_reports', 'server_name', "TEXT DEFAULT ''");
   addColumnIfNotExists(db, 'crash_reports', 'release', "TEXT DEFAULT ''");
   addColumnIfNotExists(db, 'crash_reports', 'error_severity', "TEXT DEFAULT 'error'");
+
+  // v4 migration: IL2CPP symbolication metadata
+  addColumnIfNotExists(db, 'crash_reports', 'build_guid', "TEXT DEFAULT ''");
+  addColumnIfNotExists(db, 'crash_reports', 'symbolicated_stack', "TEXT DEFAULT ''");
+  addColumnIfNotExists(db, 'crash_reports', 'symbolication_info', "TEXT DEFAULT ''");
+  addColumnIfNotExists(db, 'crash_reports', 'symbolication_status', "TEXT DEFAULT 'not_applicable'");
+  addColumnIfNotExists(db, 'crash_reports', 'symbol_id', 'INTEGER');
+  addColumnIfNotExists(db, 'symbols', 'symbol_type', "TEXT DEFAULT 'unknown'");
+  addColumnIfNotExists(db, 'symbols', 'module_name', "TEXT DEFAULT ''");
+  addColumnIfNotExists(db, 'symbols', 'architecture', "TEXT DEFAULT ''");
+  addColumnIfNotExists(db, 'symbols', 'index_status', "TEXT DEFAULT 'ready'");
+  addColumnIfNotExists(db, 'symbols', 'index_error', "TEXT DEFAULT ''");
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_crash_reports_build_guid ON crash_reports(build_guid);
+    CREATE INDEX IF NOT EXISTS idx_crash_reports_symbol_id ON crash_reports(symbol_id);
+    CREATE INDEX IF NOT EXISTS idx_symbols_type ON symbols(symbol_type);
+  `);
 }
 
 export function closeDb(): void {

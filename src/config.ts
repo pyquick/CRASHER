@@ -1,4 +1,4 @@
-import { randomBytes } from 'crypto';
+import { createHash, randomBytes } from 'crypto';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -14,6 +14,20 @@ export interface Config {
   maxAttachmentSize: number;
   corsOrigins: string[];
   authToken: string;
+  adminUsername: string;
+  adminPasswordHash: string;
+  sessionSecret: string;
+  webhookUrl: string;
+  webhookTimeoutMs: number;
+  smtpHost: string;
+  smtpPort: number;
+  smtpSecure: boolean;
+  smtpUser: string;
+  smtpPassword: string;
+  alertEmailFrom: string;
+  alertEmailTo: string;
+  alertOnNewGroup: boolean;
+  alertThresholdCount: number;
 }
 
 function env(key: string, fallback: string): string {
@@ -27,6 +41,12 @@ function envInt(key: string, fallback: number): number {
     if (!isNaN(n)) return n;
   }
   return fallback;
+}
+
+function envBool(key: string, fallback: boolean): boolean {
+  const value = process.env[key];
+  if (value === undefined) return fallback;
+  return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
 }
 
 function randomToken(): string {
@@ -43,6 +63,21 @@ function loadConfig(): Config {
   const maxAttachmentSize = envInt('MAX_ATTACHMENT_SIZE', 20 * 1024 * 1024); // 20MB
   const corsOrigins = env('CORS_ORIGINS', '*').split(',').map(s => s.trim());
   const authToken = env('AUTH_TOKEN', randomToken());
+  const adminUsername = env('ADMIN_USERNAME', 'admin');
+  const adminPassword = env('ADMIN_PASSWORD', 'ghltbm123456');
+  const adminPasswordHash = createHash('sha256').update(adminPassword).digest('hex');
+  const sessionSecret = env('SESSION_SECRET', randomBytes(32).toString('hex'));
+  const webhookUrl = env('WEBHOOK_URL', '');
+  const webhookTimeoutMs = envInt('WEBHOOK_TIMEOUT_MS', 5000);
+  const smtpHost = env('SMTP_HOST', '');
+  const smtpPort = envInt('SMTP_PORT', 587);
+  const smtpSecure = envBool('SMTP_SECURE', false);
+  const smtpUser = env('SMTP_USER', '');
+  const smtpPassword = env('SMTP_PASSWORD', '');
+  const alertEmailFrom = env('ALERT_EMAIL_FROM', '');
+  const alertEmailTo = env('ALERT_EMAIL_TO', '');
+  const alertOnNewGroup = envBool('ALERT_ON_NEW_GROUP', true);
+  const alertThresholdCount = envInt('ALERT_THRESHOLD_COUNT', 10);
 
   return {
     port,
@@ -54,6 +89,20 @@ function loadConfig(): Config {
     maxAttachmentSize,
     corsOrigins,
     authToken,
+    adminUsername,
+    adminPasswordHash,
+    sessionSecret,
+    webhookUrl,
+    webhookTimeoutMs,
+    smtpHost,
+    smtpPort,
+    smtpSecure,
+    smtpUser,
+    smtpPassword,
+    alertEmailFrom,
+    alertEmailTo,
+    alertOnNewGroup,
+    alertThresholdCount,
   };
 }
 

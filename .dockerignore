@@ -1,0 +1,10 @@
+node_modules/
+dist/
+data/
+.git/
+.claude/
+.env
+.env.*
+*.db
+*.db-journal
+npm-debug.log*

@@ -96,7 +96,9 @@ export function listGroups(query: CrashGroupQuery): PaginatedResult<CrashGroup> 
 
   const items = getDb()
     .prepare(
-      `SELECT * FROM crash_groups ${where} ORDER BY ${col} ${order} LIMIT ? OFFSET ?`
+      `SELECT cg.*,
+              (SELECT cr.runtime FROM crash_reports cr WHERE cr.group_id = cg.id ORDER BY cr.created_at DESC LIMIT 1) as runtime
+       FROM crash_groups cg ${where} ORDER BY ${col} ${order} LIMIT ? OFFSET ?`
     )
     .all(...params, pageSize, (page - 1) * pageSize) as CrashGroup[];
 
@@ -145,8 +147,9 @@ export function createReport(
       runtime, runtime_version, framework, environment, server_name, release, error_severity,
       unity_version, platform, device_model, os_version, gpu_name, cpu_name,
       memory_mb, app_version, bundle_id, scene_name, custom_data,
-      client_ip, client_timestamp, created_at, dump_info
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      client_ip, client_timestamp, created_at, dump_info, build_guid,
+      symbolicated_stack, symbolication_info, symbolication_status, symbol_id
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const result = stmt.run(
@@ -176,7 +179,12 @@ export function createReport(
     clientIp,
     input.client_timestamp ?? now,
     now,
-    dumpInfo
+    dumpInfo,
+    input.build_guid ?? '',
+    '',
+    '',
+    input.runtime === 'unity' ? 'unavailable' : 'not_applicable',
+    null
   );
 
   return getReportById(Number(result.lastInsertRowid))!;
@@ -244,6 +252,35 @@ export function listReports(params: {
   };
 }
 
+// ----- Symbolication -----
+
+export function updateReportSymbolication(
+  reportId: number,
+  result: { stack: string; status: string; symbol_id?: number; frames: unknown[]; warnings: string[] }
+): void {
+  getDb().prepare(
+    'UPDATE crash_reports SET symbolicated_stack = ?, symbolication_info = ?, symbolication_status = ?, symbol_id = ? WHERE id = ?'
+  ).run(
+    result.stack,
+    JSON.stringify({ frames: result.frames, warnings: result.warnings }),
+    result.status,
+    result.symbol_id ?? null,
+    reportId
+  );
+}
+
+export function listReportsForSymbolication(buildGuid: string, platform?: string): CrashReport[] {
+  const conditions = ["runtime = 'unity'", 'build_guid = ?'];
+  const params: unknown[] = [buildGuid];
+  if (platform) {
+    conditions.push('platform = ?');
+    params.push(platform);
+  }
+  return getDb().prepare(
+    `SELECT * FROM crash_reports WHERE ${conditions.join(' AND ')} ORDER BY created_at DESC`
+  ).all(...params) as CrashReport[];
+}
+
 // ----- Attachments -----
 
 export function createAttachment(
@@ -282,13 +319,16 @@ export function createSymbol(
   buildGuid: string,
   filename: string,
   fileSize: number,
-  filePath: string
+  filePath: string,
+  symbolType: string = 'unknown',
+  moduleName: string = '',
+  architecture: string = ''
 ): Symbol {
   const stmt = getDb().prepare(`
-    INSERT INTO symbols (platform, build_guid, filename, file_size, file_path)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO symbols (platform, build_guid, filename, file_size, file_path, symbol_type, module_name, architecture)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  const result = stmt.run(platform, buildGuid, filename, fileSize, filePath);
+  const result = stmt.run(platform, buildGuid, filename, fileSize, filePath, symbolType, moduleName, architecture);
   return getDb()
     .prepare('SELECT * FROM symbols WHERE id = ?')
     .get(Number(result.lastInsertRowid)) as Symbol;

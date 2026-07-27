@@ -32,6 +32,17 @@ const upload = multer({
  * Otherwise identical to the generic /crash-report endpoint.
  */
 router.post('/unity/crash-report', upload.array('attachments', 10), async (req: Request, res: Response) => {
+  // Block non-Unity clients: check User-Agent or custom header
+  const ua = (req.headers['user-agent'] ?? '').toLowerCase();
+  const clientTag = (req.headers['x-client-type'] as string ?? '').toLowerCase();
+  if (!ua.includes('unity') && clientTag !== 'unity') {
+    res.status(403).json({
+      error: 'Forbidden',
+      message: 'This endpoint is for Unity clients only. Use /api/v1/crash-report with runtime="unity" instead.',
+    });
+    return;
+  }
+
   try {
     let input: CrashReportInput;
 
@@ -83,7 +94,7 @@ router.post('/unity/crash-report', upload.array('attachments', 10), async (req: 
       if (parsedDumps.length > 0) dumpInfo = JSON.stringify(parsedDumps);
     }
 
-    const result = ingestCrash(input, clientIp, now, dumpInfo);
+    const result = await ingestCrash(input, clientIp, now, dumpInfo);
 
     if (allFiles.length > 0) {
       for (const file of allFiles) {
@@ -125,6 +136,7 @@ function extractUnityFormReport(body: Record<string, unknown>): CrashReportInput
     scene_name: s('scene_name'),
     custom_data: body.custom_data as any,
     client_timestamp: s('client_timestamp'),
+    build_guid: s('build_guid'),
   };
 }
 

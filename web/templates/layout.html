@@ -75,12 +75,19 @@
       <button class="lg:hidden p-1.5 rounded-lg hover:bg-gray-800" @click="sidebarOpen = !sidebarOpen">
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 12h18M3 6h18M3 18h18" stroke-width="2" stroke-linecap="round"/></svg>
       </button>
-      <span class="text-sm text-gray-400" id="page-subtitle">{{SUBTITLE}}</span>
+      <span class="text-sm text-gray-400 flex-1" id="page-subtitle">{{SUBTITLE}}</span>
+      <button onclick="document.getElementById('logout-form').submit()"
+              class="text-xs text-gray-500 hover:text-gray-300 transition-colors px-3 py-1.5 rounded-lg hover:bg-gray-800">
+        Logout
+      </button>
     </header>
 
     <main class="p-6">
       {{BODY}}
     </main>
   </div>
+
+  <!-- Hidden logout form -->
+  <form id="logout-form" method="POST" action="/web/logout" style="display:none;"></form>
 </body>
 </html>

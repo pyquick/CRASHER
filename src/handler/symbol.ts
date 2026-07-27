@@ -8,6 +8,14 @@ import { unlink } from 'fs';
 
 const router = Router();
 
+function detectSymbolType(filename: string): string {
+  const lower = filename.toLowerCase();
+  if (lower.includes('symbolmap') || lower.endsWith('.map') || lower.endsWith('.txt')) return 'symbol_map';
+  if (lower.endsWith('.dsym') || lower.endsWith('.zip')) return 'dsym';
+  if (lower.endsWith('.so') || lower.endsWith('.sym') || lower.endsWith('.dbg')) return 'elf';
+  return 'unknown';
+}
+
 const symbolStorage = multer.diskStorage({
   destination: config.symbolsDir,
   filename: (_req, file, cb) => {
@@ -44,6 +52,9 @@ router.post(
 
         const platform = req.body?.platform ?? 'unknown';
         const buildGuid = req.body?.build_guid ?? '';
+        const symbolType = req.body?.symbol_type ?? detectSymbolType(file.originalname);
+        const moduleName = req.body?.module_name ?? '';
+        const architecture = req.body?.architecture ?? '';
 
         if (!buildGuid) {
           res.status(400).json({
@@ -58,7 +69,10 @@ router.post(
           String(buildGuid),
           file.originalname,
           file.size,
-          file.path
+          file.path,
+          String(symbolType),
+          String(moduleName),
+          String(architecture)
         );
 
         res.status(201).json(symbol);

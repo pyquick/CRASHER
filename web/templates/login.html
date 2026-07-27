@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Login - Crash Report Server</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            surface: { 50: '#f8fafc', 100: '#f1f5f9', 200: '#e2e8f0', 700: '#334155', 800: '#1e293b', 900: '#0f172a', 950: '#020617' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+  </style>
+</head>
+<body class="bg-surface-950 text-gray-100 min-h-screen">
+
+<div x-data="loginForm" class="flex items-center justify-center min-h-screen">
+  <div class="w-full max-w-sm px-4">
+    <div class="bg-surface-900 rounded-xl p-8 border border-gray-800">
+      <div class="text-center mb-6">
+        <h1 class="text-2xl font-bold">💥 Crash Reporter</h1>
+        <p class="text-xs text-gray-500 mt-1">Cross-Platform Error Tracking</p>
+      </div>
+
+      <form @submit.prevent="login" class="space-y-4">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Username</label>
+          <input type="text" x-model="username" required autocomplete="username"
+                 class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+                 placeholder="Enter username">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Password</label>
+          <input type="password" x-model="password" required autocomplete="current-password"
+                 class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+                 placeholder="Enter password">
+        </div>
+
+        <p x-show="errorMsg" class="text-sm text-red-400 text-center" x-text="errorMsg"></p>
+
+        <button type="submit" :disabled="loading"
+                class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors">
+          <span x-show="!loading">Sign In</span>
+          <span x-show="loading" class="inline-flex items-center justify-center gap-2">
+            <span class="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+            Signing in...
+          </span>
+        </button>
+      </form>
+
+      <div class="mt-6 pt-4 border-t border-gray-800 text-center">
+        <a href="/web/api-doc" class="text-xs text-gray-500 hover:text-gray-300 transition-colors">View API Docs →</a>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('alpine:init', () => {
+    Alpine.data('loginForm', () => ({
+      username: '',
+      password: '',
+      loading: false,
+      errorMsg: '',
+
+      async login() {
+        this.errorMsg = '';
+        this.loading = true;
+        try {
+          const res = await fetch('/web/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: this.username, password: this.password }),
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            const params = new URLSearchParams(window.location.search);
+            const redirect = params.get('redirect') || '/web/';
+            window.location.href = redirect;
+          } else {
+            this.errorMsg = data.message || 'Login failed';
+          }
+        } catch (err) {
+          this.errorMsg = 'Network error';
+        }
+        this.loading = false;
+      }
+    }));
+  });
+</script>
+</body>
+</html>

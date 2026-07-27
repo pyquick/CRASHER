@@ -1,5 +1,17 @@
 <div x-data="dashboard">
   <!-- Stat Cards -->
+
+  <!-- Admin Actions -->
+  <div class="mb-8 flex justify-end" x-data="{ clearing: false, clearMsg: '' }">
+    <button @click="async () => { if (!confirm('Delete ALL crash data? This cannot be undone.')) return; clearing = true; try { const r = await fetch('/api/v1/clear-crashes', { method: 'POST' }); const d = await r.json(); clearMsg = d.message; await loadStats(); } catch {} clearing = false; }"
+            :disabled="clearing"
+            class="px-4 py-2 bg-red-600/20 hover:bg-red-600/40 text-red-400 border border-red-800 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
+      <span x-show="!clearing">🗑 Clear All Crashes</span>
+      <span x-show="clearing">Clearing...</span>
+    </button>
+    <span x-show="clearMsg" class="text-sm text-green-400 ml-3 self-center" x-text="clearMsg"></span>
+  </div>
+
   <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
     <div class="stat-card bg-surface-900 rounded-xl p-4 border border-gray-800">
       <p class="text-xs text-gray-500 uppercase tracking-wide">Total Crashes</p>
