@@ -42,7 +42,8 @@ function extractFirstFrame(stackTrace: string): string {
 export function ingestCrash(
   input: CrashReportInput,
   clientIp: string,
-  now: string
+  now: string,
+  dumpInfo: string = ''
 ): { report: CrashReport; groupId: number; isNewGroup: boolean } {
   const hash = computeCrashHash(input);
 
@@ -61,7 +62,7 @@ export function ingestCrash(
     isNewGroup = true;
   }
 
-  const report = store.createReport(input, group.id, clientIp, now);
+  const report = store.createReport(input, group.id, clientIp, now, dumpInfo);
 
   return { report, groupId: group.id, isNewGroup };
 }

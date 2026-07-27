@@ -15,6 +15,7 @@ function renderTemplate(name: string, title: string): string {
     const content = readFileSync(resolve(templatesDir, name), 'utf-8');
     return base
       .replace('{{TITLE}}', title)
+      .replace('{{SUBTITLE}}', title)
       .replace('{{CONTENT}}', controllerToRoute(name))
       .replace('{{BODY}}', content);
   } catch {

@@ -29,6 +29,27 @@ export function initDb(): Database.Database {
   return db;
 }
 
+function addColumnIfNotExists(
+  db: Database.Database,
+  table: string,
+  column: string,
+  definition: string
+): void {
+  const exists = db
+    .prepare(`SELECT COUNT(*) as c FROM pragma_table_info('${table}') WHERE name = ?`)
+    .get(column) as { c: number };
+  if (exists.c === 0) {
+    try {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    } catch (err: any) {
+      // Ignore duplicate column errors in case of race
+      if (!err.message?.includes('duplicate column')) {
+        throw err;
+      }
+    }
+  }
+}
+
 function runMigrations(db: Database.Database): void {
   db.exec(`
     CREATE TABLE IF NOT EXISTS crash_groups (
@@ -97,6 +118,9 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_crash_attachments_report_id ON crash_attachments(crash_report_id);
     CREATE INDEX IF NOT EXISTS idx_symbols_build_guid ON symbols(build_guid);
   `);
+
+  // v2 migration: add dump_info column
+  addColumnIfNotExists(db, 'crash_reports', 'dump_info', "TEXT DEFAULT ''");
 }
 
 export function closeDb(): void {

@@ -32,6 +32,7 @@ export interface CrashReport {
   client_ip: string;
   client_timestamp: string;
   created_at: string;
+  dump_info: string;
 }
 
 export interface CrashReportInput {

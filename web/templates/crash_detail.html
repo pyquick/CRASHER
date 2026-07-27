@@ -19,19 +19,139 @@
   <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
     <!-- Main content -->
     <div class="lg:col-span-2 space-y-6">
+      <!-- Dump Parsed Info -->
+      <section class="bg-surface-900 rounded-xl p-5 border border-gray-800" x-show="dumpParsed && dumpParsed.length > 0">
+        <h2 class="text-sm font-semibold text-gray-300 mb-3">🔍 Parsed Dump Info</h2>
+        <template x-for="(dump, di) in dumpParsed" :key="di">
+          <div class="bg-surface-950 rounded-lg p-4 mb-3 last:mb-0">
+            <div class="flex items-center gap-2 mb-2">
+              <span class="text-xs px-2 py-0.5 rounded font-medium"
+                    :class="{
+                      'bg-blue-900/50 text-blue-300': dump.type === 'minidump',
+                      'bg-green-900/50 text-green-300': dump.type === 'android_tombstone',
+                      'bg-yellow-900/50 text-yellow-300': dump.type === 'ios_crash',
+                      'bg-purple-900/50 text-purple-300': dump.type === 'unity_log',
+                      'bg-gray-700 text-gray-300': dump.type === 'unknown'
+                    }"
+                    x-text="dump.type?.replace(/_/g, ' ')"></span>
+              <span class="text-xs text-gray-500" x-text="dump.source_file"></span>
+            </div>
+
+            <p class="text-sm text-gray-300" x-show="dump.summary" x-text="dump.summary"></p>
+
+            <!-- Crash reason -->
+            <div class="mt-2 space-y-1 text-sm" x-show="dump.crash_reason || dump.signal || dump.fault_address">
+              <div class="flex gap-3" x-show="dump.crash_reason">
+                <span class="text-gray-500 w-24 shrink-0">Crash:</span>
+                <span class="text-red-300" x-text="dump.crash_reason"></span>
+              </div>
+              <div class="flex gap-3" x-show="dump.signal">
+                <span class="text-gray-500 w-24 shrink-0">Signal:</span>
+                <span class="text-gray-300" x-text="dump.signal"></span>
+              </div>
+              <div class="flex gap-3" x-show="dump.fault_address">
+                <span class="text-gray-500 w-24 shrink-0">Address:</span>
+                <code class="text-yellow-300 font-mono text-xs" x-text="dump.fault_address"></code>
+              </div>
+            </div>
+
+            <!-- Threads -->
+            <details class="mt-3" x-show="dump.threads?.length > 0">
+              <summary class="text-xs text-gray-400 cursor-pointer hover:text-gray-300">
+                Threads (<span x-text="dump.thread_count"></span>)
+              </summary>
+              <div class="mt-2 space-y-2 max-h-64 overflow-y-auto">
+                <template x-for="t in (dump.threads || []).slice(0, 3)" :key="t.index">
+                  <div class="bg-black/30 rounded p-2">
+                    <div class="text-xs text-gray-400 mb-1">
+                      Thread <span x-text="t.index"></span>
+                      <span x-show="t.name" class="text-blue-400 ml-1" x-text="'(' + t.name + ')'"></span>
+                      <span x-show="t.index === dump.crashed_thread" class="text-red-400 ml-1">⚠ crashed</span>
+                    </div>
+                    <pre class="text-xs text-gray-500 font-mono max-h-40 overflow-y-auto" x-text="(t.frames || []).slice(0, 10).join('\n')"></pre>
+                  </div>
+                </template>
+              </div>
+            </details>
+
+            <!-- Modules -->
+            <details class="mt-3" x-show="dump.loaded_modules?.length > 0">
+              <summary class="text-xs text-gray-400 cursor-pointer hover:text-gray-300">
+                Modules (<span x-text="dump.loaded_modules?.length"></span>)
+              </summary>
+              <div class="mt-2 max-h-48 overflow-y-auto">
+                <table class="w-full text-xs">
+                  <thead><tr class="text-gray-500"><th class="text-left py-1 pr-2">Name</th><th class="text-left py-1 pr-2">Base</th><th class="text-left py-1">Size</th></tr></thead>
+                  <tbody>
+                    <template x-for="m in (dump.loaded_modules || []).slice(0, 50)" :key="m.name">
+                      <tr class="text-gray-400 border-t border-gray-800/50">
+                        <td class="py-1 pr-2 font-mono truncate max-w-[120px]" x-text="m.name"></td>
+                        <td class="py-1 pr-2 font-mono" x-text="m.base"></td>
+                        <td class="py-1 font-mono" x-text="m.size"></td>
+                      </tr>
+                    </template>
+                  </tbody>
+                </table>
+              </div>
+            </details>
+
+            <!-- Warnings -->
+            <div class="mt-2" x-show="dump.parse_warnings?.length > 0">
+              <template x-for="w in dump.parse_warnings" :key="w">
+                <p class="text-xs text-yellow-500" x-text="w"></p>
+              </template>
+            </div>
+          </div>
+        </template>
+        <!-- Download dump info JSON -->
+        <div class="mt-3 text-right" x-show="latestReport">
+          <a :href="'/api/v1/download/dump/' + latestReport.id'"
+             class="text-xs text-blue-400 hover:text-blue-300 transition-colors">
+            ⬇ Download Dump Info (JSON)
+          </a>
+        </div>
+      </section>
+
       <!-- Stack trace -->
       <section class="bg-surface-900 rounded-xl p-5 border border-gray-800">
-        <h2 class="text-sm font-semibold text-gray-300 mb-3">📋 Latest Stack Trace</h2>
+        <div class="flex items-center justify-between mb-3">
+          <h2 class="text-sm font-semibold text-gray-300">📋 Latest Stack Trace</h2>
+          <a :href="'/api/v1/download/report/' + latestReport?.id"
+             x-show="latestReport"
+             class="text-xs text-blue-400 hover:text-blue-300 transition-colors">
+            ⬇ Download Report JSON
+          </a>
+        </div>
         <template x-if="latestReport?.stack_trace">
           <pre class="stack-trace text-gray-400 bg-surface-950 rounded-lg p-4 overflow-x-auto" x-text="latestReport.stack_trace"></pre>
         </template>
         <p class="text-sm text-gray-600" x-show="!latestReport?.stack_trace">No stack trace available</p>
       </section>
 
-      <!-- Exception message -->
+      <!-- Player Log -->
       <section class="bg-surface-900 rounded-xl p-5 border border-gray-800" x-show="latestReport?.log_text">
         <h2 class="text-sm font-semibold text-gray-300 mb-3">📝 Player Log</h2>
         <pre class="stack-trace text-gray-400 bg-surface-950 rounded-lg p-4 max-h-96 overflow-y-auto" x-text="latestReport.log_text"></pre>
+      </section>
+
+      <!-- Attachments with download buttons -->
+      <section class="bg-surface-900 rounded-xl p-5 border border-gray-800" x-show="attachments.length > 0">
+        <h2 class="text-sm font-semibold text-gray-300 mb-3">📎 Attachments</h2>
+        <div class="space-y-2">
+          <template x-for="a in attachments" :key="a.id">
+            <div class="flex items-center justify-between bg-surface-950 rounded-lg p-3 hover:bg-gray-800/50 transition-colors">
+              <div class="flex items-center gap-3 min-w-0">
+                <span class="text-gray-300 text-sm truncate" x-text="a.filename"></span>
+                <span class="text-xs text-gray-600" x-text="formatSize(a.file_size)"></span>
+                <span class="text-xs text-gray-700" x-show="a.content_type" x-text="a.content_type"></span>
+              </div>
+              <a :href="'/api/v1/download/attachment/' + a.id"
+                 class="shrink-0 px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors ml-3">
+                ⬇ Download
+              </a>
+            </div>
+          </template>
+        </div>
       </section>
 
       <!-- Recent Reports Table -->
@@ -45,6 +165,7 @@
                 <th class="text-left px-3 py-2 hidden sm:table-cell">Platform</th>
                 <th class="text-left px-3 py-2 hidden md:table-cell">Version</th>
                 <th class="text-left px-3 py-2 hidden md:table-cell">Device</th>
+                <th class="text-left px-3 py-2">DL</th>
               </tr>
             </thead>
             <tbody>
@@ -55,6 +176,10 @@
                   <td class="px-3 py-2 text-gray-400 hidden sm:table-cell" x-text="r.platform || '-'"></td>
                   <td class="px-3 py-2 text-gray-400 hidden md:table-cell" x-text="r.app_version || '-'"></td>
                   <td class="px-3 py-2 text-gray-500 hidden md:table-cell" x-text="r.device_model || '-'"></td>
+                  <td class="px-3 py-2" @click.stop>
+                    <a :href="'/api/v1/download/report/' + r.id"
+                       class="text-xs text-blue-400 hover:text-blue-300">⬇</a>
+                  </td>
                 </tr>
               </template>
             </tbody>
@@ -86,6 +211,30 @@
             <dd class="text-green-400" x-text="group?.resolved_version"></dd>
           </div>
         </dl>
+      </section>
+
+      <!-- Downloads -->
+      <section class="bg-surface-900 rounded-xl p-5 border border-gray-800">
+        <h2 class="text-sm font-semibold text-gray-300 mb-3">📥 Downloads</h2>
+        <div class="space-y-2">
+          <a :href="'/api/v1/download/group/' + group?.id"
+             x-show="group"
+             class="block text-sm text-blue-400 hover:text-blue-300 hover:bg-gray-800 rounded-lg px-3 py-2 transition-colors">
+            ⬇ All Reports in Group (JSON)
+          </a>
+          <a :href="'/api/v1/download/report/' + latestReport?.id"
+             x-show="latestReport"
+             class="block text-sm text-blue-400 hover:text-blue-300 hover:bg-gray-800 rounded-lg px-3 py-2 transition-colors">
+            ⬇ Latest Report (JSON)
+          </a>
+          <template x-for="a in (attachments || [])" :key="'dl-' + a.id">
+            <a :href="'/api/v1/download/attachment/' + a.id"
+               class="flex items-center justify-between text-sm text-blue-400 hover:text-blue-300 hover:bg-gray-800 rounded-lg px-3 py-2 transition-colors">
+              <span class="truncate" x-text="a.filename"></span>
+              <span class="text-xs text-gray-600 ml-2" x-text="formatSize(a.file_size)"></span>
+            </a>
+          </template>
+        </div>
       </section>
 
       <!-- Status Update -->
@@ -182,14 +331,25 @@
             <h4 class="text-xs font-medium text-gray-500 mb-2">ATTACHMENTS</h4>
             <ul class="text-sm text-gray-400 space-y-1">
               <template x-for="a in selectedReport.attachments" :key="a.id">
-                <li class="flex items-center gap-2">
-                  <span x-text="a.filename"></span>
-                  <span class="text-gray-600" x-text="'(' + formatSize(a.file_size) + ')'"></span>
+                <li class="flex items-center justify-between gap-2 py-1">
+                  <span>
+                    <span x-text="a.filename"></span>
+                    <span class="text-gray-600 ml-1" x-text="'(' + formatSize(a.file_size) + ')'"></span>
+                  </span>
+                  <a :href="'/api/v1/download/attachment/' + a.id"
+                     class="text-xs text-blue-400 hover:text-blue-300 shrink-0">⬇</a>
                 </li>
               </template>
             </ul>
           </div>
         </template>
+        <!-- Download dump info from modal -->
+        <div x-show="selectedReport">
+          <a :href="'/api/v1/download/dump/' + selectedReport.id'"
+             class="text-xs text-blue-400 hover:text-blue-300">
+            ⬇ Download Dump Info (JSON)
+          </a>
+        </div>
       </div>
     </div>
   </div>
@@ -202,6 +362,8 @@
       reports: [],
       latestReport: null,
       selectedReport: null,
+      attachments: [],
+      dumpParsed: [],
       newStatus: 'open',
       resolvedVersion: '',
       statusMsg: '',
@@ -222,11 +384,32 @@
             this.latestReport = this.reports[0] || null;
             this.newStatus = data.status || 'open';
             this.resolvedVersion = data.resolved_version || '';
+            await this.loadAttachmentsAndDump();
           } else {
             this.group = null;
           }
         } catch (err) {
           console.error('Failed to load group:', err);
+        }
+      },
+
+      async loadAttachmentsAndDump() {
+        // Load attachments for the latest report
+        if (this.latestReport) {
+          try {
+            const res = await fetch('/api/v1/download/report/' + this.latestReport.id);
+            const data = await res.json();
+            this.attachments = data.attachments || [];
+
+            // Parse dump_info from the report
+            if (data.dump_info) {
+              try {
+                this.dumpParsed = JSON.parse(data.dump_info);
+              } catch {
+                this.dumpParsed = [];
+              }
+            }
+          } catch {}
         }
       },
 

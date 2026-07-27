@@ -131,7 +131,8 @@ export function createReport(
   input: CrashReportInput,
   groupId: number | null,
   clientIp: string,
-  now: string
+  now: string,
+  dumpInfo: string = ''
 ): CrashReport {
   const customData =
     typeof input.custom_data === 'object'
@@ -143,8 +144,8 @@ export function createReport(
       group_id, exception_type, exception_message, stack_trace, log_text,
       unity_version, platform, device_model, os_version, gpu_name, cpu_name,
       memory_mb, app_version, bundle_id, scene_name, custom_data,
-      client_ip, client_timestamp, created_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      client_ip, client_timestamp, created_at, dump_info
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const result = stmt.run(
@@ -166,7 +167,8 @@ export function createReport(
     customData,
     clientIp,
     input.client_timestamp ?? now,
-    now
+    now,
+    dumpInfo
   );
 
   return getReportById(Number(result.lastInsertRowid))!;
@@ -257,6 +259,12 @@ export function getAttachmentsForReport(reportId: number): CrashAttachment[] {
   return getDb()
     .prepare('SELECT * FROM crash_attachments WHERE crash_report_id = ? ORDER BY created_at')
     .all(reportId) as CrashAttachment[];
+}
+
+export function getAttachmentById(id: number): CrashAttachment | undefined {
+  return getDb()
+    .prepare('SELECT * FROM crash_attachments WHERE id = ?')
+    .get(id) as CrashAttachment | undefined;
 }
 
 // ----- Symbols -----
