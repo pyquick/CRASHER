@@ -8,6 +8,9 @@ import type {
   CrashGroupQuery,
   DashboardStats,
   Symbol,
+  PlayerFeedback,
+  PlayerFeedbackInput,
+  FeedbackAttachment,
 } from './model.js';
 
 // ----- Crash Groups -----
@@ -312,7 +315,104 @@ export function getAttachmentById(id: number): CrashAttachment | undefined {
     .get(id) as CrashAttachment | undefined;
 }
 
-// ----- Symbols -----
+// ----- Player Feedback -----
+
+export function createFeedback(
+  input: PlayerFeedbackInput,
+  clientIp: string,
+  now: string
+): PlayerFeedback {
+  const customData = typeof input.custom_data === 'object'
+    ? JSON.stringify(input.custom_data)
+    : (input.custom_data ?? '');
+  const result = getDb().prepare(`
+    INSERT INTO player_feedback (
+      title, description, category, severity, player_id, player_name, contact,
+      app_version, platform, device_model, scene_name, custom_data,
+      client_ip, client_timestamp, created_at, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(
+    input.title,
+    input.description,
+    input.category ?? 'bug',
+    input.severity ?? 'normal',
+    input.player_id ?? '',
+    input.player_name ?? '',
+    input.contact ?? '',
+    input.app_version ?? '',
+    input.platform ?? '',
+    input.device_model ?? '',
+    input.scene_name ?? '',
+    customData,
+    clientIp,
+    input.client_timestamp ?? now,
+    now,
+    now
+  );
+  return getFeedbackById(Number(result.lastInsertRowid))!;
+}
+
+export function getFeedbackById(id: number): PlayerFeedback | undefined {
+  return getDb().prepare('SELECT * FROM player_feedback WHERE id = ?').get(id) as PlayerFeedback | undefined;
+}
+
+export function listFeedback(params: {
+  page?: number;
+  page_size?: number;
+  status?: string;
+  category?: string;
+  search?: string;
+}): PaginatedResult<PlayerFeedback> {
+  const page = params.page ?? 1;
+  const pageSize = params.page_size ?? 20;
+  const conditions: string[] = [];
+  const values: unknown[] = [];
+  if (params.status) { conditions.push('status = ?'); values.push(params.status); }
+  if (params.category) { conditions.push('category = ?'); values.push(params.category); }
+  if (params.search) {
+    conditions.push('(title LIKE ? OR description LIKE ? OR player_name LIKE ?)');
+    const search = `%${params.search}%`;
+    values.push(search, search, search);
+  }
+  const where = conditions.length ? `WHERE ${conditions.join(' AND ')}` : '';
+  const total = (getDb().prepare(`SELECT COUNT(*) AS total FROM player_feedback ${where}`).get(...values) as { total: number }).total;
+  const items = getDb().prepare(
+    `SELECT * FROM player_feedback ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
+  ).all(...values, pageSize, (page - 1) * pageSize) as PlayerFeedback[];
+  return { items, total, page, page_size: pageSize, total_pages: Math.ceil(total / pageSize) };
+}
+
+export function updateFeedbackStatus(id: number, status: string): boolean {
+  const result = getDb().prepare(
+    "UPDATE player_feedback SET status = ?, updated_at = datetime('now') WHERE id = ?"
+  ).run(status, id);
+  return result.changes > 0;
+}
+
+export function createFeedbackAttachment(
+  feedbackId: number,
+  filename: string,
+  contentType: string,
+  fileSize: number,
+  filePath: string
+): FeedbackAttachment {
+  const result = getDb().prepare(`
+    INSERT INTO feedback_attachments (feedback_id, filename, content_type, file_size, file_path)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(feedbackId, filename, contentType, fileSize, filePath);
+  return getDb().prepare('SELECT * FROM feedback_attachments WHERE id = ?')
+    .get(Number(result.lastInsertRowid)) as FeedbackAttachment;
+}
+
+export function getFeedbackAttachments(feedbackId: number): FeedbackAttachment[] {
+  return getDb().prepare('SELECT * FROM feedback_attachments WHERE feedback_id = ? ORDER BY created_at')
+    .all(feedbackId) as FeedbackAttachment[];
+}
+
+export function getFeedbackAttachmentById(id: number): FeedbackAttachment | undefined {
+  return getDb().prepare('SELECT * FROM feedback_attachments WHERE id = ?').get(id) as FeedbackAttachment | undefined;
+}
+
 
 export function createSymbol(
   platform: string,

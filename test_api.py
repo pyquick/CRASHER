@@ -123,6 +123,27 @@ r = requests.post(f"{API}/crash-report", files={
 }, timeout=5)
 check("POST /crash-report (multipart) → 201", r.status_code == 201)
 
+# 2f. Player-authored feedback (public endpoint)
+r = requests.post(f"{API}/player-feedback", json={
+    "title": "Cannot equip the new sword",
+    "description": "The Equip button does nothing after I buy the sword from the shop.",
+    "category": "bug",
+    "severity": "high",
+    "player_id": "player-123",
+    "player_name": "Test Player",
+    "app_version": "2.0.0",
+    "platform": "Android",
+    "device_model": "Test Device",
+    "scene_name": "Shop",
+}, timeout=5)
+check("POST /player-feedback → 201", r.status_code == 201)
+feedback_data = r.json()
+check("player feedback has id", "id" in feedback_data)
+feedback_id = feedback_data.get("id")
+
+r = requests.post(f"{API}/player-feedback", json={"title": "Missing description"}, timeout=5)
+check("POST /player-feedback (missing description) → 400", r.status_code == 400)
+
 # ──────────────────────────────────────────────────
 # 3. Protected routes — no auth (should fail)
 # ──────────────────────────────────────────────────
@@ -259,6 +280,22 @@ r = s2.get(f"{API}/versions", timeout=5)
 check("GET /versions → 200", r.status_code == 200)
 check("is array", isinstance(r.json(), list))
 
+# 5l. Player feedback management
+r = s2.get(f"{API}/player-feedback", timeout=5)
+check("GET /player-feedback → 200", r.status_code == 200)
+check("player feedback list contains item", any(item["id"] == feedback_id for item in r.json().get("items", [])))
+
+r = s2.get(f"{API}/player-feedback/{feedback_id}", timeout=5)
+check(f"GET /player-feedback/{feedback_id} → 200", r.status_code == 200)
+check("player feedback has description", r.json().get("description") == "The Equip button does nothing after I buy the sword from the shop.")
+
+r = s2.put(f"{API}/player-feedback/{feedback_id}/status", json={"status": "in_progress"}, timeout=5)
+check(f"PUT /player-feedback/{feedback_id}/status → 200", r.status_code == 200)
+
+r = s2.get(f"{API}/player-feedback/{feedback_id}", timeout=5)
+check("player feedback status updated", r.json().get("status") == "in_progress")
+
+
 # ──────────────────────────────────────────────────
 # 6. Downloads (authenticated)
 # ──────────────────────────────────────────────────
@@ -328,11 +365,15 @@ check("GET /web/crashes → 200 (html)", r.status_code == 200 and "html" in r.he
 r = s2.get(f"{WEB}/crashes/{gid}", timeout=5)
 check(f"GET /web/crashes/{gid} → 200 (html)", r.status_code == 200 and "html" in r.headers.get("Content-Type", ""))
 
-# 8d. Symbols page
+# 8d. Player feedback page
+r = s2.get(f"{WEB}/feedback", timeout=5)
+check("GET /web/feedback → 200 (html)", r.status_code == 200 and "html" in r.headers.get("Content-Type", ""))
+
+# 8e. Symbols page
 r = s2.get(f"{WEB}/symbols", timeout=5)
 check("GET /web/symbols → 200 (html)", r.status_code == 200 and "html" in r.headers.get("Content-Type", ""))
 
-# 8e. API docs
+# 8f. API docs
 r = s2.get(f"{WEB}/api-doc", timeout=5)
 check("GET /web/api-doc → 200 (html)", r.status_code == 200 and "html" in r.headers.get("Content-Type", ""))
 

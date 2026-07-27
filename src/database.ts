@@ -115,6 +115,37 @@ function runMigrations(db: Database.Database): void {
       uploaded_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS player_feedback (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      title TEXT NOT NULL,
+      description TEXT NOT NULL,
+      category TEXT NOT NULL DEFAULT 'bug' CHECK(category IN ('bug','suggestion','other')),
+      severity TEXT NOT NULL DEFAULT 'normal' CHECK(severity IN ('low','normal','high','critical')),
+      status TEXT NOT NULL DEFAULT 'new' CHECK(status IN ('new','in_progress','resolved','closed')),
+      player_id TEXT DEFAULT '',
+      player_name TEXT DEFAULT '',
+      contact TEXT DEFAULT '',
+      app_version TEXT DEFAULT '',
+      platform TEXT DEFAULT '',
+      device_model TEXT DEFAULT '',
+      scene_name TEXT DEFAULT '',
+      custom_data TEXT DEFAULT '',
+      client_ip TEXT DEFAULT '',
+      client_timestamp TEXT,
+      created_at TEXT DEFAULT (datetime('now')),
+      updated_at TEXT DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS feedback_attachments (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      feedback_id INTEGER NOT NULL REFERENCES player_feedback(id) ON DELETE CASCADE,
+      filename TEXT NOT NULL,
+      content_type TEXT DEFAULT '',
+      file_size INTEGER DEFAULT 0,
+      file_path TEXT NOT NULL,
+      created_at TEXT DEFAULT (datetime('now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_crash_groups_hash ON crash_groups(crash_hash);
     CREATE INDEX IF NOT EXISTS idx_crash_groups_status ON crash_groups(status);
     CREATE INDEX IF NOT EXISTS idx_crash_groups_last_seen ON crash_groups(last_seen);
@@ -125,6 +156,9 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_crash_attachments_report_id ON crash_attachments(crash_report_id);
     CREATE INDEX IF NOT EXISTS idx_symbols_build_guid ON symbols(build_guid);
     CREATE INDEX IF NOT EXISTS idx_crash_reports_runtime ON crash_reports(runtime);
+    CREATE INDEX IF NOT EXISTS idx_player_feedback_status ON player_feedback(status);
+    CREATE INDEX IF NOT EXISTS idx_player_feedback_created_at ON player_feedback(created_at);
+    CREATE INDEX IF NOT EXISTS idx_feedback_attachments_feedback_id ON feedback_attachments(feedback_id);
   `);
 
   // v2 migration: add dump_info column

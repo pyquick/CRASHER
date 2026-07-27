@@ -31,6 +31,7 @@ function controllerToRoute(name: string): string {
     'dashboard.html': '/web/',
     'crash_list.html': '/web/crashes',
     'crash_detail.html': '/web/crashes',
+    'feedback_list.html': '/web/feedback',
     'symbol_list.html': '/web/symbols',
   };
   return map[name] ?? '/web/';
@@ -113,6 +114,14 @@ router.get('/crashes/:id', requireAuth, (_req: Request, res: Response): void => 
 });
 
 /**
+ * GET /web/feedback
+ * Player-submitted feedback management page.
+ */
+router.get('/feedback', requireAuth, (_req: Request, res: Response): void => {
+  res.type('html').send(renderTemplate('feedback_list.html', 'Player Feedback - Crash Report Server'));
+});
+
+/**
  * GET /web/symbols
  * Symbol management page.
  */
@@ -162,13 +171,14 @@ router.get('/api-doc', (_req: Request, res: Response): void => {
       <h2 class="text-lg font-semibold mb-3">📑 目录</h2>
       <ul class="grid grid-cols-1 sm:grid-cols-2 gap-1 text-sm text-gray-400">
         <li><a href="#generic" class="toc-link">1. 通用崩溃上报</a></li>
-        <li><a href="#unity" class="toc-link">2. Unity 专属端点</a></li>
-        <li><a href="#groups" class="toc-link">3. 崩溃分组</a></li>
-        <li><a href="#reports" class="toc-link">4. 崩溃报告</a></li>
-        <li><a href="#downloads" class="toc-link">5. 文件下载</a></li>
-        <li><a href="#symbols" class="toc-link">6. 符号管理</a></li>
-        <li><a href="#dump" class="toc-link">7. Dump 解析</a></li>
-        <li><a href="#stats" class="toc-link">8. 统计与工具</a></li>
+        <li><a href="#feedback" class="toc-link">2. 玩家主动反馈</a></li>
+        <li><a href="#unity" class="toc-link">3. Unity 专属端点</a></li>
+        <li><a href="#groups" class="toc-link">4. 崩溃分组</a></li>
+        <li><a href="#reports" class="toc-link">5. 崩溃报告</a></li>
+        <li><a href="#downloads" class="toc-link">6. 文件下载</a></li>
+        <li><a href="#symbols" class="toc-link">7. 符号管理</a></li>
+        <li><a href="#dump" class="toc-link">8. Dump 解析</a></li>
+        <li><a href="#stats" class="toc-link">9. 统计与工具</a></li>
       </ul>
     </div>
 
@@ -311,8 +321,90 @@ router.get('/api-doc', (_req: Request, res: Response): void => {
       <p class="text-xs text-gray-500 mt-2">相同异常类型 + 堆栈 + 运行时的崩溃自动归入同一分组 (SHA256 hash)。</p>
     </section>
 
+
     <!-- ============================================================ -->
-    <!-- 2. Unity Endpoint -->
+    <!-- 2. Player Feedback -->
+    <!-- ============================================================ -->
+    <section id="feedback" class="section-card mb-6">
+      <h2 class="text-xl font-semibold mb-4">
+        <span class="method-badge bg-green-600 text-white mr-3">POST</span>
+        /api/v1/player-feedback
+      </h2>
+      <p class="text-gray-400 mb-4">提交玩家主动填写的 Bug、建议或其他反馈。该端点与自动崩溃上报分开存储，不会参与崩溃分组。支持 JSON，或使用 multipart/form-data 上传截图和日志附件。</p>
+
+      <h3 class="font-medium mb-2">📥 请求字段</h3>
+      <table class="w-full text-sm border-collapse mb-4">
+        <thead><tr class="border-b border-gray-700 text-gray-500 text-xs uppercase"><th class="text-left py-2 pr-4">字段</th><th class="text-left py-2 pr-4">类型</th><th class="text-left py-2">说明</th></tr></thead>
+        <tbody class="text-gray-400">
+          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><strong class="text-gray-200">title</strong> <span class="field-required">*必填</span></td><td class="pr-4"><code>string</code></td><td>反馈标题，最长 200 个字符</td></tr>
+          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><strong class="text-gray-200">description</strong> <span class="field-required">*必填</span></td><td class="pr-4"><code>string</code></td><td>玩家描述的复现步骤、期望结果和实际结果</td></tr>
+          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">category</td><td class="pr-4"><code>string</code></td><td><code>bug</code>（默认）、<code>suggestion</code> 或 <code>other</code></td></tr>
+          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">severity</td><td class="pr-4"><code>string</code></td><td><code>low</code>、<code>normal</code>（默认）、<code>high</code> 或 <code>critical</code></td></tr>
+          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">player_id / player_name / contact</td><td class="pr-4"><code>string</code></td><td>可选的玩家标识、显示名称和回访联系方式</td></tr>
+          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">app_version / platform / device_model / scene_name</td><td class="pr-4"><code>string</code></td><td>建议由 Unity 自动填充的版本和设备上下文</td></tr>
+          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">client_timestamp</td><td class="pr-4"><code>string</code></td><td>玩家提交时的 ISO 8601 时间戳</td></tr>
+          <tr><td class="py-1.5 pr-4">custom_data</td><td class="pr-4"><code>object | string</code></td><td>任意附加 JSON 数据</td></tr>
+        </tbody>
+      </table>
+
+      <h3 class="font-medium mb-2 mt-4">📋 JSON 示例</h3>
+      <pre><code>curl -X POST http://localhost:8080/api/v1/player-feedback \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "title": "购买后无法装备新武器",
+    "description": "在商店购买武器后，点击装备按钮没有任何反应。",
+    "category": "bug",
+    "severity": "high",
+    "player_id": "player-123",
+    "app_version": "2.0.0",
+    "platform": "Android",
+    "device_model": "Samsung Galaxy S24",
+    "scene_name": "Shop"
+  }'</code></pre>
+
+      <h3 class="font-medium mb-2 mt-4">📎 上传截图或日志</h3>
+      <p class="text-sm text-gray-400 mb-2">使用 <code>multipart/form-data</code> 时，将完整 JSON 放入 <code>feedback</code> 字段；可重复提交 <code>attachments</code> 文件字段，最多 10 个文件，单文件大小受 <code>MAX_ATTACHMENT_SIZE</code> 限制。</p>
+      <pre><code>curl -X POST http://localhost:8080/api/v1/player-feedback \\
+  -F 'feedback={"title":"任务卡住","description":"完成对话后无法继续","category":"bug"};type=application/json' \\
+  -F "attachments=@screenshot.png" \\
+  -F "attachments=@Player.log"</code></pre>
+
+      <h3 class="font-medium mb-2 mt-4">📤 响应 (201 Created)</h3>
+      <pre><code>{
+  "id": 12,
+  "status": "new",
+  "attachments": [{ "id": 8, "filename": "screenshot.png", "file_size": 243901 }]
+}</code></pre>
+
+      <div class="mt-6 pt-4 border-t border-gray-700">
+        <h2 class="text-lg font-semibold mb-3"><span class="method-badge bg-blue-600 text-white mr-3">GET</span>/api/v1/player-feedback</h2>
+        <p class="text-gray-400 mb-3">获取玩家反馈列表。该管理接口需要登录后的会话 Cookie。</p>
+        <p class="text-sm text-gray-400 mb-2">查询参数：<code>page</code>（默认 1）、<code>page_size</code>（默认 20，最大 100）、<code>status</code>（<code>new</code>、<code>in_progress</code>、<code>resolved</code>、<code>closed</code>）、<code>category</code> 和 <code>search</code>（标题、描述或玩家名称）。</p>
+        <pre><code>curl http://localhost:8080/api/v1/player-feedback?status=new&amp;category=bug</code></pre>
+      </div>
+
+      <div class="mt-6 pt-4 border-t border-gray-700">
+        <h2 class="text-lg font-semibold mb-3"><span class="method-badge bg-blue-600 text-white mr-3">GET</span>/api/v1/player-feedback/:id</h2>
+        <p class="text-gray-400 mb-3">获取单条反馈详情及其附件元数据（需登录）。</p>
+        <pre><code>curl http://localhost:8080/api/v1/player-feedback/12</code></pre>
+      </div>
+
+      <div class="mt-6 pt-4 border-t border-gray-700">
+        <h2 class="text-lg font-semibold mb-3"><span class="method-badge bg-yellow-600 text-white mr-3">PUT</span>/api/v1/player-feedback/:id/status</h2>
+        <p class="text-gray-400 mb-3">更新反馈处理状态（需登录）。</p>
+        <pre><code>curl -X PUT http://localhost:8080/api/v1/player-feedback/12/status \\
+  -H "Content-Type: application/json" \\
+  -d '{"status":"in_progress"}'</code></pre>
+        <p class="text-xs text-gray-500 mt-2"><code>status</code> 可选值：<code>new</code>、<code>in_progress</code>、<code>resolved</code>、<code>closed</code>。</p>
+      </div>
+
+      <div class="mt-6 pt-4 border-t border-gray-700">
+        <h2 class="text-lg font-semibold mb-3"><span class="method-badge bg-blue-600 text-white mr-3">GET</span>/api/v1/download/player-feedback/attachment/:id</h2>
+        <p class="text-gray-400">下载玩家反馈上传的单个附件（需登录）。</p>
+      </div>
+    </section>
+
+
     <!-- ============================================================ -->
     <section id="unity" class="section-card mb-6">
       <h2 class="text-xl font-semibold mb-4">

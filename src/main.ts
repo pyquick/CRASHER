@@ -5,6 +5,7 @@ import { config } from './config.js';
 import { initDb, closeDb } from './database.js';
 import { requestLogger, errorHandler, requireApiAuth } from './middleware.js';
 import crashReportHandler from './handler/crash_report.js';
+import feedbackHandler from './handler/feedback.js';
 import symbolHandler from './handler/symbol.js';
 import unityHandler from './handler/unity.js';
 import queryHandler from './handler/query.js';
@@ -43,6 +44,7 @@ app.set('trust proxy', true);
 
 // Public endpoints (no auth required — clients submit crash reports here)
 app.use('/api/v1', crashReportHandler);
+app.use('/api/v1', feedbackHandler);
 app.use('/api/v1', unityHandler);
 
 // Protected endpoints (auth required for viewing data)

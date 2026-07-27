@@ -80,9 +80,55 @@ router.get('/versions', (_req, res) => {
   res.json((getDb().prepare("SELECT DISTINCT app_version FROM crash_reports WHERE app_version != '' ORDER BY app_version DESC LIMIT 50").all() as any[]).map(r => r.app_version));
 });
 
-// ── Download routes (protected — require login to download data) ──
-
 import { createReadStream, existsSync, unlinkSync } from 'fs';
+
+// ── Player feedback management routes ──
+
+router.get('/player-feedback', (req, res) => {
+  const q = req.query;
+  res.json(store.listFeedback({
+    page: parseInt(String(q.page), 10) || 1,
+    page_size: Math.min(parseInt(String(q.page_size), 10) || 20, 100),
+    status: q.status as string | undefined,
+    category: q.category as string | undefined,
+    search: q.search as string | undefined,
+  }));
+});
+
+router.get('/player-feedback/:id', (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  if (isNaN(id)) { res.status(400).json({ error: 'Invalid ID' }); return; }
+  const feedback = store.getFeedbackById(id);
+  if (!feedback) { res.status(404).json({ error: 'Not found' }); return; }
+  res.json({ ...feedback, attachments: store.getFeedbackAttachments(id) });
+});
+
+router.put('/player-feedback/:id/status', (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  const { status } = req.body ?? {};
+  if (isNaN(id)) { res.status(400).json({ error: 'Invalid ID' }); return; }
+  if (!['new', 'in_progress', 'resolved', 'closed'].includes(status)) {
+    res.status(400).json({ error: 'Invalid status', message: 'Status must be: new, in_progress, resolved, closed' });
+    return;
+  }
+  if (!store.updateFeedbackStatus(id, status)) { res.status(404).json({ error: 'Feedback not found' }); return; }
+  res.json({ success: true });
+});
+
+router.get('/download/player-feedback/attachment/:id', (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  if (isNaN(id)) { res.status(400).json({ error: 'Invalid ID' }); return; }
+  const attachment = store.getFeedbackAttachmentById(id);
+  if (!attachment) { res.status(404).json({ error: 'Attachment not found' }); return; }
+  if (!existsSync(attachment.file_path)) { res.status(404).json({ error: 'File not on disk' }); return; }
+  const safeFilename = attachment.filename.replace(/[^\w.\-]/g, '_');
+  res.setHeader('Content-Disposition', `attachment; filename="${safeFilename}"`);
+  res.setHeader('Content-Type', attachment.content_type || 'application/octet-stream');
+  res.setHeader('Content-Length', attachment.file_size);
+  createReadStream(attachment.file_path).pipe(res);
+});
+
+// ── Download routes (protected — require login to download data) ──
 
 router.get('/download/attachment/:id', (req, res) => {
   const id = parseInt(String(req.params.id), 10);

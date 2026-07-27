@@ -1,0 +1,80 @@
+<div x-data="feedbackList" x-init="init()">
+  <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-6">
+    <div>
+      <h1 class="text-xl font-semibold">💬 Player Feedback</h1>
+      <p class="text-sm text-gray-500 mt-1">Player-authored bugs, suggestions, and questions.</p>
+    </div>
+    <span class="text-sm text-gray-500" x-show="total > 0"><span class="text-gray-200" x-text="total"></span> submissions</span>
+  </div>
+
+  <div class="bg-surface-900 rounded-xl p-4 mb-6 border border-gray-800">
+    <div class="flex flex-wrap gap-3 items-end">
+      <div class="flex-1 min-w-[220px]">
+        <label class="block text-xs text-gray-500 mb-1">Search</label>
+        <input type="text" x-model="filters.search" @keyup.enter="load()" placeholder="Title, description, or player..."
+               class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500">
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Category</label>
+        <select x-model="filters.category" @change="load()" class="bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500">
+          <option value="">All</option><option value="bug">Bug</option><option value="suggestion">Suggestion</option><option value="other">Other</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Status</label>
+        <select x-model="filters.status" @change="load()" class="bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500">
+          <option value="">All</option><option value="new">New</option><option value="in_progress">In progress</option><option value="resolved">Resolved</option><option value="closed">Closed</option>
+        </select>
+      </div>
+      <button @click="load()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition-colors">Filter</button>
+    </div>
+  </div>
+
+  <div class="bg-surface-900 rounded-xl border border-gray-800 overflow-hidden" :class="{ loading }">
+    <table class="w-full text-sm" x-show="items.length > 0">
+      <thead><tr class="border-b border-gray-800 text-gray-500 text-xs uppercase"><th class="text-left px-4 py-3">Feedback</th><th class="text-left px-4 py-3 hidden md:table-cell">Player / Device</th><th class="text-left px-4 py-3 hidden sm:table-cell">Submitted</th><th class="text-left px-4 py-3">Status</th></tr></thead>
+      <tbody>
+        <template x-for="item in items" :key="item.id">
+          <tr class="border-b border-gray-800/50 hover:bg-gray-800/30 cursor-pointer transition-colors" @click="open(item.id)">
+            <td class="px-4 py-3"><div class="flex items-center gap-2"><span class="text-xs px-2 py-0.5 rounded" :class="categoryClass(item.category)" x-text="item.category"></span><p class="font-medium text-gray-200" x-text="item.title"></p></div><p class="text-xs text-gray-500 mt-1 truncate max-w-xl" x-text="item.description"></p></td>
+            <td class="px-4 py-3 text-gray-400 hidden md:table-cell"><p x-text="item.player_name || item.player_id || '-' "></p><p class="text-xs text-gray-600 mt-1" x-text="[item.platform, item.device_model, item.app_version].filter(Boolean).join(' · ') || '-' "></p></td>
+            <td class="px-4 py-3 text-gray-400 hidden sm:table-cell" x-text="formatDate(item.created_at)"></td>
+            <td class="px-4 py-3"><span class="text-xs px-2 py-0.5 rounded" :class="statusClass(item.status)" x-text="item.status.replace('_', ' ')"></span></td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+    <div x-show="!loading && items.length === 0" class="text-center py-16 text-gray-600">No player feedback found</div>
+    <div x-show="loading" class="text-center py-16"><div class="inline-block w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div></div>
+  </div>
+
+  <div class="flex items-center justify-between mt-4 text-sm" x-show="total > 0"><p class="text-gray-500">Page <span class="text-gray-300" x-text="page"></span> of <span class="text-gray-300" x-text="total_pages"></span></p><div class="flex gap-2"><button @click="goTo(page - 1)" :disabled="page <= 1" class="px-3 py-1.5 rounded-lg bg-surface-800 border border-gray-700 disabled:opacity-30">← Prev</button><button @click="goTo(page + 1)" :disabled="page >= total_pages" class="px-3 py-1.5 rounded-lg bg-surface-800 border border-gray-700 disabled:opacity-30">Next →</button></div></div>
+
+  <div x-show="selected" x-cloak class="fixed inset-0 z-[60] flex items-center justify-center p-4" @keydown.escape.window="selected = null">
+    <div class="absolute inset-0 bg-black/70" @click="selected = null"></div>
+    <div class="relative w-full max-w-3xl max-h-[90vh] overflow-y-auto bg-surface-900 border border-gray-700 rounded-xl p-6" x-show="selected" x-transition>
+      <div class="flex justify-between gap-4 mb-5"><div><div class="flex items-center gap-2 mb-2"><span class="text-xs px-2 py-0.5 rounded" :class="categoryClass(selected?.category)" x-text="selected?.category"></span><span class="text-xs px-2 py-0.5 rounded" :class="severityClass(selected?.severity)" x-text="selected?.severity"></span></div><h2 class="text-xl font-semibold" x-text="selected?.title"></h2></div><button @click="selected = null" class="text-gray-500 hover:text-gray-200 text-xl">×</button></div>
+      <section class="bg-surface-950 rounded-lg p-4 mb-4"><h3 class="text-xs text-gray-500 uppercase mb-2">Description</h3><p class="text-gray-300 whitespace-pre-wrap" x-text="selected?.description"></p></section>
+      <div class="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm mb-5"><template x-for="field in detailFields()" :key="field.label"><div class="bg-surface-950 rounded-lg p-3" x-show="field.value"><p class="text-xs text-gray-500" x-text="field.label"></p><p class="text-gray-300 break-all" x-text="field.value"></p></div></template></div>
+      <section x-show="selected?.attachments?.length" class="mb-5"><h3 class="text-sm font-medium mb-2">Attachments</h3><template x-for="attachment in selected?.attachments || []" :key="attachment.id"><a :href="'/api/v1/download/player-feedback/attachment/' + attachment.id" class="block bg-surface-950 rounded-lg px-3 py-2 text-sm text-blue-400 hover:text-blue-300 mb-2"><span x-text="attachment.filename"></span><span class="text-gray-600 ml-2" x-text="formatSize(attachment.file_size)"></span></a></template></section>
+      <div class="flex items-center gap-3 border-t border-gray-800 pt-4"><label class="text-sm text-gray-400">Status</label><select x-model="nextStatus" class="bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm"><option value="new">New</option><option value="in_progress">In progress</option><option value="resolved">Resolved</option><option value="closed">Closed</option></select><button @click="saveStatus()" :disabled="saving" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-sm"><span x-text="saving ? 'Saving…' : 'Save status'"></span></button></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('alpine:init', () => {
+    Alpine.data('feedbackList', () => ({
+      items: [], total: 0, page: 1, page_size: 20, total_pages: 0, loading: false, selected: null, nextStatus: 'new', saving: false,
+      filters: { search: '', status: '', category: '' },
+      async init() { await this.load(); },
+      async load() { this.loading = true; try { const p = new URLSearchParams({ page: this.page, page_size: this.page_size }); for (const [key, value] of Object.entries(this.filters)) if (value) p.set(key, value); const response = await fetch('/api/v1/player-feedback?' + p); const data = await response.json(); this.items = data.items; this.total = data.total; this.page = data.page; this.total_pages = data.total_pages; } finally { this.loading = false; } },
+      async open(id) { const response = await fetch('/api/v1/player-feedback/' + id); if (!response.ok) return; this.selected = await response.json(); this.nextStatus = this.selected.status; },
+      async saveStatus() { if (!this.selected) return; this.saving = true; try { const response = await fetch('/api/v1/player-feedback/' + this.selected.id + '/status', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: this.nextStatus }) }); if (!response.ok) throw new Error('Could not save status'); this.selected.status = this.nextStatus; await this.load(); } catch (error) { alert(error.message); } finally { this.saving = false; } },
+      goTo(page) { if (page < 1 || page > this.total_pages) return; this.page = page; this.load(); },
+      formatDate(value) { return value ? new Date(value + 'Z').toLocaleString() : '-'; }, formatSize(value) { if (value < 1024) return value + ' B'; if (value < 1048576) return (value / 1024).toFixed(1) + ' KB'; return (value / 1048576).toFixed(1) + ' MB'; },
+      categoryClass(value) { return { bug: 'bg-red-900/50 text-red-300', suggestion: 'bg-blue-900/50 text-blue-300', other: 'bg-gray-700 text-gray-300' }[value] || 'bg-gray-700 text-gray-300'; }, severityClass(value) { return { critical: 'bg-red-900/50 text-red-300', high: 'bg-orange-900/50 text-orange-300', normal: 'bg-blue-900/50 text-blue-300', low: 'bg-gray-700 text-gray-300' }[value] || 'bg-gray-700 text-gray-300'; }, statusClass(value) { return { new: 'bg-blue-900/50 text-blue-300', in_progress: 'bg-yellow-900/50 text-yellow-300', resolved: 'bg-green-900/50 text-green-300', closed: 'bg-gray-700 text-gray-300' }[value] || 'bg-gray-700 text-gray-300'; },
+      detailFields() { if (!this.selected) return []; return [{ label: 'Player', value: this.selected.player_name || this.selected.player_id }, { label: 'Contact', value: this.selected.contact }, { label: 'Version', value: this.selected.app_version }, { label: 'Platform / device', value: [this.selected.platform, this.selected.device_model].filter(Boolean).join(' · ') }, { label: 'Scene', value: this.selected.scene_name }, { label: 'Submitted', value: this.formatDate(this.selected.created_at) }]; }
+    }));
+  });
+</script>

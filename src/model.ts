@@ -1,3 +1,50 @@
+export interface PlayerFeedback {
+  id: number;
+  title: string;
+  description: string;
+  category: 'bug' | 'suggestion' | 'other';
+  severity: 'low' | 'normal' | 'high' | 'critical';
+  status: 'new' | 'in_progress' | 'resolved' | 'closed';
+  player_id: string;
+  player_name: string;
+  contact: string;
+  app_version: string;
+  platform: string;
+  device_model: string;
+  scene_name: string;
+  custom_data: string;
+  client_ip: string;
+  client_timestamp: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface PlayerFeedbackInput {
+  title: string;
+  description: string;
+  category?: 'bug' | 'suggestion' | 'other';
+  severity?: 'low' | 'normal' | 'high' | 'critical';
+  player_id?: string;
+  player_name?: string;
+  contact?: string;
+  app_version?: string;
+  platform?: string;
+  device_model?: string;
+  scene_name?: string;
+  custom_data?: Record<string, unknown> | string;
+  client_timestamp?: string;
+}
+
+export interface FeedbackAttachment {
+  id: number;
+  feedback_id: number;
+  filename: string;
+  content_type: string;
+  file_size: number;
+  file_path: string;
+  created_at: string;
+}
+
 export interface CrashGroup {
   id: number;
   crash_hash: string;

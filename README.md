@@ -1052,6 +1052,44 @@ var customData = new Dictionary<string, object>
 
 ---
 
+## 玩家主动反馈 API
+
+玩家在游戏内手动填写的 Bug、建议或其他反馈应提交到公开接口：
+
+```http
+POST /api/v1/player-feedback
+Content-Type: application/json
+```
+
+必填字段为 `title` 和 `description`；可选字段包括：
+
+- `category`：`bug`（默认）、`suggestion` 或 `other`
+- `severity`：`low`、`normal`（默认）、`high` 或 `critical`
+- `player_id`、`player_name`、`contact`
+- `app_version`、`platform`、`device_model`、`scene_name`
+- `custom_data`、`client_timestamp`
+
+```json
+{
+  "title": "购买后无法装备新武器",
+  "description": "在商店购买武器后，点击装备按钮没有任何反应。",
+  "category": "bug",
+  "severity": "high",
+  "player_id": "player-123",
+  "app_version": "2.0.0",
+  "platform": "Android",
+  "scene_name": "Shop"
+}
+```
+
+上传截图或日志时，使用 `multipart/form-data`，将 JSON 放入 `feedback` 字段，并可重复附加 `attachments` 文件字段（最多 10 个）。成功时返回 `201` 及反馈 `id`。Unity 客户端可复用已有的 `UnityWebRequest` 提交方式，将玩家填写的标题和描述发送到该地址；建议同时附带 `Application.version`、`Application.platform`、设备型号、当前场景和玩家 ID。管理端接口（需登录）包括：
+
+- `GET /api/v1/player-feedback`：分页、按 `status`、`category`、`search` 筛选
+- `GET /api/v1/player-feedback/:id`：查看详情及附件
+- `PUT /api/v1/player-feedback/:id/status`：更新为 `new`、`in_progress`、`resolved` 或 `closed`
+
+---
+
 ## Web 管理后台
 
 服务器内嵌了一个完整的 Web 管理后台，支持深色主题和移动端响应式布局。
@@ -1069,6 +1107,7 @@ http://<host>:8080/web/
 | **仪表盘** | `/web/` | 崩溃趋势折线图、平台分布饼图、版本分布柱状图、Top 崩溃列表、实时统计卡片 |
 | **崩溃列表** | `/web/crashes` | 分页列表、搜索（异常类型/消息模糊匹配）、按状态/平台/版本筛选、多种排序 |
 | **崩溃详情** | `/web/crashes/:id` | 完整堆栈、Player.log 日志、设备信息、历史发生记录表、状态变更操作（标记已解决/忽略/重新打开） |
+| **玩家反馈** | `/web/feedback` | 玩家主动提交的 Bug、建议和其他反馈；可搜索、筛选、查看附件及更新处理状态 |
 | **符号管理** | `/web/symbols` | 符号文件列表、上传、删除 |
 | **API 文档** | `/web/api-doc` | 内置 API 参考文档页面 |
 
