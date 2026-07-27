@@ -1,0 +1,193 @@
+<div x-data="crashList">
+  <!-- Filters -->
+  <div class="bg-surface-900 rounded-xl p-4 mb-6 border border-gray-800">
+    <div class="flex flex-wrap gap-3 items-end">
+      <div class="flex-1 min-w-[200px]">
+        <label class="block text-xs text-gray-500 mb-1">Search</label>
+        <input type="text" x-model="filters.search" @keyup.enter="load()"
+               placeholder="Search exception type or message..."
+               class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500">
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Status</label>
+        <select x-model="filters.status" @change="load()"
+                class="bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500">
+          <option value="">All</option>
+          <option value="open">Open</option>
+          <option value="resolved">Resolved</option>
+          <option value="ignored">Ignored</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Platform</label>
+        <select x-model="filters.platform" @change="load()"
+                class="bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500">
+          <option value="">All</option>
+          <template x-for="p in platforms" :key="p">
+            <option :value="p" x-text="p"></option>
+          </template>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Version</label>
+        <select x-model="filters.app_version" @change="load()"
+                class="bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500">
+          <option value="">All</option>
+          <template x-for="v in versions" :key="v">
+            <option :value="v" x-text="v"></option>
+          </template>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Sort</label>
+        <select x-model="filters.sort_by" @change="load()"
+                class="bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500">
+          <option value="last_seen">Last Seen</option>
+          <option value="total_count">Count</option>
+          <option value="first_seen">First Seen</option>
+        </select>
+      </div>
+      <button @click="load()" class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition-colors">
+        Filter
+      </button>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="bg-surface-900 rounded-xl border border-gray-800 overflow-hidden" :class="{ loading }">
+    <table class="w-full text-sm" x-show="items.length > 0">
+      <thead>
+        <tr class="border-b border-gray-800 text-gray-500 text-xs uppercase">
+          <th class="text-left px-4 py-3 font-medium">Exception</th>
+          <th class="text-left px-4 py-3 font-medium hidden md:table-cell">Last Seen</th>
+          <th class="text-left px-4 py-3 font-medium hidden sm:table-cell">Count</th>
+          <th class="text-left px-4 py-3 font-medium">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        <template x-for="item in items" :key="item.id">
+          <tr class="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors cursor-pointer"
+              @click="window.location.href = '/web/crashes/' + item.id">
+            <td class="px-4 py-3">
+              <p class="font-medium text-gray-200" x-text="item.exception_type"></p>
+              <p class="text-xs text-gray-500 mt-0.5 truncate max-w-xs" x-text="item.exception_message || 'No message'"></p>
+            </td>
+            <td class="px-4 py-3 text-gray-400 hidden md:table-cell" x-text="formatDate(item.last_seen)"></td>
+            <td class="px-4 py-3 hidden sm:table-cell">
+              <span class="font-mono text-gray-300" x-text="item.total_count"></span>
+            </td>
+            <td class="px-4 py-3">
+              <span class="badge"
+                    :class="{
+                      'badge-open': item.status === 'open',
+                      'badge-resolved': item.status === 'resolved',
+                      'badge-ignored': item.status === 'ignored'
+                    }"
+                    x-text="item.status"></span>
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+
+    <!-- Empty state -->
+    <div x-show="items.length === 0 && !loading" class="text-center py-16">
+      <p class="text-gray-600">No crashes found</p>
+    </div>
+
+    <!-- Loading -->
+    <div x-show="loading" class="text-center py-16">
+      <div class="inline-block w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+    </div>
+  </div>
+
+  <!-- Pagination -->
+  <div class="flex items-center justify-between mt-4 text-sm" x-show="total > 0">
+    <p class="text-gray-500">
+      Showing <span x-text="(page - 1) * page_size + 1" class="text-gray-300"></span>
+      - <span x-text="Math.min(page * page_size, total)" class="text-gray-300"></span>
+      of <span x-text="total" class="text-gray-300"></span>
+    </p>
+    <div class="flex gap-2">
+      <button @click="goTo(page - 1)" :disabled="page <= 1"
+              class="px-3 py-1.5 rounded-lg bg-surface-800 border border-gray-700 hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+        ← Prev
+      </button>
+      <button @click="goTo(page + 1)" :disabled="page >= total_pages"
+              class="px-3 py-1.5 rounded-lg bg-surface-800 border border-gray-700 hover:bg-gray-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors">
+        Next →
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('alpine:init', () => {
+    Alpine.data('crashList', () => ({
+      items: [],
+      total: 0,
+      page: 1,
+      page_size: 20,
+      total_pages: 0,
+      loading: false,
+      platforms: [],
+      versions: [],
+      filters: { search: '', status: '', platform: '', app_version: '', sort_by: 'last_seen' },
+
+      async init() {
+        await Promise.all([this.loadPlatforms(), this.loadVersions(), this.load()]);
+      },
+
+      async load() {
+        this.loading = true;
+        try {
+          const params = new URLSearchParams({
+            page: String(this.page),
+            page_size: String(this.page_size),
+            sort_by: this.filters.sort_by,
+          });
+          if (this.filters.status) params.set('status', this.filters.status);
+          if (this.filters.platform) params.set('platform', this.filters.platform);
+          if (this.filters.app_version) params.set('app_version', this.filters.app_version);
+          if (this.filters.search) params.set('search', this.filters.search);
+
+          const res = await fetch('/api/v1/crash-groups?' + params.toString());
+          const data = await res.json();
+          this.items = data.items;
+          this.total = data.total;
+          this.page = data.page;
+          this.total_pages = data.total_pages;
+        } catch (err) {
+          console.error('Failed to load:', err);
+        }
+        this.loading = false;
+      },
+
+      goTo(p) {
+        if (p < 1 || p > this.total_pages) return;
+        this.page = p;
+        this.load();
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      },
+
+      async loadPlatforms() {
+        try {
+          const res = await fetch('/api/v1/platforms');
+          this.platforms = await res.json();
+        } catch {}
+      },
+
+      async loadVersions() {
+        try {
+          const res = await fetch('/api/v1/versions');
+          this.versions = await res.json();
+        } catch {}
+      },
+
+      formatDate(d) {
+        if (!d) return '-';
+        return new Date(d + 'Z').toLocaleString();
+      }
+    }));
+  });
+</script>

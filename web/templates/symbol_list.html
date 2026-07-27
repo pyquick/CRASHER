@@ -1,0 +1,203 @@
+<div x-data="symbolList">
+  <div class="flex items-center justify-between mb-6">
+    <h1 class="text-xl font-semibold">📦 Symbol Files</h1>
+    <button @click="showUpload = !showUpload"
+            class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition-colors">
+      + Upload Symbol
+    </button>
+  </div>
+
+  <!-- Upload Form -->
+  <div x-show="showUpload" class="bg-surface-900 rounded-xl p-5 mb-6 border border-gray-800 fade-in">
+    <h2 class="text-sm font-semibold text-gray-300 mb-4">Upload Symbol File</h2>
+    <form @submit.prevent="uploadSymbol" class="space-y-4">
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Platform</label>
+        <select x-model="uploadForm.platform"
+                class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500">
+          <option value="Android">Android</option>
+          <option value="iOS">iOS</option>
+          <option value="Windows">Windows</option>
+          <option value="Mac">Mac</option>
+          <option value="WebGL">WebGL</option>
+          <option value="Linux">Linux</option>
+        </select>
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Build GUID *</label>
+        <input type="text" x-model="uploadForm.build_guid" required
+               placeholder="Unity build GUID..."
+               class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500">
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">File *</label>
+        <input type="file" @change="onFileSelected($event)"
+               class="w-full text-sm text-gray-400 file:mr-3 file:py-2 file:px-4 file:rounded-lg file:border-0 file:bg-gray-700 file:text-gray-200 hover:file:bg-gray-600 transition-colors">
+      </div>
+      <div class="flex gap-3">
+        <button type="submit" :disabled="uploading"
+                class="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors">
+          <span x-show="!uploading">Upload</span>
+          <span x-show="uploading">Uploading...</span>
+        </button>
+        <button type="button" @click="showUpload = false"
+                class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm transition-colors">
+          Cancel
+        </button>
+      </div>
+      <p x-show="uploadMsg" class="text-sm" :class="uploadErr ? 'text-red-400' : 'text-green-400'" x-text="uploadMsg"></p>
+    </form>
+  </div>
+
+  <!-- Filters -->
+  <div class="flex gap-3 mb-4 items-end">
+    <div>
+      <label class="block text-xs text-gray-500 mb-1">Platform</label>
+      <select x-model="filters.platform" @change="load()"
+              class="bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500">
+        <option value="">All</option>
+        <option value="Android">Android</option>
+        <option value="iOS">iOS</option>
+        <option value="Windows">Windows</option>
+        <option value="Mac">Mac</option>
+        <option value="WebGL">WebGL</option>
+        <option value="Linux">Linux</option>
+      </select>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="bg-surface-900 rounded-xl border border-gray-800 overflow-hidden" :class="{ loading }">
+    <table class="w-full text-sm" x-show="items.length > 0">
+      <thead>
+        <tr class="border-b border-gray-800 text-gray-500 text-xs uppercase">
+          <th class="text-left px-4 py-3 font-medium">Filename</th>
+          <th class="text-left px-4 py-3 font-medium">Platform</th>
+          <th class="text-left px-4 py-3 font-medium hidden sm:table-cell">Build GUID</th>
+          <th class="text-left px-4 py-3 font-medium hidden md:table-cell">Size</th>
+          <th class="text-left px-4 py-3 font-medium hidden md:table-cell">Uploaded</th>
+          <th class="text-left px-4 py-3 font-medium">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        <template x-for="item in items" :key="item.id">
+          <tr class="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
+            <td class="px-4 py-3 font-medium text-gray-200" x-text="item.filename"></td>
+            <td class="px-4 py-3 text-gray-400" x-text="item.platform"></td>
+            <td class="px-4 py-3 text-gray-500 font-mono text-xs hidden sm:table-cell" x-text="item.build_guid"></td>
+            <td class="px-4 py-3 text-gray-400 hidden md:table-cell" x-text="formatSize(item.file_size)"></td>
+            <td class="px-4 py-3 text-gray-400 hidden md:table-cell" x-text="formatDate(item.uploaded_at)"></td>
+            <td class="px-4 py-3">
+              <button @click="deleteSymbol(item.id)"
+                      class="text-red-400 hover:text-red-300 text-xs transition-colors">Delete</button>
+            </td>
+          </tr>
+        </template>
+      </tbody>
+    </table>
+    <div x-show="items.length === 0 && !loading" class="text-center py-16">
+      <p class="text-gray-600">No symbol files uploaded yet</p>
+    </div>
+    <div x-show="loading" class="text-center py-16">
+      <div class="inline-block w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('alpine:init', () => {
+    Alpine.data('symbolList', () => ({
+      items: [],
+      page: 1,
+      total: 0,
+      loading: false,
+      showUpload: false,
+      uploading: false,
+      uploadMsg: '',
+      uploadErr: false,
+      uploadForm: { platform: 'Android', build_guid: '', file: null },
+      filters: { platform: '' },
+
+      async init() {
+        await this.load();
+      },
+
+      async load() {
+        this.loading = true;
+        try {
+          const params = new URLSearchParams({ page: String(this.page) });
+          if (this.filters.platform) params.set('platform', this.filters.platform);
+          const res = await fetch('/api/v1/symbols?' + params.toString());
+          const data = await res.json();
+          this.items = data.items;
+          this.total = data.total;
+        } catch (err) {
+          console.error('Failed to load symbols:', err);
+        }
+        this.loading = false;
+      },
+
+      onFileSelected(event) {
+        this.uploadForm.file = event.target.files[0];
+      },
+
+      async uploadSymbol() {
+        if (!this.uploadForm.file || !this.uploadForm.build_guid) {
+          this.uploadMsg = 'Please fill in all required fields';
+          this.uploadErr = true;
+          return;
+        }
+        this.uploading = true;
+        this.uploadMsg = '';
+        try {
+          const formData = new FormData();
+          formData.append('file', this.uploadForm.file);
+          formData.append('platform', this.uploadForm.platform);
+          formData.append('build_guid', this.uploadForm.build_guid);
+
+          const res = await fetch('/api/v1/symbols', { method: 'POST', body: formData });
+          if (res.ok) {
+            this.uploadMsg = 'Symbol uploaded successfully!';
+            this.uploadErr = false;
+            this.showUpload = false;
+            this.uploadForm = { platform: 'Android', build_guid: '', file: null };
+            await this.load();
+          } else {
+            const err = await res.json();
+            this.uploadMsg = err.message || 'Upload failed';
+            this.uploadErr = true;
+          }
+        } catch (err) {
+          this.uploadMsg = 'Network error';
+          this.uploadErr = true;
+        }
+        this.uploading = false;
+      },
+
+      async deleteSymbol(id) {
+        if (!confirm('Delete this symbol file?')) return;
+        try {
+          const res = await fetch('/api/v1/symbols/' + id, { method: 'DELETE' });
+          if (res.ok) {
+            await this.load();
+          }
+        } catch (err) {
+          console.error('Failed to delete:', err);
+        }
+      },
+
+      formatDate(d) {
+        if (!d) return '-';
+        return new Date(d + 'Z').toLocaleDateString();
+      },
+
+      formatSize(bytes) {
+        if (!bytes) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB'];
+        let i = 0, size = bytes;
+        while (size >= 1024 && i < units.length - 1) { size /= 1024; i++; }
+        return size.toFixed(1) + ' ' + units[i];
+      }
+    }));
+  });
+</script>

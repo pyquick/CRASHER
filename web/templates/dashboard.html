@@ -1,0 +1,207 @@
+<div x-data="dashboard">
+  <!-- Stat Cards -->
+  <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-8">
+    <div class="stat-card bg-surface-900 rounded-xl p-4 border border-gray-800">
+      <p class="text-xs text-gray-500 uppercase tracking-wide">Total Crashes</p>
+      <p class="text-2xl font-bold mt-1" x-text="stats.total_crashes?.toLocaleString()">-</p>
+    </div>
+    <div class="stat-card bg-surface-900 rounded-xl p-4 border border-gray-800">
+      <p class="text-xs text-gray-500 uppercase tracking-wide">Groups</p>
+      <p class="text-2xl font-bold mt-1" x-text="stats.total_groups?.toLocaleString()">-</p>
+    </div>
+    <div class="stat-card bg-surface-900 rounded-xl p-4 border border-gray-800">
+      <p class="text-xs text-gray-500 uppercase tracking-wide">Open</p>
+      <p class="text-2xl font-bold mt-1 text-red-400" x-text="stats.open_groups?.toLocaleString()">-</p>
+    </div>
+    <div class="stat-card bg-surface-900 rounded-xl p-4 border border-gray-800">
+      <p class="text-xs text-gray-500 uppercase tracking-wide">Resolved</p>
+      <p class="text-2xl font-bold mt-1 text-green-400" x-text="stats.resolved_groups?.toLocaleString()">-</p>
+    </div>
+    <div class="stat-card bg-surface-900 rounded-xl p-4 border border-gray-800">
+      <p class="text-xs text-gray-500 uppercase tracking-wide">Today</p>
+      <p class="text-2xl font-bold mt-1 text-blue-400" x-text="stats.crashes_today?.toLocaleString()">-</p>
+    </div>
+    <div class="stat-card bg-surface-900 rounded-xl p-4 border border-gray-800">
+      <p class="text-xs text-gray-500 uppercase tracking-wide">This Week</p>
+      <p class="text-2xl font-bold mt-1 text-purple-400" x-text="stats.crashes_week?.toLocaleString()">-</p>
+    </div>
+  </div>
+
+  <!-- Charts Row -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+    <div class="bg-surface-900 rounded-xl p-5 border border-gray-800">
+      <h3 class="text-sm font-semibold text-gray-300 mb-4">📈 Crash Trend (30 Days)</h3>
+      <div class="relative" style="height: 240px;">
+        <canvas id="trendChart"></canvas>
+      </div>
+    </div>
+    <div class="bg-surface-900 rounded-xl p-5 border border-gray-800">
+      <h3 class="text-sm font-semibold text-gray-300 mb-4">📱 Platform Distribution</h3>
+      <div class="relative" style="height: 240px;">
+        <canvas id="platformChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Top Crashes & Version Distribution -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="bg-surface-900 rounded-xl p-5 border border-gray-800">
+      <h3 class="text-sm font-semibold text-gray-300 mb-4">🔥 Top Crashes</h3>
+      <div class="space-y-2" x-show="stats.top_crashes?.length > 0">
+        <template x-for="(crash, i) in stats.top_crashes" :key="crash.group_id">
+          <a :href="'/web/crashes/' + crash.group_id"
+             class="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-800 transition-colors">
+            <span class="text-xs font-mono text-gray-600 w-5" x-text="'#' + (i + 1)"></span>
+            <div class="flex-1 min-w-0">
+              <p class="text-sm font-medium truncate" x-text="crash.exception_type"></p>
+              <p class="text-xs text-gray-500 truncate mt-0.5" x-text="crash.exception_message || 'No message'"></p>
+            </div>
+            <span class="badge badge-open" x-text="crash.count"></span>
+          </a>
+        </template>
+      </div>
+      <p class="text-sm text-gray-600 py-4 text-center" x-show="!stats.top_crashes?.length">
+        No crashes yet 🎉
+      </p>
+    </div>
+
+    <div class="bg-surface-900 rounded-xl p-5 border border-gray-800">
+      <h3 class="text-sm font-semibold text-gray-300 mb-4">📦 By Version</h3>
+      <div class="relative" style="height: 240px;">
+        <canvas id="versionChart"></canvas>
+      </div>
+    </div>
+  </div>
+
+  <!-- Empty State -->
+  <div x-show="!stats.total_crashes && loaded" class="text-center py-20">
+    <div class="text-6xl mb-4">🚀</div>
+    <h2 class="text-xl font-semibold text-gray-400 mb-2">No crash reports yet</h2>
+    <p class="text-gray-600 max-w-md mx-auto">
+      Start sending crash reports from your Unity game using <code class="text-sm bg-gray-800 px-2 py-0.5 rounded">POST /api/v1/crash-report</code>
+    </p>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('alpine:init', () => {
+    Alpine.data('dashboard', () => ({
+      stats: {},
+      loaded: false,
+      trendChart: null,
+      platformChart: null,
+      versionChart: null,
+
+      async init() {
+        await this.loadStats();
+      },
+
+      async loadStats() {
+        try {
+          const res = await fetch('/api/v1/stats/dashboard');
+          this.stats = await res.json();
+          this.loaded = true;
+          this.$nextTick(() => {
+            this.renderTrendChart();
+            this.renderPlatformChart();
+            this.renderVersionChart();
+          });
+        } catch (err) {
+          console.error('Failed to load stats:', err);
+        }
+      },
+
+      renderTrendChart() {
+        const ctx = document.getElementById('trendChart');
+        if (!ctx || !this.stats.daily_trend) return;
+        if (this.trendChart) this.trendChart.destroy();
+        this.trendChart = new Chart(ctx, {
+          type: 'line',
+          data: {
+            labels: this.stats.daily_trend.map(d => d.date),
+            datasets: [{
+              label: 'Crashes',
+              data: this.stats.daily_trend.map(d => d.count),
+              borderColor: '#60a5fa',
+              backgroundColor: 'rgba(96,165,250,0.1)',
+              fill: true,
+              tension: 0.3,
+              pointRadius: 2,
+              pointHoverRadius: 4,
+              borderWidth: 2,
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { ticks: { color: '#64748b', maxTicksLimit: 10, font: { size: 10 } }, grid: { color: 'rgba(100,116,139,0.1)' } },
+              y: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: 'rgba(100,116,139,0.1)' }, beginAtZero: true }
+            }
+          }
+        });
+      },
+
+      renderPlatformChart() {
+        const ctx = document.getElementById('platformChart');
+        if (!ctx || !this.stats.platform_distribution) return;
+        if (this.platformChart) this.platformChart.destroy();
+        const colors = ['#60a5fa','#34d399','#fbbf24','#f87171','#a78bfa','#fb923c','#38bdf8','#e879f9'];
+        this.platformChart = new Chart(ctx, {
+          type: 'doughnut',
+          data: {
+            labels: this.stats.platform_distribution.map(d => d.platform || 'Unknown'),
+            datasets: [{
+              data: this.stats.platform_distribution.map(d => d.count),
+              backgroundColor: colors.slice(0, this.stats.platform_distribution.length),
+              borderColor: '#0f172a',
+              borderWidth: 2,
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+              legend: {
+                position: 'right',
+                labels: { color: '#94a3b8', padding: 16, font: { size: 11 }, usePointStyle: true }
+              }
+            }
+          }
+        });
+      },
+
+      renderVersionChart() {
+        const ctx = document.getElementById('versionChart');
+        if (!ctx || !this.stats.version_distribution) return;
+        if (this.versionChart) this.versionChart.destroy();
+        const data = this.stats.version_distribution.slice(0, 10);
+        this.versionChart = new Chart(ctx, {
+          type: 'bar',
+          data: {
+            labels: data.map(d => d.app_version),
+            datasets: [{
+              label: 'Crashes',
+              data: data.map(d => d.count),
+              backgroundColor: 'rgba(167,139,250,0.5)',
+              borderColor: '#a78bfa',
+              borderWidth: 1,
+              borderRadius: 4,
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            indexAxis: 'y',
+            plugins: { legend: { display: false } },
+            scales: {
+              x: { ticks: { color: '#64748b', font: { size: 10 } }, grid: { color: 'rgba(100,116,139,0.1)' } },
+              y: { ticks: { color: '#94a3b8', font: { size: 10 } }, grid: { display: false } }
+            }
+          }
+        });
+      }
+    }));
+  });
+</script>

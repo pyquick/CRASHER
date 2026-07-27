@@ -1,0 +1,277 @@
+<div x-data="crashDetail">
+  <!-- Back link and header -->
+  <div class="flex items-center gap-4 mb-6">
+    <a href="/web/crashes" class="text-gray-500 hover:text-gray-300 transition-colors">← Back to list</a>
+    <template x-if="group">
+      <div class="flex items-center gap-3">
+        <h1 class="text-xl font-semibold" x-text="group.exception_type"></h1>
+        <span class="badge"
+              :class="{
+                'badge-open': group.status === 'open',
+                'badge-resolved': group.status === 'resolved',
+                'badge-ignored': group.status === 'ignored'
+              }"
+              x-text="group.status"></span>
+      </div>
+    </template>
+  </div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Main content -->
+    <div class="lg:col-span-2 space-y-6">
+      <!-- Stack trace -->
+      <section class="bg-surface-900 rounded-xl p-5 border border-gray-800">
+        <h2 class="text-sm font-semibold text-gray-300 mb-3">📋 Latest Stack Trace</h2>
+        <template x-if="latestReport?.stack_trace">
+          <pre class="stack-trace text-gray-400 bg-surface-950 rounded-lg p-4 overflow-x-auto" x-text="latestReport.stack_trace"></pre>
+        </template>
+        <p class="text-sm text-gray-600" x-show="!latestReport?.stack_trace">No stack trace available</p>
+      </section>
+
+      <!-- Exception message -->
+      <section class="bg-surface-900 rounded-xl p-5 border border-gray-800" x-show="latestReport?.log_text">
+        <h2 class="text-sm font-semibold text-gray-300 mb-3">📝 Player Log</h2>
+        <pre class="stack-trace text-gray-400 bg-surface-950 rounded-lg p-4 max-h-96 overflow-y-auto" x-text="latestReport.log_text"></pre>
+      </section>
+
+      <!-- Recent Reports Table -->
+      <section class="bg-surface-900 rounded-xl p-5 border border-gray-800">
+        <h2 class="text-sm font-semibold text-gray-300 mb-3">📊 Recent Occurrences</h2>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm">
+            <thead>
+              <tr class="border-b border-gray-800 text-gray-500 text-xs uppercase">
+                <th class="text-left px-3 py-2">Time</th>
+                <th class="text-left px-3 py-2 hidden sm:table-cell">Platform</th>
+                <th class="text-left px-3 py-2 hidden md:table-cell">Version</th>
+                <th class="text-left px-3 py-2 hidden md:table-cell">Device</th>
+              </tr>
+            </thead>
+            <tbody>
+              <template x-for="r in reports" :key="r.id">
+                <tr class="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors cursor-pointer"
+                    @click="selectedReport = r; $nextTick(() => document.getElementById('report-detail-modal').classList.remove('hidden'))">
+                  <td class="px-3 py-2 text-gray-400" x-text="formatDate(r.created_at)"></td>
+                  <td class="px-3 py-2 text-gray-400 hidden sm:table-cell" x-text="r.platform || '-'"></td>
+                  <td class="px-3 py-2 text-gray-400 hidden md:table-cell" x-text="r.app_version || '-'"></td>
+                  <td class="px-3 py-2 text-gray-500 hidden md:table-cell" x-text="r.device_model || '-'"></td>
+                </tr>
+              </template>
+            </tbody>
+          </table>
+        </div>
+      </section>
+    </div>
+
+    <!-- Sidebar -->
+    <div class="space-y-6">
+      <!-- Group Info -->
+      <section class="bg-surface-900 rounded-xl p-5 border border-gray-800">
+        <h2 class="text-sm font-semibold text-gray-300 mb-3">ℹ️ Info</h2>
+        <dl class="space-y-2 text-sm">
+          <div class="flex justify-between">
+            <dt class="text-gray-500">First Seen</dt>
+            <dd class="text-gray-300" x-text="group ? formatDate(group.first_seen) : '-'"></dd>
+          </div>
+          <div class="flex justify-between">
+            <dt class="text-gray-500">Last Seen</dt>
+            <dd class="text-gray-300" x-text="group ? formatDate(group.last_seen) : '-'"></dd>
+          </div>
+          <div class="flex justify-between">
+            <dt class="text-gray-500">Total Count</dt>
+            <dd class="text-gray-300 font-mono" x-text="group?.total_count ?? '-'"></dd>
+          </div>
+          <div class="flex justify-between" x-show="group?.resolved_version">
+            <dt class="text-gray-500">Resolved In</dt>
+            <dd class="text-green-400" x-text="group?.resolved_version"></dd>
+          </div>
+        </dl>
+      </section>
+
+      <!-- Status Update -->
+      <section class="bg-surface-900 rounded-xl p-5 border border-gray-800">
+        <h2 class="text-sm font-semibold text-gray-300 mb-3">🔧 Actions</h2>
+        <select x-model="newStatus"
+                class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 mb-3 focus:outline-none focus:border-blue-500">
+          <option value="open">Open</option>
+          <option value="resolved">Resolved</option>
+          <option value="ignored">Ignored</option>
+        </select>
+        <input type="text" x-model="resolvedVersion" placeholder="Resolved version (optional)"
+               class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 mb-3 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+               x-show="newStatus === 'resolved'">
+        <button @click="updateStatus()"
+                class="w-full py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition-colors">
+          Update Status
+        </button>
+        <p x-show="statusMsg" class="text-xs mt-2 text-center" :class="statusErr ? 'text-red-400' : 'text-green-400'" x-text="statusMsg"></p>
+      </section>
+
+      <!-- Device Info -->
+      <section class="bg-surface-900 rounded-xl p-5 border border-gray-800" x-show="latestReport">
+        <h2 class="text-sm font-semibold text-gray-300 mb-3">🖥️ Device</h2>
+        <dl class="space-y-2 text-sm">
+          <div class="flex justify-between">
+            <dt class="text-gray-500">Platform</dt>
+            <dd class="text-gray-300" x-text="latestReport?.platform || '-'"></dd>
+          </div>
+          <div class="flex justify-between">
+            <dt class="text-gray-500">Device</dt>
+            <dd class="text-gray-300" x-text="latestReport?.device_model || '-'"></dd>
+          </div>
+          <div class="flex justify-between">
+            <dt class="text-gray-500">OS</dt>
+            <dd class="text-gray-300" x-text="latestReport?.os_version || '-'"></dd>
+          </div>
+          <div class="flex justify-between">
+            <dt class="text-gray-500">GPU</dt>
+            <dd class="text-gray-300" x-text="latestReport?.gpu_name || '-'"></dd>
+          </div>
+          <div class="flex justify-between">
+            <dt class="text-gray-500">Memory</dt>
+            <dd class="text-gray-300" x-text="latestReport?.memory_mb ? latestReport.memory_mb + ' MB' : '-'"></dd>
+          </div>
+          <div class="flex justify-between">
+            <dt class="text-gray-500">Unity</dt>
+            <dd class="text-gray-300" x-text="latestReport?.unity_version || '-'"></dd>
+          </div>
+          <div class="flex justify-between">
+            <dt class="text-gray-500">App Version</dt>
+            <dd class="text-gray-300" x-text="latestReport?.app_version || '-'"></dd>
+          </div>
+          <div class="flex justify-between">
+            <dt class="text-gray-500">Scene</dt>
+            <dd class="text-gray-300" x-text="latestReport?.scene_name || '-'"></dd>
+          </div>
+        </dl>
+      </section>
+    </div>
+  </div>
+
+  <!-- Report Detail Modal -->
+  <div id="report-detail-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" @click.self="document.getElementById('report-detail-modal').classList.add('hidden')">
+    <div class="bg-surface-900 border border-gray-700 rounded-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto" @click.stop>
+      <div class="p-5 border-b border-gray-800 flex items-center justify-between">
+        <h3 class="font-semibold">Report Detail <span class="text-gray-500 text-sm ml-2" x-text="selectedReport ? '#' + selectedReport.id : ''"></span></h3>
+        <button @click="document.getElementById('report-detail-modal').classList.add('hidden')"
+                class="p-1 hover:bg-gray-800 rounded-lg transition-colors">
+          <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <div class="p-5 space-y-4" x-show="selectedReport">
+        <template x-if="selectedReport.stack_trace">
+          <div>
+            <h4 class="text-xs font-medium text-gray-500 mb-2">STACK TRACE</h4>
+            <pre class="stack-trace text-gray-400 bg-surface-950 rounded-lg p-3 overflow-x-auto" x-text="selectedReport.stack_trace"></pre>
+          </div>
+        </template>
+        <template x-if="selectedReport.log_text">
+          <div>
+            <h4 class="text-xs font-medium text-gray-500 mb-2">PLAYER LOG</h4>
+            <pre class="stack-trace text-gray-400 bg-surface-950 rounded-lg p-3 max-h-60 overflow-y-auto" x-text="selectedReport.log_text"></pre>
+          </div>
+        </template>
+        <template x-if="selectedReport.custom_data">
+          <div>
+            <h4 class="text-xs font-medium text-gray-500 mb-2">CUSTOM DATA</h4>
+            <pre class="stack-trace text-gray-400 bg-surface-950 rounded-lg p-3" x-text="JSON.stringify(JSON.parse(selectedReport.custom_data || '{}'), null, 2)"></pre>
+          </div>
+        </template>
+        <template x-if="selectedReport.attachments?.length">
+          <div>
+            <h4 class="text-xs font-medium text-gray-500 mb-2">ATTACHMENTS</h4>
+            <ul class="text-sm text-gray-400 space-y-1">
+              <template x-for="a in selectedReport.attachments" :key="a.id">
+                <li class="flex items-center gap-2">
+                  <span x-text="a.filename"></span>
+                  <span class="text-gray-600" x-text="'(' + formatSize(a.file_size) + ')'"></span>
+                </li>
+              </template>
+            </ul>
+          </div>
+        </template>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('alpine:init', () => {
+    Alpine.data('crashDetail', () => ({
+      group: null,
+      reports: [],
+      latestReport: null,
+      selectedReport: null,
+      newStatus: 'open',
+      resolvedVersion: '',
+      statusMsg: '',
+      statusErr: false,
+
+      async init() {
+        const id = window.location.pathname.split('/').pop();
+        await this.loadGroup(id);
+      },
+
+      async loadGroup(id) {
+        try {
+          const res = await fetch('/api/v1/crash-groups/' + id);
+          const data = await res.json();
+          if (res.ok) {
+            this.group = data;
+            this.reports = data.recent_reports || [];
+            this.latestReport = this.reports[0] || null;
+            this.newStatus = data.status || 'open';
+            this.resolvedVersion = data.resolved_version || '';
+          } else {
+            this.group = null;
+          }
+        } catch (err) {
+          console.error('Failed to load group:', err);
+        }
+      },
+
+      async updateStatus() {
+        this.statusMsg = '';
+        this.statusErr = false;
+        try {
+          const id = window.location.pathname.split('/').pop();
+          const body = { status: this.newStatus };
+          if (this.newStatus === 'resolved' && this.resolvedVersion) {
+            body.resolved_version = this.resolvedVersion;
+          }
+          const res = await fetch('/api/v1/crash-groups/' + id + '/status', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+          if (res.ok) {
+            this.statusMsg = 'Status updated!';
+            this.group.status = this.newStatus;
+            if (body.resolved_version) this.group.resolved_version = body.resolved_version;
+          } else {
+            const err = await res.json();
+            this.statusMsg = err.message || 'Update failed';
+            this.statusErr = true;
+          }
+        } catch (err) {
+          this.statusMsg = 'Network error';
+          this.statusErr = true;
+        }
+      },
+
+      formatDate(d) {
+        if (!d) return '-';
+        return new Date(d + 'Z').toLocaleString();
+      },
+
+      formatSize(bytes) {
+        if (!bytes) return '0 B';
+        const units = ['B', 'KB', 'MB', 'GB'];
+        let i = 0;
+        let size = bytes;
+        while (size >= 1024 && i < units.length - 1) { size /= 1024; i++; }
+        return size.toFixed(1) + ' ' + units[i];
+      }
+    }));
+  });
+</script>

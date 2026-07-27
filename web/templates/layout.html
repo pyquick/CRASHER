@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{TITLE}}</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.13.3/dist/cdn.min.js"></script>
+  <script>
+    tailwind.config = {
+      darkMode: 'class',
+      theme: {
+        extend: {
+          colors: {
+            surface: { 50: '#f8fafc', 100: '#f1f5f9', 200: '#e2e8f0', 700: '#334155', 800: '#1e293b', 900: '#0f172a', 950: '#020617' }
+          }
+        }
+      }
+    }
+  </script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+    .stack-trace { font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; font-size: 0.8125rem; }
+    pre { white-space: pre-wrap; word-break: break-all; }
+    .nav-link { transition: all 0.15s ease; }
+    .nav-link:hover { background-color: rgba(255,255,255,0.08); }
+    .nav-link.active { background-color: rgba(59,130,246,0.15); color: #60a5fa; }
+    .badge { display: inline-flex; align-items: center; padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; font-weight: 500; }
+    .badge-open { background-color: rgba(239,68,68,0.15); color: #f87171; }
+    .badge-resolved { background-color: rgba(34,197,94,0.15); color: #4ade80; }
+    .badge-ignored { background-color: rgba(148,163,184,0.15); color: #94a3b8; }
+    .stat-card { transition: transform 0.15s ease; }
+    .stat-card:hover { transform: translateY(-2px); }
+    .loading { opacity: 0.5; pointer-events: none; }
+    .fade-in { animation: fadeIn 0.3s ease; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+<body class="bg-surface-950 text-gray-100 min-h-screen" x-data="{ sidebarOpen: false }">
+  <!-- Mobile sidebar overlay -->
+  <div x-show="sidebarOpen" class="fixed inset-0 bg-black/60 z-40 lg:hidden" @click="sidebarOpen = false" x-transition.opacity></div>
+
+  <!-- Sidebar -->
+  <aside class="fixed top-0 left-0 h-full w-60 bg-surface-900 border-r border-gray-800 z-50 transform transition-transform duration-200 lg:translate-x-0"
+         :class="sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'">
+    <div class="p-5 border-b border-gray-800">
+      <h1 class="text-lg font-bold tracking-tight">💥 Crash Reporter</h1>
+      <p class="text-xs text-gray-500 mt-1">Unity Error Tracking</p>
+    </div>
+    <nav class="p-3 space-y-1">
+      <a href="/web/" class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium {{CONTENT === '/web/' ? 'active' : 'text-gray-400'}}">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2" stroke-width="1.5"/><rect x="2" y="14" width="20" height="8" rx="2" stroke-width="1.5"/></svg>
+        Dashboard
+      </a>
+      <a href="/web/crashes" class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium {{CONTENT === '/web/crashes' ? 'active' : 'text-gray-400'}}">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="1.5"/><path d="M12 6v6l4 2" stroke-width="1.5" stroke-linecap="round"/></svg>
+        Crashes
+      </a>
+      <a href="/web/symbols" class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium {{CONTENT === '/web/symbols' ? 'active' : 'text-gray-400'}}">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z" stroke-width="1.5"/></svg>
+        Symbols
+      </a>
+      <a href="/web/api-doc" class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" stroke-width="1.5"/></svg>
+        API Docs
+      </a>
+    </nav>
+  </aside>
+
+  <!-- Main content -->
+  <div class="lg:ml-60 min-h-screen">
+    <!-- Top bar -->
+    <header class="sticky top-0 z-30 bg-surface-900/80 backdrop-blur border-b border-gray-800 px-4 py-3 flex items-center gap-4">
+      <button class="lg:hidden p-1.5 rounded-lg hover:bg-gray-800" @click="sidebarOpen = !sidebarOpen">
+        <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 12h18M3 6h18M3 18h18" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+      <span class="text-sm text-gray-400" id="page-subtitle">{{TITLE}}</span>
+    </header>
+
+    <main class="p-6">
+      {{BODY}}
+    </main>
+  </div>
+</body>
+</html>
