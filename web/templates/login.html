@@ -57,10 +57,6 @@
           </span>
         </button>
       </form>
-
-      <div class="mt-6 pt-4 border-t border-gray-800 text-center">
-        <a href="/web/api-doc" class="text-xs text-gray-500 hover:text-gray-300 transition-colors">View API Docs →</a>
-      </div>
     </div>
   </div>
 </div>
@@ -85,7 +81,10 @@
           const data = await res.json();
           if (res.ok && data.success) {
             const params = new URLSearchParams(window.location.search);
-            const redirect = params.get('redirect') || '/web/';
+            const requestedRedirect = params.get('redirect') || '/web/';
+            const redirect = requestedRedirect.startsWith('/') && !requestedRedirect.startsWith('//')
+              ? requestedRedirect
+              : '/web/';
             window.location.href = redirect;
           } else {
             this.errorMsg = data.message || 'Login failed';

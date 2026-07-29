@@ -1,3 +1,35 @@
+export type UserRole = 'admin' | 'operator' | 'viewer';
+
+export interface User {
+  id: number;
+  username: string;
+  password_hash: string;
+  role: UserRole;
+  is_active: number;
+  session_version: number;
+  created_at: string;
+  updated_at: string;
+  last_login_at: string | null;
+}
+
+export interface AuthenticatedUser {
+  id: number;
+  username: string;
+  role: UserRole;
+}
+
+export interface ApiKeyRecord {
+  id: number;
+  user_id: number;
+  name: string;
+  key_prefix: string;
+  key_hash: string;
+  expires_at: string | null;
+  revoked_at: string | null;
+  last_used_at: string | null;
+  created_at: string;
+}
+
 export interface PlayerFeedback {
   id: number;
   title: string;

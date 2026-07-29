@@ -3,7 +3,19 @@ import cors from 'cors';
 import compression from 'compression';
 import { config } from './config.js';
 import { initDb, closeDb } from './database.js';
-import { requestLogger, errorHandler, requireApiAuth } from './middleware.js';
+import { purgeExpiredSessions } from './auth.js';
+import {
+  authenticateSession,
+  clearApiKeyIdentity,
+  errorHandler,
+  notFoundHandler,
+  rateLimit,
+  requestLogger,
+  requireApiAuth,
+  requireApiKey,
+  requireCsrf,
+} from './middleware.js';
+import authHandler from './handler/auth.js';
 import crashReportHandler from './handler/crash_report.js';
 import feedbackHandler from './handler/feedback.js';
 import symbolHandler from './handler/symbol.js';
@@ -12,10 +24,12 @@ import queryHandler from './handler/query.js';
 import webHandler from './handler/web.js';
 
 initDb();
+purgeExpiredSessions();
 
 const app = express();
+app.disable('x-powered-by');
+app.set('trust proxy', config.trustProxy);
 
-// Simple cookie parser middleware (avoids extra dependency)
 function cookieParser(req: Request, _res: Response, next: NextFunction): void {
   const raw = req.headers.cookie;
   if (!raw || typeof raw !== 'string') {
@@ -25,41 +39,67 @@ function cookieParser(req: Request, _res: Response, next: NextFunction): void {
   }
   const parsed: Record<string, string> = {};
   for (const pair of raw.split(';')) {
-    const idx = pair.indexOf('=');
-    if (idx > 0) {
-      parsed[pair.substring(0, idx).trim()] = pair.substring(idx + 1).trim();
-    }
+    const index = pair.indexOf('=');
+    if (index > 0) parsed[pair.substring(0, index).trim()] = pair.substring(index + 1).trim();
   }
   req.cookies = parsed;
   next();
 }
 
-app.use(compression());
-app.use(cors({ origin: config.corsOrigins, credentials: true }));
-app.use(cookieParser);
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
-app.use(requestLogger);
-app.set('trust proxy', true);
+const corsOptions: cors.CorsOptions = {
+  credentials: true,
+  origin(origin, callback) {
+    if (!origin) {
+      callback(null, true);
+      return;
+    }
+    callback(null, config.corsOrigins.includes(origin));
+  },
+};
 
-// Public endpoints (no auth required — clients submit crash reports here)
+app.use((req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+  res.setHeader('Cross-Origin-Resource-Policy', 'same-origin');
+  if (config.cookieSecure) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
+  next();
+});
+app.use(compression());
+app.use(cors(corsOptions));
+app.use(cookieParser);
+app.use(express.json({ limit: config.maxJsonBodySize }));
+app.use(express.urlencoded({ extended: false, limit: '1mb', parameterLimit: 200 }));
+app.use(authenticateSession);
+app.use(requestLogger);
+
+app.use('/web', authHandler);
+app.use('/api/v1/auth', authHandler);
+
+const ingestLimiter = rateLimit({ windowMs: 60 * 1000, limit: config.ingestRateLimit });
+app.use('/api/v1/crash-report', (req, res, next) => req.method === 'POST' ? ingestLimiter(req, res, next) : next(), (req, res, next) => req.method === 'POST' ? requireApiKey(req, res, next) : next());
+app.use('/api/v1/player-feedback', (req, res, next) => req.method === 'POST' && req.path === '/' ? ingestLimiter(req, res, next) : next(), (req, res, next) => req.method === 'POST' && req.path === '/' ? requireApiKey(req, res, next) : next());
+app.use('/api/v1/unity/crash-report', (req, res, next) => req.method === 'POST' ? ingestLimiter(req, res, next) : next(), (req, res, next) => req.method === 'POST' ? requireApiKey(req, res, next) : next());
 app.use('/api/v1', crashReportHandler);
 app.use('/api/v1', feedbackHandler);
 app.use('/api/v1', unityHandler);
+app.use('/api/v1', clearApiKeyIdentity);
 
-// Protected endpoints (auth required for viewing data)
-app.use('/api/v1', requireApiAuth, queryHandler);
-app.use('/api/v1', requireApiAuth, symbolHandler);
+const apiLimiter = rateLimit({ windowMs: 60 * 1000, limit: config.apiRateLimit });
+app.use('/api/v1', apiLimiter, requireApiAuth, requireCsrf, queryHandler);
+app.use('/api/v1', apiLimiter, requireApiAuth, requireCsrf, symbolHandler);
 
-// Web UI
 app.use('/web', webHandler);
 
 app.get('/', (_req, res) => res.redirect('/web/'));
-app.get('/health', (_req, res) => res.json({ status: 'ok', uptime: process.uptime() }));
+app.get('/health', (_req, res) => res.json({ status: 'ok' }));
+app.use(notFoundHandler);
 app.use(errorHandler);
 
 const server = app.listen(config.port, () => {
-  console.log(`  Crash Report Server running on http://localhost:${config.port}`);
+  console.log(`Crash Report Server running on http://localhost:${config.port}`);
+  console.log(`[security] Public ingestion API keys required: ${config.apiRequireKey}`);
 });
 
 function shutdown() {

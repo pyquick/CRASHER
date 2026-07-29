@@ -2,6 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import multer from 'multer';
 import { randomBytes } from 'crypto';
 import { config } from '../config.js';
+import { unlinkSync } from 'fs';
 import * as store from '../store.js';
 import type { PlayerFeedbackInput } from '../model.js';
 
@@ -31,6 +32,7 @@ router.post('/player-feedback', upload.array('attachments', 10), (req: Request, 
     const input = extractInput(req);
     const error = validateInput(input);
     if (error) {
+      cleanupUploads(req);
       res.status(400).json({ error: 'Bad Request', message: error });
       return;
     }
@@ -53,10 +55,18 @@ router.post('/player-feedback', upload.array('attachments', 10), (req: Request, 
       })),
     });
   } catch (err: any) {
+    cleanupUploads(req);
     console.error('Error ingesting player feedback:', err);
-    res.status(500).json({ error: 'Internal Server Error', message: err.message });
+    res.status(500).json({ error: 'Internal Server Error', message: 'Could not ingest player feedback' });
   }
 });
+
+function cleanupUploads(req: Request): void {
+  const files = ((req as any).files ?? []) as Express.Multer.File[];
+  for (const file of files) {
+    try { unlinkSync(file.path); } catch {}
+  }
+}
 
 function extractInput(req: Request): PlayerFeedbackInput {
   const body = req.body ?? {};

@@ -1,4 +1,5 @@
 import { Router, type Request, type Response } from 'express';
+import multer from 'multer';
 import { getDb } from '../database.js';
 import * as store from '../store.js';
 import { analyzeCrash } from '../analysis/analyzer.js';
@@ -6,6 +7,7 @@ import { createTarGz, extractTarGzFile, cleanupArchive } from '../archive.js';
 import { createReadStream, existsSync, unlinkSync, writeFileSync, readFileSync, mkdirSync, statSync } from 'fs';
 import { join } from 'path';
 import { config } from '../config.js';
+import { requireRole } from '../middleware.js';
 import type { CrashReport, CrashAttachment } from '../model.js';
 
 /**
@@ -13,6 +15,10 @@ import type { CrashReport, CrashAttachment } from '../model.js';
  * All routes mounted under /api/v1 with requireApiAuth middleware.
  */
 const router = Router();
+const importUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 64 * 1024 * 1024, files: 1 },
+});
 
 // ── Crash group query routes ──
 
@@ -22,6 +28,10 @@ router.get('/crash-groups', (req, res) => {
     page: parseInt(String(q.page), 10) || 1,
     page_size: Math.min(parseInt(String(q.page_size), 10) || 20, 100),
     status: q.status as string | undefined,
+    platform: q.platform as string | undefined,
+    app_version: q.app_version as string | undefined,
+    runtime: q.runtime as string | undefined,
+    environment: q.environment as string | undefined,
     search: q.search as string | undefined,
     start_date: q.start_date as string | undefined,
     end_date: q.end_date as string | undefined,
@@ -31,7 +41,7 @@ router.get('/crash-groups', (req, res) => {
   }));
 });
 
-router.get('/crash-groups/:id', (req, res) => {
+router.get('/crash-groups/:id', requireRole('admin', 'operator'), (req, res) => {
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: 'Invalid ID' }); return; }
   const group = store.getGroupById(id);
@@ -39,7 +49,7 @@ router.get('/crash-groups/:id', (req, res) => {
   res.json({ ...group, recent_reports: store.listReports({ group_id: id, page: 1, page_size: 20 }).items });
 });
 
-router.put('/crash-groups/:id/status', (req, res) => {
+router.put('/crash-groups/:id/status', requireRole('admin', 'operator'), (req, res) => {
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: 'Invalid ID' }); return; }
   const { status, resolved_version } = req.body ?? {};
@@ -53,7 +63,7 @@ router.put('/crash-groups/:id/status', (req, res) => {
 
 // ── Crash report query routes ──
 
-router.get('/crash-reports', (req, res) => {
+router.get('/crash-reports', requireRole('admin', 'operator'), (req, res) => {
   const q = req.query;
   res.json(store.listReports({
     page: parseInt(String(q.page), 10) || 1,
@@ -66,7 +76,7 @@ router.get('/crash-reports', (req, res) => {
   }));
 });
 
-router.get('/crash-reports/:id', (req, res) => {
+router.get('/crash-reports/:id', requireRole('admin', 'operator'), (req, res) => {
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: 'Invalid ID' }); return; }
   const report = store.getReportById(id);
@@ -81,7 +91,7 @@ router.get('/crash-reports/:id', (req, res) => {
  * GET /api/v1/crash-reports/:id/symbolication
  * Returns the C# symbolicated stack info for a single crash report.
  */
-router.get('/crash-reports/:id/symbolication', (req, res) => {
+router.get('/crash-reports/:id/symbolication', requireRole('admin', 'operator'), (req, res) => {
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: 'Invalid ID' }); return; }
   const report = store.getReportById(id);
@@ -109,7 +119,7 @@ router.get('/crash-reports/:id/symbolication', (req, res) => {
 
 // ── Crash Analysis ──
 
-router.get('/crash-reports/:id/analysis', (req, res) => {
+router.get('/crash-reports/:id/analysis', requireRole('admin', 'operator'), (req, res) => {
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: 'Invalid ID' }); return; }
   const report = store.getReportById(id);
@@ -141,7 +151,7 @@ router.get('/crash-reports/:id/analysis', (req, res) => {
  * Export a crash group as a .crashpkg (tar.gz) containing the group manifest,
  * all reports with their full data, and all attachment binaries.
  */
-router.get('/export/group/:id', (req, res) => {
+router.get('/export/group/:id', requireRole('admin', 'operator'), (req, res) => {
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: 'Invalid ID' }); return; }
 
@@ -233,7 +243,7 @@ router.get('/export/group/:id', (req, res) => {
  * Query params:
  *   ?confirm=true  — actually write to DB (otherwise dry-run)
  */
-router.post('/import', async (req, res) => {
+router.post('/import', requireRole('admin', 'operator'), importUpload.single('package'), async (req, res) => {
   try {
     // This endpoint needs raw body/multer. We handle it inline since we already
     // have a body parser set up. Check if we got a file via multer-like interface
@@ -489,7 +499,7 @@ router.get('/versions', (_req, res) => {
 
 // ── Player feedback management routes ──
 
-router.get('/player-feedback', (req, res) => {
+router.get('/player-feedback', requireRole('admin', 'operator'), (req, res) => {
   const q = req.query;
   res.json(store.listFeedback({
     page: parseInt(String(q.page), 10) || 1,
@@ -500,7 +510,7 @@ router.get('/player-feedback', (req, res) => {
   }));
 });
 
-router.get('/player-feedback/:id', (req, res) => {
+router.get('/player-feedback/:id', requireRole('admin', 'operator'), (req, res) => {
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: 'Invalid ID' }); return; }
   const feedback = store.getFeedbackById(id);
@@ -508,7 +518,7 @@ router.get('/player-feedback/:id', (req, res) => {
   res.json({ ...feedback, attachments: store.getFeedbackAttachments(id) });
 });
 
-router.put('/player-feedback/:id/status', (req, res) => {
+router.put('/player-feedback/:id/status', requireRole('admin', 'operator'), (req, res) => {
   const id = parseInt(String(req.params.id), 10);
   const { status } = req.body ?? {};
   if (isNaN(id)) { res.status(400).json({ error: 'Invalid ID' }); return; }
@@ -520,7 +530,7 @@ router.put('/player-feedback/:id/status', (req, res) => {
   res.json({ success: true });
 });
 
-router.get('/download/player-feedback/attachment/:id', (req, res) => {
+router.get('/download/player-feedback/attachment/:id', requireRole('admin', 'operator'), (req, res) => {
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: 'Invalid ID' }); return; }
   const attachment = store.getFeedbackAttachmentById(id);
@@ -535,7 +545,7 @@ router.get('/download/player-feedback/attachment/:id', (req, res) => {
 
 // ── Download routes (protected — require login to download data) ──
 
-router.get('/download/attachment/:id', (req, res) => {
+router.get('/download/attachment/:id', requireRole('admin', 'operator'), (req, res) => {
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: 'Invalid ID' }); return; }
   const att = store.getAttachmentById(id);
@@ -548,7 +558,7 @@ router.get('/download/attachment/:id', (req, res) => {
   createReadStream(att.file_path).pipe(res);
 });
 
-router.get('/download/report/:id', (req, res) => {
+router.get('/download/report/:id', requireRole('admin', 'operator'), (req, res) => {
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: 'Invalid ID' }); return; }
   const report = store.getReportById(id);
@@ -559,7 +569,7 @@ router.get('/download/report/:id', (req, res) => {
   res.send(json);
 });
 
-router.get('/download/group/:id', (req, res) => {
+router.get('/download/group/:id', requireRole('admin', 'operator'), (req, res) => {
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: 'Invalid ID' }); return; }
   const group = store.getGroupById(id);
@@ -571,7 +581,7 @@ router.get('/download/group/:id', (req, res) => {
   res.send(json);
 });
 
-router.get('/download/dump/:reportId', (req, res) => {
+router.get('/download/dump/:reportId', requireRole('admin', 'operator'), (req, res) => {
   const reportId = parseInt(String(req.params.reportId), 10);
   if (isNaN(reportId)) { res.status(400).json({ error: 'Invalid ID' }); return; }
   const report = store.getReportById(reportId);
@@ -594,7 +604,7 @@ router.get('/download/dump/:reportId', (req, res) => {
 
 // ── Admin: Clear all crashes ──
 
-router.post('/clear-crashes', (_req, res) => {
+router.post('/clear-crashes', requireRole('admin'), (_req, res) => {
   const db = getDb();
   // Delete attachments files from disk
   const attachments = db.prepare('SELECT file_path FROM crash_attachments').all();

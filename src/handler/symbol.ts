@@ -4,6 +4,7 @@ import { extname } from 'path';
 import { randomBytes } from 'crypto';
 import { config } from '../config.js';
 import * as store from '../store.js';
+import { requireRole } from '../middleware.js';
 import { unlink } from 'fs';
 
 const router = Router();
@@ -37,6 +38,7 @@ const upload = multer({
  */
 router.post(
   '/symbols',
+  requireRole('admin', 'operator'),
   upload.single('file'),
   (req: Request, res: Response): void => {
     void (async () => {
@@ -106,7 +108,7 @@ router.get('/symbols', (req: Request, res: Response): void => {
  * DELETE /api/v1/symbols/:id
  * Delete a symbol file.
  */
-router.delete('/symbols/:id', (req: Request, res: Response): void => {
+router.delete('/symbols/:id', requireRole('admin', 'operator'), (req: Request, res: Response): void => {
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) {
     res.status(400).json({ error: 'Invalid ID' });
@@ -134,7 +136,7 @@ router.delete('/symbols/:id', (req: Request, res: Response): void => {
  * GET /api/v1/symbols/:id/download
  * Download a symbol file.
  */
-router.get('/symbols/:id/download', (req: Request, res: Response): void => {
+router.get('/symbols/:id/download', requireRole('admin', 'operator'), (req: Request, res: Response): void => {
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) {
     res.status(400).json({ error: 'Invalid ID' });

@@ -2,9 +2,7 @@ import { Router, type Request, type Response } from 'express';
 import { readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
-import { createHash } from 'crypto';
-import { config } from '../config.js';
-import { createSessionToken, readSession, requireAuth } from '../middleware.js';
+import { getAuthenticatedUser, requireAuth, requireRole } from '../middleware.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const templatesDir = resolve(__dirname, '..', '..', 'web', 'templates');
@@ -33,6 +31,7 @@ function controllerToRoute(name: string): string {
     'crash_detail.html': '/web/crashes',
     'feedback_list.html': '/web/feedback',
     'symbol_list.html': '/web/symbols',
+    'account_list.html': '/web/accounts',
   };
   return map[name] ?? '/web/';
 }
@@ -45,8 +44,8 @@ function controllerToRoute(name: string): string {
  */
 router.get('/login', (_req: Request, res: Response): void => {
   // Already logged in? Redirect to dashboard
-  const session = readSession(_req);
-  if (session) {
+  const user = getAuthenticatedUser(_req);
+  if (user) {
     res.redirect('/web/');
     return;
   }
@@ -55,37 +54,7 @@ router.get('/login', (_req: Request, res: Response): void => {
   res.type('html').send(html);
 });
 
-/**
- * POST /web/login
- * Authenticate and set session cookie.
- */
-router.post('/login', (req: Request, res: Response): void => {
-  const { username, password } = req.body || {};
-  const passwordHash = createHash('sha256').update(password || '').digest('hex');
-
-  if (username === config.adminUsername && passwordHash === config.adminPasswordHash) {
-    const token = createSessionToken(username);
-    res.cookie('auth_token', token, {
-      httpOnly: true,
-      secure: false,
-      sameSite: 'lax',
-      maxAge: 24 * 60 * 60 * 1000, // 24h
-      path: '/',
-    });
-    res.json({ success: true });
-  } else {
-    res.status(401).json({ success: false, message: 'Invalid username or password' });
-  }
-});
-
-/**
- * POST /web/logout
- * Clear session cookie.
- */
-router.post('/logout', (_req: Request, res: Response): void => {
-  res.clearCookie('auth_token', { path: '/' });
-  res.json({ success: true });
-});
+// Login and logout requests are handled by handler/auth.ts before this router.
 
 // ---------- Protected page routes (require login) ----------
 
@@ -109,7 +78,7 @@ router.get('/crashes', requireAuth, (_req: Request, res: Response): void => {
  * GET /web/crashes/:id
  * Crash detail page.
  */
-router.get('/crashes/:id', requireAuth, (_req: Request, res: Response): void => {
+router.get('/crashes/:id', requireAuth, requireRole('admin', 'operator'), (_req: Request, res: Response): void => {
   res.type('html').send(renderTemplate('crash_detail.html', 'Crash Detail - Crash Report Server'));
 });
 
@@ -117,7 +86,7 @@ router.get('/crashes/:id', requireAuth, (_req: Request, res: Response): void => 
  * GET /web/feedback
  * Player-submitted feedback management page.
  */
-router.get('/feedback', requireAuth, (_req: Request, res: Response): void => {
+router.get('/feedback', requireAuth, requireRole('admin', 'operator'), (_req: Request, res: Response): void => {
   res.type('html').send(renderTemplate('feedback_list.html', 'Player Feedback - Crash Report Server'));
 });
 
@@ -129,11 +98,15 @@ router.get('/symbols', requireAuth, (_req: Request, res: Response): void => {
   res.type('html').send(renderTemplate('symbol_list.html', 'Symbols - Crash Report Server'));
 });
 
+router.get('/accounts', requireAuth, requireRole('admin'), (_req: Request, res: Response): void => {
+  res.type('html').send(renderTemplate('account_list.html', 'Account Security - Crash Report Server'));
+});
+
 /**
  * GET /web/api-doc
  * Simple API documentation page.
  */
-router.get('/api-doc', (_req: Request, res: Response): void => {
+router.get('/api-doc', requireAuth, (_req: Request, res: Response): void => {
   res.type('html').send(`
 <!DOCTYPE html>
 <html lang="zh-CN">

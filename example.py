@@ -11,10 +11,13 @@ import requests
 import traceback
 import sys
 import json
+import os
 from datetime import datetime, timezone
 
 
 API_BASE = "http://localhost:8080/api/v1"
+API_KEY = os.environ.get("API_KEY", "")
+API_HEADERS = {"X-API-Key": API_KEY} if API_KEY else {}
 
 
 # ============================================================
@@ -22,7 +25,7 @@ API_BASE = "http://localhost:8080/api/v1"
 # ============================================================
 def example_minimal():
     print("--- Example 1: Minimal crash report ---")
-    resp = requests.post(f"{API_BASE}/crash-report", json={
+    resp = requests.post(f"{API_BASE}/crash-report", headers=API_HEADERS, json={
         "exception_type": "ValueError",
         "exception_message": "Invalid value encountered",
         "runtime": "python",
@@ -36,7 +39,7 @@ def example_minimal():
 # ============================================================
 def example_full():
     print("\n--- Example 2: Full crash report ---")
-    resp = requests.post(f"{API_BASE}/crash-report", json={
+    resp = requests.post(f"{API_BASE}/crash-report", headers=API_HEADERS, json={
         "exception_type": "RuntimeError",
         "exception_message": "Database connection timeout after 30s",
         "stack_trace": (
@@ -79,7 +82,7 @@ def example_catch_exception():
         exc_msg = str(exc)
         stack = traceback.format_exc()
 
-        resp = requests.post(f"{API_BASE}/crash-report", json={
+        resp = requests.post(f"{API_BASE}/crash-report", headers=API_HEADERS, json={
             "exception_type": exc_type,
             "exception_message": exc_msg,
             "stack_trace": stack,
@@ -108,7 +111,7 @@ def example_with_attachment():
         b"  #1 libunity.so+0x67890\n"
     )
 
-    resp = requests.post(f"{API_BASE}/crash-report",
+    resp = requests.post(f"{API_BASE}/crash-report", headers=API_HEADERS,
         data={
             "exception_type": "SIGSEGV",
             "exception_message": "Segmentation fault",
@@ -131,7 +134,7 @@ def example_with_attachment():
 # ============================================================
 def example_unity():
     print("\n--- Example 5: Unity crash (via generic endpoint) ---")
-    resp = requests.post(f"{API_BASE}/crash-report", json={
+    resp = requests.post(f"{API_BASE}/crash-report", headers=API_HEADERS, json={
         "exception_type": "NullReferenceException",
         "exception_message": "Object reference not set to an instance of an object",
         "stack_trace": "at PlayerController.Update () [0x00000] in /Assets/Scripts/Player.cs:42",
@@ -156,8 +159,9 @@ def example_unity():
 class CrashReporter:
     """Wrap your app's main() in this to auto-report unhandled crashes."""
 
-    def __init__(self, base_url: str = API_BASE, **tags):
+    def __init__(self, base_url: str = API_BASE, api_key: str = API_KEY, **tags):
         self.base_url = base_url
+        self.headers = {"X-API-Key": api_key} if api_key else {}
         self.tags = tags  # extra fields to attach: server_name, environment, etc.
 
     def report(self, exc_type, exc_value, exc_tb):
@@ -171,7 +175,7 @@ class CrashReporter:
             **self.tags,
         }
         try:
-            resp = requests.post(f"{self.base_url}/crash-report", json=payload, timeout=5)
+            resp = requests.post(f"{self.base_url}/crash-report", headers=self.headers, json=payload, timeout=5)
             print(f"[CrashReporter] Reported: {resp.status_code} -> {resp.json()}")
         except Exception as e:
             print(f"[CrashReporter] Failed to report: {e}", file=sys.stderr)

@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'crypto';
+import { randomBytes } from 'crypto';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -12,11 +12,18 @@ export interface Config {
   attachmentsDir: string;
   maxLogSize: number;
   maxAttachmentSize: number;
+  maxJsonBodySize: number;
   corsOrigins: string[];
-  authToken: string;
-  adminUsername: string;
-  adminPasswordHash: string;
-  sessionSecret: string;
+  bootstrapAdminUsername: string;
+  bootstrapAdminPassword: string;
+  generatedBootstrapPassword: boolean;
+  cookieSecure: boolean;
+  sessionHours: number;
+  apiRequireKey: boolean;
+  trustProxy: boolean | number | string;
+  loginRateLimit: number;
+  ingestRateLimit: number;
+  apiRateLimit: number;
   webhookUrl: string;
   webhookTimeoutMs: number;
   smtpHost: string;
@@ -35,10 +42,10 @@ function env(key: string, fallback: string): string {
 }
 
 function envInt(key: string, fallback: number): number {
-  const v = process.env[key];
-  if (v !== undefined) {
-    const n = parseInt(v, 10);
-    if (!isNaN(n)) return n;
+  const value = process.env[key];
+  if (value !== undefined) {
+    const parsed = parseInt(value, 10);
+    if (Number.isFinite(parsed)) return parsed;
   }
   return fallback;
 }
@@ -49,35 +56,25 @@ function envBool(key: string, fallback: boolean): boolean {
   return ['1', 'true', 'yes', 'on'].includes(value.toLowerCase());
 }
 
-function randomToken(): string {
-  return randomBytes(16).toString('hex');
-}
-
 function loadConfig(): Config {
   const port = envInt('PORT', 8080);
   const dataDir = resolve(env('DATA_DIR', resolve(__dirname, '..', '..', 'data')));
   const dbPath = env('DB_PATH', resolve(dataDir, 'crash_reports.db'));
   const symbolsDir = env('SYMBOLS_DIR', resolve(dataDir, 'symbols'));
   const attachmentsDir = env('ATTACHMENTS_DIR', resolve(dataDir, 'attachments'));
-  const maxLogSize = envInt('MAX_LOG_SIZE', 10 * 1024 * 1024); // 10MB
-  const maxAttachmentSize = envInt('MAX_ATTACHMENT_SIZE', 20 * 1024 * 1024); // 20MB
-  const corsOrigins = env('CORS_ORIGINS', '*').split(',').map(s => s.trim());
-  const authToken = env('AUTH_TOKEN', randomToken());
-  const adminUsername = env('ADMIN_USERNAME', 'admin');
-  const adminPassword = env('ADMIN_PASSWORD', 'ghltbm123456');
-  const adminPasswordHash = createHash('sha256').update(adminPassword).digest('hex');
-  const sessionSecret = env('SESSION_SECRET', randomBytes(32).toString('hex'));
-  const webhookUrl = env('WEBHOOK_URL', '');
-  const webhookTimeoutMs = envInt('WEBHOOK_TIMEOUT_MS', 5000);
-  const smtpHost = env('SMTP_HOST', '');
-  const smtpPort = envInt('SMTP_PORT', 587);
-  const smtpSecure = envBool('SMTP_SECURE', false);
-  const smtpUser = env('SMTP_USER', '');
-  const smtpPassword = env('SMTP_PASSWORD', '');
-  const alertEmailFrom = env('ALERT_EMAIL_FROM', '');
-  const alertEmailTo = env('ALERT_EMAIL_TO', '');
-  const alertOnNewGroup = envBool('ALERT_ON_NEW_GROUP', true);
-  const alertThresholdCount = envInt('ALERT_THRESHOLD_COUNT', 10);
+  const maxLogSize = envInt('MAX_LOG_SIZE', 10 * 1024 * 1024);
+  const maxAttachmentSize = envInt('MAX_ATTACHMENT_SIZE', 20 * 1024 * 1024);
+  const maxJsonBodySize = envInt('MAX_JSON_BODY_SIZE', 12 * 1024 * 1024);
+  const corsOrigins = env('CORS_ORIGINS', '').split(',').map(value => value.trim()).filter(Boolean);
+  const configuredAdminPassword = process.env.ADMIN_PASSWORD;
+  const nodeEnv = env('NODE_ENV', 'development').toLowerCase();
+  if (!configuredAdminPassword && nodeEnv === 'production') {
+    throw new Error('ADMIN_PASSWORD is required when NODE_ENV=production');
+  }
+  const generatedAdminPassword = randomBytes(18).toString('base64url');
+  const trustProxyValue = env('TRUST_PROXY', 'false');
+  const numericTrustProxy = /^\d+$/.test(trustProxyValue) ? parseInt(trustProxyValue, 10) : null;
+  const trustProxy = numericTrustProxy ?? (trustProxyValue === 'true' ? true : trustProxyValue === 'false' ? false : trustProxyValue);
 
   return {
     port,
@@ -87,22 +84,29 @@ function loadConfig(): Config {
     attachmentsDir,
     maxLogSize,
     maxAttachmentSize,
+    maxJsonBodySize,
     corsOrigins,
-    authToken,
-    adminUsername,
-    adminPasswordHash,
-    sessionSecret,
-    webhookUrl,
-    webhookTimeoutMs,
-    smtpHost,
-    smtpPort,
-    smtpSecure,
-    smtpUser,
-    smtpPassword,
-    alertEmailFrom,
-    alertEmailTo,
-    alertOnNewGroup,
-    alertThresholdCount,
+    bootstrapAdminUsername: env('ADMIN_USERNAME', 'admin'),
+    bootstrapAdminPassword: configuredAdminPassword || generatedAdminPassword,
+    generatedBootstrapPassword: !configuredAdminPassword,
+    cookieSecure: envBool('COOKIE_SECURE', nodeEnv === 'production'),
+    sessionHours: Math.max(1, envInt('SESSION_HOURS', 12)),
+    apiRequireKey: envBool('API_REQUIRE_KEY', true),
+    trustProxy,
+    loginRateLimit: Math.max(1, envInt('LOGIN_RATE_LIMIT', 50000000)),
+    ingestRateLimit: Math.max(1, envInt('INGEST_RATE_LIMIT', 120)),
+    apiRateLimit: Math.max(1, envInt('API_RATE_LIMIT', 600)),
+    webhookUrl: env('WEBHOOK_URL', ''),
+    webhookTimeoutMs: envInt('WEBHOOK_TIMEOUT_MS', 5000),
+    smtpHost: env('SMTP_HOST', ''),
+    smtpPort: envInt('SMTP_PORT', 587),
+    smtpSecure: envBool('SMTP_SECURE', false),
+    smtpUser: env('SMTP_USER', ''),
+    smtpPassword: env('SMTP_PASSWORD', ''),
+    alertEmailFrom: env('ALERT_EMAIL_FROM', ''),
+    alertEmailTo: env('ALERT_EMAIL_TO', ''),
+    alertOnNewGroup: envBool('ALERT_ON_NEW_GROUP', true),
+    alertThresholdCount: envInt('ALERT_THRESHOLD_COUNT', 10),
   };
 }
 

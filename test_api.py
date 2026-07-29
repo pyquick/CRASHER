@@ -19,7 +19,17 @@ sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 BASE = os.environ.get("BASE_URL", "http://localhost:8080")
 API = f"{BASE}/api/v1"
 WEB = f"{BASE}/web"
-CREDS = {"username": "admin", "password": "ghltbm123456"}
+CREDS = {
+    "username": os.environ.get("ADMIN_USERNAME", "admin"),
+    "password": os.environ.get("ADMIN_PASSWORD", ""),
+}
+API_KEY = os.environ.get("API_KEY", "")
+INGEST_HEADERS = {"X-API-Key": API_KEY} if API_KEY else {}
+
+if not CREDS["password"]:
+    raise SystemExit("Set ADMIN_PASSWORD to the bootstrap/admin password before running tests")
+if not API_KEY:
+    raise SystemExit("Set API_KEY to an admin-created ingestion API key before running tests")
 
 ok = 0
 fail = 0
@@ -53,7 +63,7 @@ check("uptime is float", isinstance(r.json().get("uptime"), (int, float)))
 section("2. Public Crash Report Ingestion")
 
 # 2a. JSON minimal
-r = requests.post(f"{API}/crash-report", json={
+r = requests.post(f"{API}/crash-report", headers=INGEST_HEADERS, json={
     "exception_type": "TestException",
     "exception_message": "A test crash",
     "stack_trace": "at line 1\nat line 2",
@@ -69,7 +79,7 @@ rid = data.get("id")
 gid = data.get("group_id")
 
 # 2b. JSON full fields
-r = requests.post(f"{API}/crash-report", json={
+r = requests.post(f"{API}/crash-report", headers=INGEST_HEADERS, json={
     "exception_type": "NullReferenceException",
     "exception_message": "Object reference not set",
     "stack_trace": "at PlayerController.Update() in /Assets/Scripts/Player.cs:42",
@@ -99,7 +109,7 @@ r = requests.post(f"{API}/unity/crash-report", json={
     "stack_trace": "(0xDEAD) at MyScript.Update()",
     "unity_version": "6000.0.23f1",
     "platform": "iOS",
-}, headers={"x-client-type": "unity"}, timeout=5)
+}, headers={**INGEST_HEADERS, "x-client-type": "unity"}, timeout=5)
 check("POST /unity/crash-report → 201", r.status_code == 201)
 data = r.json()
 check("runtime field = unity", data.get("runtime") == "unity")
@@ -107,15 +117,15 @@ check("runtime field = unity", data.get("runtime") == "unity")
 # 2c2. Unity endpoint blocked for non-Unity clients
 r = requests.post(f"{API}/unity/crash-report", json={
     "exception_type": "Blocked",
-}, timeout=5)
+}, headers=INGEST_HEADERS, timeout=5)
 check("POST /unity/crash-report (no unity header) → 403", r.status_code == 403)
 
 # 2d. Missing required field
-r = requests.post(f"{API}/crash-report", json={}, timeout=5)
+r = requests.post(f"{API}/crash-report", headers=INGEST_HEADERS, json={}, timeout=5)
 check("POST /crash-report (empty) → 400", r.status_code == 400)
 
 # 2e. Multipart form upload
-r = requests.post(f"{API}/crash-report", files={
+r = requests.post(f"{API}/crash-report", headers=INGEST_HEADERS, files={
     "attachments": ("test.txt", b"Fake crash dump content\nbacktrace line 1\nbacktrace line 2\n", "text/plain"),
 }, data={
     "exception_type": "SIGSEGV",
@@ -124,7 +134,7 @@ r = requests.post(f"{API}/crash-report", files={
 check("POST /crash-report (multipart) → 201", r.status_code == 201)
 
 # 2f. Player-authored feedback (public endpoint)
-r = requests.post(f"{API}/player-feedback", json={
+r = requests.post(f"{API}/player-feedback", headers=INGEST_HEADERS, json={
     "title": "Cannot equip the new sword",
     "description": "The Equip button does nothing after I buy the sword from the shop.",
     "category": "bug",
@@ -141,7 +151,7 @@ feedback_data = r.json()
 check("player feedback has id", "id" in feedback_data)
 feedback_id = feedback_data.get("id")
 
-r = requests.post(f"{API}/player-feedback", json={"title": "Missing description"}, timeout=5)
+r = requests.post(f"{API}/player-feedback", headers=INGEST_HEADERS, json={"title": "Missing description"}, timeout=5)
 check("POST /player-feedback (missing description) → 400", r.status_code == 400)
 
 # ──────────────────────────────────────────────────
@@ -189,6 +199,7 @@ r = s.post(f"{WEB}/login", json=CREDS, timeout=5)
 check("POST /web/login (correct) → 200", r.status_code == 200)
 check("success=true", r.json().get("success") is True)
 check("auth_token cookie set", "auth_token" in s.cookies.get_dict())
+s.headers.update({"X-CSRF-Token": s.cookies.get("csrf_token", "")})
 
 # 4d. Login page redirects when already logged in
 r = s.get(f"{WEB}/login", allow_redirects=False, timeout=5)
@@ -210,6 +221,7 @@ section("5. Protected Routes — Authenticated")
 
 s2 = requests.Session()
 s2.post(f"{WEB}/login", json=CREDS, timeout=5)
+s2.headers.update({"X-CSRF-Token": s2.cookies.get("csrf_token", "")})
 
 # 5a. Crash groups list
 r = s2.get(f"{API}/crash-groups", timeout=5)

@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import multer from 'multer';
 import { randomBytes } from 'crypto';
-import { readFileSync } from 'fs';
+import { readFileSync, unlinkSync } from 'fs';
 import { config } from '../config.js';
 import { ingestCrash } from '../service.js';
 import * as store from '../store.js';
@@ -36,6 +36,7 @@ router.post('/unity/crash-report', upload.array('attachments', 10), async (req: 
   const ua = (req.headers['user-agent'] ?? '').toLowerCase();
   const clientTag = (req.headers['x-client-type'] as string ?? '').toLowerCase();
   if (!ua.includes('unity') && clientTag !== 'unity') {
+    cleanupUploads(req);
     res.status(403).json({
       error: 'Forbidden',
       message: 'This endpoint is for Unity clients only. Use /api/v1/crash-report with runtime="unity" instead.',
@@ -61,6 +62,7 @@ router.post('/unity/crash-report', upload.array('attachments', 10), async (req: 
     }
 
     if (!input.exception_type || typeof input.exception_type !== 'string') {
+      cleanupUploads(req);
       res.status(400).json({ error: 'Bad Request', message: 'exception_type is required' });
       return;
     }
@@ -109,10 +111,18 @@ router.post('/unity/crash-report', upload.array('attachments', 10), async (req: 
       runtime: 'unity',
     });
   } catch (err: any) {
+    cleanupUploads(req);
     console.error('Error ingesting Unity crash report:', err);
-    res.status(500).json({ error: 'Internal Server Error', message: err.message });
+    res.status(500).json({ error: 'Internal Server Error', message: 'Could not ingest Unity crash report' });
   }
 });
+
+function cleanupUploads(req: Request): void {
+  const files = ((req as any).files ?? []) as Express.Multer.File[];
+  for (const file of files) {
+    try { unlinkSync(file.path); } catch {}
+  }
+}
 
 function extractUnityFormReport(body: Record<string, unknown>): CrashReportInput {
   const s = (k: string) => String(body[k] ?? '');

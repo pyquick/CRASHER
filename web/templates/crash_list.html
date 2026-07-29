@@ -103,7 +103,7 @@
       </thead>
       <tbody>
         <template x-for="item in items" :key="item.id">
-          <tr class="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors cursor-pointer"
+          <tr class="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors viewer-hide cursor-pointer"
               @click="window.location.href = '/web/crashes/' + item.id">
             <td class="px-4 py-3">
               <p class="font-medium text-gray-200" x-text="item.exception_type"></p>

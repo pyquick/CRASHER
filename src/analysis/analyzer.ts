@@ -335,8 +335,20 @@ function languageLabel(lang: string): string {
     c: 'C',
     go: 'Go',
     python: 'Python',
+    javascript: 'JavaScript',
+    typescript: 'TypeScript',
     node: 'Node.js',
-    browser: 'Browser JS',
+    browser: 'Browser JavaScript',
+    java: 'Java',
+    kotlin: 'Kotlin',
+    rust: 'Rust',
+    ruby: 'Ruby',
+    php: 'PHP',
+    swift: 'Swift',
+    dart: 'Dart / Flutter',
+    elixir: 'Elixir',
+    erlang: 'Erlang',
+    lua: 'Lua',
     unknown: 'Unknown',
   };
   return labels[lang] || lang.toUpperCase();
@@ -367,6 +379,45 @@ function getLanguageAdvice(lang: string, exceptionType: string): string {
       ValueError: '传入的值类型正确但值不合理。添加输入验证。Add input validation for the problematic value.',
       TypeError: '对不兼容的类型执行了操作。检查变量类型，使用 isinstance() 或类型注解。Check variable types before performing operations.',
     },
+    javascript: {
+      TypeError: '类型错误，通常是对 null/undefined 访问属性或调用方法。使用可选链操作符 (?.) 或增加空值检查。Use optional chaining (?.) or guard against null/undefined.',
+      ReferenceError: '引用了未定义的变量或标识符。检查变量是否在作用域内声明。Check if the variable is declared in the current scope.',
+      SyntaxError: '代码语法错误。检查括号匹配、引号闭合和逗号是否正确。Review syntax around the reported location.',
+      RangeError: '值超出有效范围，通常发生在数组长度、递归调用或数字转换。Check for infinite recursion or invalid array lengths.',
+    },
+    node: {
+      TypeError: '类型错误，通常是对 null/undefined 访问属性或调用方法。使用可选链操作符 (?.) 或增加空值检查。Use optional chaining (?.) or guard against null/undefined.',
+      ReferenceError: '引用了未定义的变量或标识符。检查变量是否在作用域内声明。Check if the variable is declared in the current scope.',
+    },
+    java: {
+      NullPointerException: '空指针异常。在调用对象方法或访问字段前检查 null。Use Objects.requireNonNull() or add null guards before method calls.',
+      ArrayIndexOutOfBoundsException: '数组索引越界。检查索引是否在 0 到 length-1 范围内。Verify the index is within array bounds.',
+      ClassCastException: '类型转换错误。使用 instanceof 检查后再转换，或使用泛型避免。Use instanceof checks before casting, or use generics.',
+      IllegalArgumentException: '传递了不合法或不适当的参数。添加输入验证和前置条件检查。Add input validation for method parameters.',
+      ConcurrentModificationException: '在迭代集合时修改了集合。使用 Iterator.remove() 或并发集合类。Use ConcurrentHashMap or CopyOnWriteArrayList for concurrent access.',
+    },
+    rust: {
+      'panicked at': '程序触发了 panic!，通常是不可恢复的错误。检查 unwrap/expect 调用或数组越界访问。Check unwrap/expect calls and array indexing.',
+    },
+    ruby: {
+      NoMethodError: '调用了对象不存在的方法。使用 respond_to? 检查或确保对象类型正确。Check if the object responds to the method before calling.',
+      NameError: '引用了未定义的变量或常量。检查拼写或确保定义在使用之前。Verify the variable/constant is defined.',
+    },
+    php: {
+      'Fatal error': '致命错误，通常由未定义的类、函数或语法错误导致。检查类名前缀和函数拼写。Check class namespacing and function spelling.',
+      'Uncaught Error': '未捕获的错误。使用 try/catch 块包裹可能出错的代码。Wrap the crash site in a try/catch block.',
+      'Uncaught Exception': '未捕获的异常。添加 try/catch 处理或确保上层调用者有异常处理。Add exception handling around the reported location.',
+    },
+    swift: {
+      'fatal error': '运行时致命错误，通常由强制解包 nil 可选值导致。避免使用 ! 强制解包，改用 if let 或 guard let。Avoid force-unwrapping optionals; use if let or guard let instead.',
+      'EXC_BAD_ACCESS': '内存访问错误，通常访问了已释放或无效的内存。使用 Xcode Zombies 或 Address Sanitizer 调试。Use Xcode diagnostic tools to identify the memory issue.',
+      SIGABRT: '程序异常终止，通常由未满足的前置条件或运行时检查失败。检查 assert/precondition 调用。',
+    },
+    dart: {
+      NoSuchMethodError: '调用了不存在的方法。检查方法名拼写和参数类型。Verify the method name and argument types.',
+      NullThrownError: '抛出了 null 值。确保抛出的是 Error 或 Exception 的子类。Throw a proper Error or Exception subclass.',
+      TypeError: '类型不匹配。使用正确的泛型类型或添加类型检查。Use correct generic types or add type guards.',
+    },
   };
 
   // Check language-specific advice
@@ -388,6 +439,20 @@ function getLanguageAdvice(lang: string, exceptionType: string): string {
     cpp: 'Compile with debug symbols (-g) and use a debugger (gdb/lldb) or AddressSanitizer to identify the exact memory issue.',
     go: 'Run the failing test with -race flag to detect data races. Use delve (dlv) debugger for step-through debugging.',
     python: 'Add try/except blocks around the crash site. Use pdb or a debugger to step through the code at the crash point.',
+    javascript: 'Review the stack trace above for the exact file path and line number. Use browser DevTools or Node.js inspector for debugging.',
+    node: 'Review the stack trace above for the exact file path and line number. Use node --inspect or ndb for step-through debugging.',
+    browser: 'Check the browser DevTools Sources panel at the reported file and line. Use source maps for minified code.',
+    typescript: 'Check the stack trace for the exact source location. Use ts-node --inspect or source-map-support for accurate line numbers.',
+    java: 'Check the stack trace for the exact class and line number. Use a Java debugger or set breakpoints in the reported method.',
+    kotlin: 'Review the stack trace for the exact file and line. Use IntelliJ/Android Studio debugger for step-through analysis.',
+    rust: 'Run with RUST_BACKTRACE=full for a complete stack trace. Use cargo test or a debugger (gdb/lldb) for detailed analysis.',
+    ruby: 'Review the stack trace for file paths and line numbers. Use byebug or pry for step-through debugging.',
+    php: 'Enable xdebug for detailed stack traces. Check the file and line reported in the stack trace for the error.',
+    swift: 'Use Xcode debugger and Instruments to analyze the crash. Enable zombie objects and address sanitizer for memory issues.',
+    dart: 'Use flutter analyze or dart analyze for static code checks. Run with --enable-asserts and use the Dart DevTools debugger.',
+    elixir: 'Use IEx.pry or :debugger.start for debugging. Check the Mix/OTP stack trace for the exact module and line number.',
+    erlang: 'Use :debugger.start() or dbg module for tracing. Check the Erlang stack trace for module:function/arity.',
+    lua: 'Use lua-debug or mobdebug for remote debugging. Add pcall() wrappers around the crash site for graceful error handling.',
   };
   return defaults[lang] || 'Review the stack trace above and check the file paths and line numbers for the root cause.';
 }
@@ -419,12 +484,60 @@ function extractStackFromLog(logText: string, lang: string): string {
     if (atLines.length > 0) return atLines.join('\n');
   }
 
+  // JavaScript/Node: Look for "at ... (file:line:col)" lines
+  if (lang === 'node' || lang === 'javascript' || lang === 'browser' || lang === 'typescript') {
+    const jsLines = lines.filter(l => l.trim().match(/^\s*at\s+/));
+    if (jsLines.length > 0) return jsLines.join('\n');
+  }
+
+  // Java: Look for "at com.example.Class.method(File.java:42)" lines
+  if (lang === 'java' || lang === 'kotlin') {
+    const javaLines = lines.filter(l => l.trim().match(/^\s*at\s+/));
+    if (javaLines.length > 0) return javaLines.join('\n');
+  }
+
+  // Rust: Look for numbered frames
+  if (lang === 'rust') {
+    const rsStart = lines.findIndex(l => l.includes('panicked at') || l.includes('stack backtrace:'));
+    if (rsStart >= 0) {
+      return lines.slice(rsStart, Math.min(lines.length, rsStart + 50)).join('\n');
+    }
+  }
+
   // Go: Look for panic section
   if (lang === 'go') {
     const panicIdx = lines.findIndex(l => l.includes('panic:') || l.includes('goroutine'));
     if (panicIdx >= 0) {
       return lines.slice(panicIdx, Math.min(lines.length, panicIdx + 40)).join('\n');
     }
+  }
+
+  // PHP: Look for stack trace section
+  if (lang === 'php') {
+    const stStart = lines.findIndex(l => l.includes('Stack trace:') || l.match(/^#\d+\s+\S+\.php/));
+    if (stStart >= 0) {
+      return lines.slice(stStart, Math.min(lines.length, stStart + 40)).join('\n');
+    }
+  }
+
+  // Ruby: Look for "from ...rb:42:in ..." lines
+  if (lang === 'ruby') {
+    const rbLines = lines.filter(l => l.match(/\S+\.rb:\d+/));
+    if (rbLines.length > 0) return rbLines.join('\n');
+  }
+
+  // Swift
+  if (lang === 'swift') {
+    const swiftStart = lines.findIndex(l => l.match(/^\d+\s+\S+\s+0x/));
+    if (swiftStart >= 0) {
+      return lines.slice(swiftStart, Math.min(lines.length, swiftStart + 50)).join('\n');
+    }
+  }
+
+  // Dart
+  if (lang === 'dart') {
+    const dartLines = lines.filter(l => l.match(/^(package:|dart:)/));
+    if (dartLines.length > 0) return dartLines.join('\n');
   }
 
   // Generic: Find lines that look like stack frames

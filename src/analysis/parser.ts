@@ -1,5 +1,7 @@
 // ── Stack Trace Parser ──
-// Parses C#, C++/C, Go, and Python stack traces into structured StackFrame objects.
+// Parses C#, C++/C, Go, Python, JavaScript/TypeScript (Node & Browser),
+// Java/Kotlin, Rust, Ruby, PHP, Swift, Dart, Elixir/Erlang, Lua stack traces
+// into structured StackFrame objects.
 
 import type { StackFrame } from './types.js';
 
@@ -30,6 +32,38 @@ export function parseStackFrames(stackTrace: string, runtime: string): StackFram
     case 'python':
       frames = parsePython(lines);
       break;
+    case 'javascript':
+    case 'node':
+    case 'browser':
+    case 'typescript':
+      frames = parseJavaScript(lines, lang);
+      break;
+    case 'java':
+    case 'kotlin':
+      frames = parseJava(lines);
+      break;
+    case 'rust':
+      frames = parseRust(lines);
+      break;
+    case 'ruby':
+      frames = parseRuby(lines);
+      break;
+    case 'php':
+      frames = parsePHP(lines);
+      break;
+    case 'swift':
+      frames = parseSwift(lines);
+      break;
+    case 'dart':
+      frames = parseDart(lines);
+      break;
+    case 'elixir':
+    case 'erlang':
+      frames = parseElixirErlang(lines, lang);
+      break;
+    case 'lua':
+      frames = parseLua(lines);
+      break;
     default:
       frames = parseGeneric(lines);
       break;
@@ -54,6 +88,20 @@ export function detectLanguage(stackTrace: string, runtime: string): string {
   if (rt === 'c') return 'c';
   if (rt === 'go' || rt === 'golang') return 'go';
   if (rt === 'python' || rt === 'python3') return 'python';
+  if (rt === 'node' || rt === 'nodejs' || rt === 'node.js' || rt === 'bun' || rt === 'deno') return 'node';
+  if (rt === 'browser' || rt === 'web' || rt === 'frontend') return 'browser';
+  if (rt === 'javascript' || rt === 'js') return 'javascript';
+  if (rt === 'typescript' || rt === 'ts') return 'typescript';
+  if (rt === 'java' || rt === 'jvm') return 'java';
+  if (rt === 'kotlin') return 'kotlin';
+  if (rt === 'rust' || rt === 'rs') return 'rust';
+  if (rt === 'ruby' || rt === 'rb') return 'ruby';
+  if (rt === 'php') return 'php';
+  if (rt === 'swift') return 'swift';
+  if (rt === 'dart' || rt === 'flutter') return 'dart';
+  if (rt === 'elixir' || rt === 'exs') return 'elixir';
+  if (rt === 'erlang' || rt === 'erl') return 'erlang';
+  if (rt === 'lua') return 'lua';
 
   // Auto-detect from stack trace content
   const st = stackTrace;
@@ -61,11 +109,24 @@ export function detectLanguage(stackTrace: string, runtime: string): string {
   // Python: starts with "Traceback (most recent call last):" or has "File "...", line N, in func"
   if (st.startsWith('Traceback') || st.match(/File\s+".+?",\s+line\s+\d+,\s+in\s+/m)) return 'python';
 
+  // Ruby: "from /path/to/file.rb:42:in `method_name'"
+  if (st.match(/^\s*from\s+\/.+\.rb:\d+:in\s+`/) || st.match(/\S+\.rb:\d+:in\s+`/m)) return 'ruby';
+
+  // PHP: "#N /path/file.php(line): Class->method()" or "PHP Fatal error:"
+  if (st.match(/^#\d+\s+\/.+\.php\(\d+\)/) || st.match(/^(?:PHP\s+)?(?:Fatal|Parse|Warning|Notice)\s+error:/m)) return 'php';
+
   // Go: typical goroutine / panic format
   if (st.match(/^(goroutine\s+\d+|panic:)/m) || st.match(/^(\S+)\.(\w+)\(.*?\)\s*$/m)) {
-    // Go has distinct patterns like "pkg.Func(args)" on its own line
     const goCount = (st.match(/^(\S+)\.(\w+)\(.*?\)$/gm) || []).length;
     if (goCount >= 2) return 'go';
+  }
+
+  // Java/Kotlin: "at com.example.Class.method(File.java:42)"
+  if (st.match(/^\s*at\s+[\w$.]+\.[\w$<>]+\([\w$.]+\.(?:java|kt):\d+\)/m)) return 'java';
+
+  // Rust: "panicked at '...', src/main.rs:42" or stack backtrace format
+  if (st.match(/^thread\s+'.*?'\s+panicked\s+at/m) || st.match(/^\s+\d+:\s+0x[0-9a-f]+\s+-/m)) {
+    if (st.includes('.rs:') || st.includes('mod.rs:') || st.includes('lib.rs:')) return 'rust';
   }
 
   // C# / Unity: "at Class.Method () [0x...] in <path>:line N:col"
@@ -74,7 +135,521 @@ export function detectLanguage(stackTrace: string, runtime: string): string {
   // C++/C: native backtrace with addresses, or "Class::Method" patterns
   if (st.match(/#\d+\s+0x[0-9a-fA-F]+/m) || st.match(/\(\w+::\w+[\+\d+]*\)/m)) return 'cpp';
 
+  // Swift: thread backtrace format with binary image names
+  if (st.match(/^\d+\s+\S+\s+0x[0-9a-fA-F]+\s+\S+\s+\+\s+\d+/m) && st.includes('Thread')) return 'swift';
+
+  // Dart/Flutter: "package:xxx/yyy.dart 42:7  Class.method"
+  if (st.match(/^package:\S+\.dart\s+\d+:\d+\s+/m) || st.match(/^dart:\S+\s+\d+:\d+\s+/m)) return 'dart';
+
+  // Elixir/Erlang: "(module) function/N" or "Test@mod/0 in :elixir_compiler"
+  if (st.match(/^\s*\([\w.]+\)\s+\w+\/\d+\s/m) || st.match(/@\w+\/\d+\s+in\s+/m)) return 'elixir';
+
+  // Lua: "stack traceback:", "file.lua:42: in function 'func'"
+  if (st.match(/^stack\s+traceback:/m) || st.match(/\S+\.lua:\d+:\s+in\s+/m)) return 'lua';
+
+  // JavaScript/Node: "at func (file:line:col)"
+  if (st.match(/^\s*at\s+.+\(.+:\d+:\d+\)/m) || st.match(/^\s*at\s+.+:\d+:\d+$/m)) {
+    const jsFileMatch = st.match(/\.(?:js|mjs|cjs|ts|jsx|tsx|mts|cts):\d+/);
+    if (jsFileMatch) return 'javascript';
+    // Generic "at ... (file:line:col)" could also be Node/Browser with no ext
+    const atCount = (st.match(/^\s*at\s+/gm) || []).length;
+    if (atCount >= 2) return 'javascript';
+  }
+
   return 'unknown';
+}
+
+// ── JavaScript / TypeScript / Node.js / Browser Stack Trace Parser ──
+// Format: at ClassName.methodName (file.js:42:15)
+//         at methodName (file.js:42:15)
+//         at file:///path/to/file.js:42:15
+//         at async ClassName.methodName (file.ts:42:15)
+//         at processTicksAndRejections (node:internal/process/task_queues:95:5)
+
+function parseJavaScript(lines: string[], _lang: string): StackFrame[] {
+  const frames: StackFrame[] = [];
+  let index = 0;
+
+  // JS regex: "at [async ]functionName (path:line:col)"
+  const jsRegex = /^\s*at\s+(?:async\s+)?(.+?)(?:\s+\((.+?):(\d+):(\d+)\))?$/;
+  // Simple regex: "at path:line:col" (anonymous, no function)
+  const simpleRegex = /^\s*at\s+(.+?):(\d+):(\d+)$/;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (trimmed.startsWith('Error:') || trimmed.startsWith('TypeError:') ||
+        trimmed.startsWith('ReferenceError:') || trimmed.startsWith('SyntaxError:')) continue;
+
+    // Try simple regex first (anonymous frame)
+    let m = trimmed.match(simpleRegex);
+    if (m) {
+      frames.push({
+        index: index++,
+        language: 'javascript',
+        file_path: normalizePath(m[1]),
+        line_number: parseInt(m[2], 10),
+        column_number: parseInt(m[3], 10),
+        function_name: '<anonymous>',
+        module_name: extractModuleFromPath(m[1]),
+        address: '',
+        raw_line: trimmed,
+        severity: 'unknown',
+      });
+      continue;
+    }
+
+    m = trimmed.match(jsRegex);
+    if (m) {
+      let funcPart = m[1] || '<anonymous>';
+      let filePath = m[2] || '';
+      const lineNum = m[3] ? parseInt(m[3], 10) : null;
+      const colNum = m[4] ? parseInt(m[4], 10) : null;
+
+      // If there's no file:line:col, funcPart might actually be a file:line:col
+      if (!filePath) {
+        const altMatch = funcPart.match(/^(.+?):(\d+):(\d+)$/);
+        if (altMatch) {
+          filePath = altMatch[1];
+          funcPart = '<anonymous>';
+        }
+      }
+
+      // Split class and method: "ClassName.methodName" or "new ClassName"
+      let funcName = funcPart;
+      let moduleName = '';
+      const dotIdx = funcName.lastIndexOf('.');
+      if (dotIdx > 0) {
+        moduleName = funcName.substring(0, dotIdx);
+        funcName = funcName.substring(dotIdx + 1);
+      }
+
+      frames.push({
+        index: index++,
+        language: 'javascript',
+        file_path: normalizePath(filePath),
+        line_number: lineNum,
+        column_number: colNum,
+        function_name: funcName || '<anonymous>',
+        module_name: moduleName,
+        address: '',
+        raw_line: trimmed,
+        severity: 'unknown',
+      });
+    }
+  }
+
+  return frames;
+}
+
+// ── Java / Kotlin Stack Trace Parser ──
+// Format: at com.example.MyClass.myMethod(MyClass.java:42)
+//         at com.example.MyClass.<init>(MyClass.java:15)
+// Caused by: java.lang.NullPointerException: message
+//         ... 23 more
+
+function parseJava(lines: string[]): StackFrame[] {
+  const frames: StackFrame[] = [];
+  let index = 0;
+
+  // Java frame: "at pkg.Class.method(File.java:42)"
+  const frameRegex = /^\s*at\s+([\w$.]+)\.([\w$<>]+)\(([\w$.]+\.(?:java|kt|scala|groovy|clj))(?::(\d+))?\)/;
+  // Java caused-by chain: "Caused by: ExceptionClass: message"
+  const causedRegex = /^(?:Caused\s+by:\s+)?([\w.]+(?:\.[\w.]+)*(?:Exception|Error|Throwable))(?::\s*(.*))?/;
+  // Java suppressed: "Suppressed: ..."
+  const suppressRegex = /^\s*\.\.\.\s+\d+\s+(?:more|common frames omitted)/;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || suppressRegex.test(trimmed)) continue;
+
+    const m = trimmed.match(frameRegex);
+    if (m) {
+      frames.push({
+        index: index++,
+        language: 'java',
+        file_path: normalizePath(m[3]),
+        line_number: m[4] ? parseInt(m[4], 10) : null,
+        column_number: null,
+        function_name: m[2],
+        module_name: m[1],
+        address: '',
+        raw_line: trimmed,
+        severity: 'unknown',
+      });
+    }
+  }
+
+  return frames;
+}
+
+// ── Rust Stack Trace Parser ──
+// Format: panicked at 'message', src/main.rs:42:15
+//   0: rust_begin_unwind
+//   1: core::panicking::panic
+//   2: my_crate::main
+//              at src/main.rs:42:15
+
+function parseRust(lines: string[]): StackFrame[] {
+  const frames: StackFrame[] = [];
+  let index = 0;
+
+  // Rust numbered frame: "   N: function::path"
+  const numRegex = /^\s*(\d+):\s+(.+)$/;
+  // Rust at line: "             at path:line[:col]"
+  const atRegex = /^\s+at\s+(.+?):(\d+)(?::(\d+))?$/;
+
+  let pendingFunc = '';
+
+  for (let i = 0; i < lines.length; i++) {
+    const trimmed = lines[i].trim();
+
+    // Try numbered frame
+    const numMatch = trimmed.match(numRegex);
+    if (numMatch && !trimmed.startsWith('note:') && !trimmed.startsWith('help:')) {
+      pendingFunc = numMatch[2].trim();
+      continue;
+    }
+
+    // Try "at path:line" following a numbered frame
+    const atMatch = lines[i].match(atRegex);
+    if (atMatch) {
+      const func = pendingFunc || '';
+      pendingFunc = '';
+      const moduleName = func.includes('::')
+        ? func.substring(0, func.lastIndexOf('::')) : '';
+      const funcName = func.includes('::')
+        ? func.substring(func.lastIndexOf('::') + 2) : func;
+
+      frames.push({
+        index: index++,
+        language: 'rust',
+        file_path: normalizePath(atMatch[1]),
+        line_number: parseInt(atMatch[2], 10),
+        column_number: atMatch[3] ? parseInt(atMatch[3], 10) : null,
+        function_name: funcName || func || '<unknown>',
+        module_name: moduleName,
+        address: '',
+        raw_line: lines[i],
+        severity: 'unknown',
+      });
+      continue;
+    }
+
+    // Inline "panicked at '...', path:line:col"
+    const panicMatch = trimmed.match(/panicked\s+at\s+'[^']*',\s+(.+?):(\d+)(?::(\d+))?/);
+    if (panicMatch) {
+      frames.push({
+        index: index++,
+        language: 'rust',
+        file_path: normalizePath(panicMatch[1]),
+        line_number: parseInt(panicMatch[2], 10),
+        column_number: panicMatch[3] ? parseInt(panicMatch[3], 10) : null,
+        function_name: 'panic',
+        module_name: '',
+        address: '',
+        raw_line: trimmed,
+        severity: 'unknown',
+      });
+    }
+  }
+
+  return frames;
+}
+
+// ── Ruby Stack Trace Parser ──
+// Format: from /path/to/file.rb:42:in `method_name'
+//         /path/to/file.rb:42:in `block in method_name'
+
+function parseRuby(lines: string[]): StackFrame[] {
+  const frames: StackFrame[] = [];
+  let index = 0;
+
+  // Ruby frame: "from /path/to/file.rb:42:in `method_name'"
+  //             "/path/to/file.rb:42:in `method_name'"
+  const rbRegex = /^(?:from\s+)?(.+?\.rb):(\d+):in\s+`([^']+)'/;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    const m = trimmed.match(rbRegex);
+    if (m) {
+      frames.push({
+        index: index++,
+        language: 'ruby',
+        file_path: normalizePath(m[1]),
+        line_number: parseInt(m[2], 10),
+        column_number: null,
+        function_name: m[3],
+        module_name: extractModuleFromPath(m[1]),
+        address: '',
+        raw_line: trimmed,
+        severity: 'unknown',
+      });
+    }
+  }
+
+  return frames;
+}
+
+// ── PHP Stack Trace Parser ──
+// Format: #0 /path/to/file.php(42): ClassName->method(args)
+//         #1 /path/to/file.php(100): include('/some/file.php')
+//         PHP Fatal error:  Uncaught Exception: message in /path/file.php:42
+
+function parsePHP(lines: string[]): StackFrame[] {
+  const frames: StackFrame[] = [];
+  let index = 0;
+
+  // PHP numbered frame: "#N /path/file.php(line): Class->method(args)"
+  const frameRegex = /^#(\d+)\s+(.+?\.php)\((\d+)\):\s+(.+)/;
+  // PHP error line: "PHP Fatal error: ... in /path/file.php on line 42"
+  const errorRegex = /(?:Uncaught\s+)?(?:Exception|Error|Throwable)\b.*?\sin\s+(.+?\.php)(?:\s+on\s+line\s+(\d+))?/i;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    const m = trimmed.match(frameRegex);
+    if (m) {
+      let called = m[4];
+      // Parse "Class->method" or "Class::method" or "function"
+      let funcName = called;
+      let moduleName = '';
+      const arrowIdx = called.lastIndexOf('->');
+      const colonIdx = called.lastIndexOf('::');
+      const sepIdx = arrowIdx > colonIdx ? arrowIdx : colonIdx;
+      if (sepIdx > 0) {
+        moduleName = called.substring(0, sepIdx);
+        funcName = called.substring(sepIdx + 2);
+      }
+
+      frames.push({
+        index: index++,
+        language: 'php',
+        file_path: normalizePath(m[2]),
+        line_number: parseInt(m[3], 10),
+        column_number: null,
+        function_name: funcName,
+        module_name: moduleName,
+        address: '',
+        raw_line: trimmed,
+        severity: 'unknown',
+      });
+    }
+  }
+
+  // If no frames parsed, try the error format
+  if (frames.length === 0) {
+    for (const line of lines) {
+      const m = line.match(errorRegex);
+      if (m) {
+        frames.push({
+          index: index++,
+          language: 'php',
+          file_path: normalizePath(m[1]),
+          line_number: m[2] ? parseInt(m[2], 10) : null,
+          column_number: null,
+          function_name: '',
+          module_name: '',
+          address: '',
+          raw_line: line.trim(),
+          severity: 'unknown',
+        });
+      }
+    }
+  }
+
+  return frames;
+}
+
+// ── Swift Stack Trace Parser ──
+// Format: 0   MyApp                   0x10a2b3c4d main + 42  (main.swift:15)
+//         1   libdyld.dylib           0x7fff6a2b3c4d start + 1
+
+function parseSwift(lines: string[]): StackFrame[] {
+  const frames: StackFrame[] = [];
+  let index = 0;
+
+  // Swift frame: "N  ModuleName  0xADDR  function + offset  (file.swift:line)"
+  const swiftRegex = /^(\d+)\s+(\S+)\s+(0x[0-9a-fA-F]+)\s+(.+?)\s+\+\s+\d+(?:\s+\((.+?):(\d+)(?::(\d+))?\))?/;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    const m = trimmed.match(swiftRegex);
+    if (m) {
+      frames.push({
+        index: index++,
+        language: 'swift',
+        file_path: normalizePath(m[5] || ''),
+        line_number: m[6] ? parseInt(m[6], 10) : null,
+        column_number: m[7] ? parseInt(m[7], 10) : null,
+        function_name: (m[4] || '').trim(),
+        module_name: m[2],
+        address: m[3],
+        raw_line: trimmed,
+        severity: 'unknown',
+      });
+    }
+  }
+
+  return frames;
+}
+
+// ── Dart / Flutter Stack Trace Parser ──
+// Format: package:my_app/src/main.dart 42:7  Class.method
+
+function parseDart(lines: string[]): StackFrame[] {
+  const frames: StackFrame[] = [];
+  let index = 0;
+
+  // Dart frame: "package:xxx/file.dart 42:7  Class.method"
+  //             "dart:core 123:45  Class.method"
+  //             "#0      Class.method (package:xxx/file.dart:42:7)"
+  const dartRegex = /^(?:package:|dart:)(\S+\.dart)\s+(\d+):(\d+)\s+(.+)$/;
+  const dartHashRegex = /^#\d+\s+(.+?)\s+\((package:|dart:)(\S+\.dart):(\d+):(\d+)\)/;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    // Try the hash format first
+    let m = trimmed.match(dartHashRegex);
+    if (m) {
+      const func = m[1] || '';
+      const dotIdx = func.lastIndexOf('.');
+      frames.push({
+        index: index++,
+        language: 'dart',
+        file_path: normalizePath(m[3]),
+        line_number: parseInt(m[4], 10),
+        column_number: parseInt(m[5], 10),
+        function_name: dotIdx > 0 ? func.substring(dotIdx + 1) : func,
+        module_name: dotIdx > 0 ? func.substring(0, dotIdx) : '',
+        address: '',
+        raw_line: trimmed,
+        severity: 'unknown',
+      });
+      continue;
+    }
+
+    m = trimmed.match(dartRegex);
+    if (m) {
+      const func = m[4] || '';
+      const dotIdx = func.lastIndexOf('.');
+      frames.push({
+        index: index++,
+        language: 'dart',
+        file_path: normalizePath(m[1]),
+        line_number: parseInt(m[2], 10),
+        column_number: parseInt(m[3], 10),
+        function_name: dotIdx > 0 ? func.substring(dotIdx + 1) : func,
+        module_name: dotIdx > 0 ? func.substring(0, dotIdx) : '',
+        address: '',
+        raw_line: trimmed,
+        severity: 'unknown',
+      });
+    }
+  }
+
+  return frames;
+}
+
+// ── Elixir / Erlang Stack Trace Parser ──
+// Format: (elixir 1.15.0) lib/enum.ex:2510: Enum.reduce/3
+//         (stdlib 4.2) lists.erl:1462: :lists.do_map/2
+
+function parseElixirErlang(lines: string[], _lang: string): StackFrame[] {
+  const frames: StackFrame[] = [];
+  let index = 0;
+
+  const beRegex = /^\(([^)]+)\)\s+(.+?\.(?:ex|exs|erl)):(\d+):\s+(.+?\/\d+)$/;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+
+    const m = trimmed.match(beRegex);
+    if (m) {
+      const moduleAndArity = m[4] || '';
+      const slashIdx = moduleAndArity.lastIndexOf('/');
+      const func = slashIdx > 0 ? moduleAndArity.substring(0, slashIdx) : moduleAndArity;
+      const modParts = func.split('.');
+      const funcName = modParts.length > 1 ? modParts[modParts.length - 1] : func;
+      const moduleName = modParts.length > 1 ? modParts.slice(0, -1).join('.') : m[1];
+
+      frames.push({
+        index: index++,
+        language: 'elixir',
+        file_path: normalizePath(m[2]),
+        line_number: parseInt(m[3], 10),
+        column_number: null,
+        function_name: funcName,
+        module_name: moduleName,
+        address: '',
+        raw_line: trimmed,
+        severity: 'unknown',
+      });
+    }
+  }
+
+  return frames;
+}
+
+// ── Lua Stack Trace Parser ──
+// Format: stack traceback:
+//         file.lua:42: in function 'method'
+//         [C]: in function 'error'
+
+function parseLua(lines: string[]): StackFrame[] {
+  const frames: StackFrame[] = [];
+  let index = 0;
+
+  const luaRegex = /^(.+?\.lua):(\d+):\s+in\s+(?:function\s+)?'?(.+?)'?\s*$/;
+  const cFuncRegex = /^\[C\]:\s+in\s+function\s+'(.+)'/;
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed || trimmed === 'stack traceback:') continue;
+
+    let m = trimmed.match(luaRegex);
+    if (m) {
+      frames.push({
+        index: index++,
+        language: 'lua',
+        file_path: normalizePath(m[1]),
+        line_number: parseInt(m[2], 10),
+        column_number: null,
+        function_name: m[3],
+        module_name: extractModuleFromPath(m[1]),
+        address: '',
+        raw_line: trimmed,
+        severity: 'unknown',
+      });
+      continue;
+    }
+
+    m = trimmed.match(cFuncRegex);
+    if (m) {
+      frames.push({
+        index: index++,
+        language: 'lua',
+        file_path: '[C]',
+        line_number: null,
+        column_number: null,
+        function_name: m[1],
+        module_name: 'C',
+        address: '',
+        raw_line: trimmed,
+        severity: 'unknown',
+      });
+    }
+  }
+
+  return frames;
 }
 
 // ── C# / Unity Stack Trace Parser ──
@@ -428,7 +1003,7 @@ function parseGeneric(lines: string[]): StackFrame[] {
     if (!trimmed) continue;
 
     // Try common patterns
-    // "at func (file:line)" - JS/Node
+    // "at func (file:line:col)" - JS/Node/Browser
     const jsMatch = trimmed.match(/at\s+(.+?)(?:\s+\((.+?)(?::(\d+)(?::(\d+))?)?\))?$/);
     if (jsMatch) {
       const func = jsMatch[1] || 'unknown';
@@ -448,9 +1023,27 @@ function parseGeneric(lines: string[]): StackFrame[] {
       continue;
     }
 
+    // Zend/PHP format: "#N /path/file(line): Class->method()"
+    const phpMatch = trimmed.match(/^#\d+\s+(.+?)(?:\((\d+)\))?:\s+(.+)$/);
+    if (phpMatch) {
+      frames.push({
+        index: index++,
+        language: 'unknown',
+        file_path: normalizePath(phpMatch[1]),
+        line_number: phpMatch[2] ? parseInt(phpMatch[2], 10) : null,
+        column_number: null,
+        function_name: phpMatch[3],
+        module_name: '',
+        address: '',
+        raw_line: trimmed,
+        severity: 'unknown',
+      });
+      continue;
+    }
+
     // Any line with "file:line" pattern
     const fileLineMatch = trimmed.match(/(?:^|\()(.+?):(\d+)(?::(\d+))?(?:\))?$/);
-    if (fileLineMatch) {
+    if (fileLineMatch && !trimmed.startsWith('  File ') && !trimmed.startsWith('at ')) {
       frames.push({
         index: index++,
         language: 'unknown',
@@ -498,135 +1091,149 @@ function parseGeneric(lines: string[]): StackFrame[] {
 function classifySeverity(frames: StackFrame[], lang: string): void {
   if (frames.length === 0) return;
 
-  const fn = frames[frames.length - 1];
+  // Framework patterns for different languages
+  const frameworkPatterns: Record<string, RegExp[]> = {
+    csharp: [/^System\./, /^UnityEngine\./, /^UnityEditor\./, /^Microsoft\./, /^mscorlib/, /^Mono\./, /^netstandard/],
+    cpp: [/^std::/, /^__/, /^libc/, /^lib\w+\.so/, /\.dylib/, /\.dll/, /^glibc/, /^pthread/, /^boost::/, /^absl::/],
+    c: [/^libc/, /^lib\w+\.so/, /\.dylib/, /\.dll/],
+    go: [/^runtime\./, /^sync\./, /^internal\//, /^reflect\./, /^syscall\./],
+    python: [/^site-packages/, /^lib\/python/, /\/python\d[\d.]*\//, /<frozen/, /<built-in/],
+    javascript: [/node:internal/, /node_modules/, /<anonymous>/, /processTicksAndRejections/, /^internal\//],
+    node: [/node:internal/, /node_modules/, /<anonymous>/, /processTicksAndRejections/, /^internal\//],
+    browser: [/^webpack/, /^__webpack/, /^\(index\)/, /^new\s+<anonymous>/, /@chrome-extension/],
+    java: [/^java\./, /^javax\./, /^jakarta\./, /^sun\./, /^jdk\./, /^org\.springframework\./, /^org\.hibernate\./],
+    kotlin: [/^kotlin\./, /^java\./, /^javax\./],
+    rust: [/^std::/, /^core::/, /^alloc::/, /^rust_begin_unwind/, /^panic_unwind/, /<\w+ as core::/],
+    ruby: [/^\/gems\//, /^\/ruby\//, /^\/usr\/lib\/ruby/, /<internal:/],
+    php: [/^\/vendor\//, /^\/var\/www/, /^\[internal/, /^(?:require|include|eval|spl_autoload)/],
+    swift: [/^libdispatch/, /^libobjc/, /^libsystem/, /^libswift/, /^CoreFoundation/, /^Foundation/, /^UIKit/, /^SwiftUI/, /^Combine/],
+    dart: [/^dart:/, /^package:flutter/, /^package:meta/, /^package:collection/],
+    elixir: [/^\(elixir\s/, /^\(stdlib\s/, /^\(kernel\s/, /^\(mix\s/, /^\:erlang\./],
+    erlang: [/^\(stdlib\s/, /^\(kernel\s/, /^\(erts\s/],
+    lua: [/^\[C\]/, /\/?.+?\/lua\//, /\/?.+?\/luajit\//],
+  };
 
-  // First frame (innermost) = crash trigger
-  if (frames.length >= 1) {
-    frames[0].severity = 'trigger';
-  }
+  const fwPatterns = frameworkPatterns[lang] || [];
+  const userFrames: number[] = [];
 
-  // Last frame (outermost) with a file path = potential source
-  if (frames.length >= 2) {
-    let sourceIdx = frames.length - 1;
-    // Walk backward to find the first frame with user code
-    for (let i = frames.length - 1; i >= 0; i--) {
-      if (!isFrameworkCode(frames[i], lang)) {
-        sourceIdx = i;
+  // Identify user code vs framework code
+  for (let i = 0; i < frames.length; i++) {
+    const frame = frames[i];
+    const path = (frame.file_path || '').toLowerCase();
+    const module = (frame.module_name || '').toLowerCase();
+    const fullQualified = (module ? module + '.' + frame.function_name : frame.function_name || '').toLowerCase();
+
+    let isFramework = false;
+    for (const pat of fwPatterns) {
+      if (pat.test(fullQualified) || pat.test(path) || pat.test(module)) {
+        isFramework = true;
         break;
       }
     }
-    if (sourceIdx > 0 && sourceIdx !== 0) {
-      frames[sourceIdx].severity = 'source';
-    }
+
+    frame.severity = isFramework ? 'framework' : 'unknown';
+    if (!isFramework) userFrames.push(i);
   }
 
-  // Middle frames
-  for (let i = 1; i < frames.length; i++) {
-    if (frames[i].severity !== 'unknown') continue;
-
-    if (isFrameworkCode(frames[i], lang)) {
-      frames[i].severity = 'framework';
-    } else if (i > 0 && i < frames.findIndex(f => f.severity === 'source')) {
-      frames[i].severity = 'propagation';
-    } else {
-      frames[i].severity = 'propagation';
-    }
+  // Color-code user frames
+  if (userFrames.length === 0) {
+    // All framework — mark first as trigger
+    if (frames.length > 0) frames[0].severity = 'trigger';
+    return;
   }
 
-  // Ensure index 0 is always trigger
-  if (frames.length > 0) {
-    frames[0].severity = 'trigger';
-    // If the trigger is in framework code, note it
-    if (isFrameworkCode(frames[0], lang) && frames.length > 1) {
-      // Find the first user-code frame
-      for (let i = 1; i < frames.length; i++) {
-        if (!isFrameworkCode(frames[i], lang)) {
-          frames[i].severity = 'propagation';
-          break;
-        }
-      }
-    }
+  // Trigger: first user frame (innermost, index 0 or earliest in userFrames)
+  const triggerIdx = userFrames[0];
+  frames[triggerIdx].severity = 'trigger';
+
+  // Source: last user frame (outermost, root cause)
+  const sourceIdx = userFrames[userFrames.length - 1];
+  if (sourceIdx !== triggerIdx) {
+    frames[sourceIdx].severity = 'source';
+  }
+
+  // Propagation: middle user frames
+  for (let i = 1; i < userFrames.length - 1; i++) {
+    frames[userFrames[i]].severity = 'propagation';
   }
 }
 
-// ── Helpers ──
+// ── Shared Helpers ──
 
-/**
- * Normalize an absolute path to a relative one for tree display.
- */
 function normalizePath(filePath: string): string {
   if (!filePath) return '';
 
-  let normalized = filePath.replace(/\\/g, '/');
+  let normalized = filePath;
 
-  // Remove common prefixes to make it relative
+  // Strip <angled brackets> from Unity paths like "<1234567890>"
+  normalized = normalized.replace(/<[^>]+>/g, '').trim();
+
+  // Handle file:// URLs (Node.js)
+  if (normalized.startsWith('file://')) {
+    try {
+      normalized = decodeURIComponent(normalized.replace('file://', ''));
+    } catch {
+      normalized = normalized.replace('file://', '');
+    }
+    // Strip Windows drive letter leading slash
+    if (/^\/[A-Za-z]:/.test(normalized)) {
+      normalized = normalized.substring(1);
+    }
+  }
+
+  // Make absolute paths relative by stripping common prefixes
   const prefixes = [
-    '/app/', '/src/', '/go/src/', '/usr/src/', '/usr/local/',
-    '/home/', '/Users/', '/var/www/', '/opt/',
-    'C:/', 'D:/', 'E:/',
-    'Assets/', 'Packages/',
+    '/app/', '/src/', '/home/', '/Users/', '/root/',
+    '/var/www/', '/opt/', '/usr/local/', '/usr/',
+    '/go/src/', '/go/pkg/',
+    '/build/', '/dist/',
+    '/workspace/', '/project/', '/Projects/',
   ];
 
   for (const prefix of prefixes) {
     const idx = normalized.indexOf(prefix);
     if (idx >= 0) {
-      normalized = normalized.substring(idx + prefix.length);
-      break;
+      // Keep the meaningful part after the base prefix
+      const after = normalized.substring(idx + prefix.length);
+      // If there's a recognizable project structure, return relative
+      if (after.length > 0) return after;
     }
   }
 
-  // Remove leading slashes
-  normalized = normalized.replace(/^\/+/, '');
+  // Strip leading path separators and common prefixes for known structures
+  normalized = normalized.replace(/^[A-Za-z]:[/\\]/, ''); // Windows drive
+  normalized = normalized.replace(/^\/+/, ''); // Leading slashes
+
+  // For paths like "Owner/repo/folder/file.ext", strip first 0-1 segments
+  // if the result looks like a well-known project root
+  const segments = normalized.split('/');
+  if (segments.length >= 3) {
+    const knownRoots = ['src', 'lib', 'app', 'pkg', 'internal', 'cmd', 'main', 'test', 'tests'];
+    for (let i = 0; i < Math.min(2, segments.length - 2); i++) {
+      if (knownRoots.includes(segments[i])) {
+        return segments.slice(i).join('/');
+      }
+    }
+  }
+
   return normalized;
 }
 
-/**
- * Extract a module/package name from a file path.
- */
 function extractModuleFromPath(filePath: string): string {
   if (!filePath) return '';
-  const parts = filePath.replace(/\\/g, '/').replace(/^\/+/, '').split('/');
-  // Return the top-level directory or just the filename stem
-  if (parts.length >= 2) return parts[0];
-  if (parts.length === 1) return parts[0].replace(/\.[^.]+$/, '');
-  return parts[0] || '';
-}
 
-/**
- * Determine if a frame is likely framework/library code.
- */
-function isFrameworkCode(frame: StackFrame, _lang: string): boolean {
-  const path = frame.file_path;
-  const fn = frame.function_name;
-  const module = frame.module_name;
+  const parts = filePath.replace(/\\/g, '/').split('/').filter(p => p);
+  if (parts.length === 0) return '';
 
-  // Common framework paths
-  const fwPatterns = [
-    /^node_modules\//, /^lib\//, /\/lib\//,
-    /^usr\//, /System\./, /^Microsoft\./,
-    /^UnityEngine\./, /^UnityEditor\./,
-    /^Unity\./, /\.Internal\./, /^System\./,
-    /^GOROOT\//, /^\/usr\/lib\//, /^\/lib\//,
-    /^site-packages\//, /dist-packages\//,
-    /^boost\//, /^std\//, /C\/Windows\//,
-    /libc\./, /libstdc\+\+/, /libm\./,
-    /^Assembly-CSharp-firstpass/, /mscorlib/,
-  ];
+  // Remove file extension and return the last directory or filename
+  const last = parts[parts.length - 1];
+  const name = last.replace(/\.[^.]+$/, '');
 
-  for (const pat of fwPatterns) {
-    if (pat.test(path)) return true;
-    if (pat.test(fn)) return true;
-    if (pat.test(module)) return true;
+  // If the path has a parent directory, use "parentName/fileName"
+  if (parts.length >= 2) {
+    const parent = parts[parts.length - 2];
+    return `${parent}/${name}`;
   }
 
-  // Check if it's a native library
-  if (path.endsWith('.so') || path.endsWith('.dll') || path.endsWith('.dylib')) return true;
-  if (module.endsWith('.so') || module.endsWith('.dll') || module.endsWith('.dylib')) return true;
-
-  // Go stdlib
-  if (module.startsWith('runtime/') || module.startsWith('internal/') ||
-      module.startsWith('sync/') || module.startsWith('net/') ||
-      module === 'runtime' || module === 'main' && fn === 'main') return true;
-
-  return false;
+  return name;
 }

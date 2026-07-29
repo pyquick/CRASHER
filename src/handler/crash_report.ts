@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import multer from 'multer';
 import { randomBytes } from 'crypto';
-import { readFileSync } from 'fs';
+import { readFileSync, unlinkSync } from 'fs';
 import { config } from '../config.js';
 import { ingestCrash } from '../service.js';
 import * as store from '../store.js';
@@ -43,6 +43,7 @@ async function handleCrashReport(req: Request, res: Response): Promise<void> {
     }
 
     if (!input.exception_type || typeof input.exception_type !== 'string') {
+      cleanupUploads(req);
       res.status(400).json({ error: 'Bad Request', message: 'exception_type is required' });
       return;
     }
@@ -52,6 +53,7 @@ async function handleCrashReport(req: Request, res: Response): Promise<void> {
     if (input.error_severity) {
       const sev = input.error_severity.toLowerCase();
       if (!allowedSeverities.includes(sev)) {
+        cleanupUploads(req);
         res.status(400).json({ error: 'Bad Request', message: `error_severity must be one of: ${allowedSeverities.join(', ')}` });
         return;
       }
@@ -100,8 +102,16 @@ async function handleCrashReport(req: Request, res: Response): Promise<void> {
 
     res.status(201).json({ id: result.report.id, group_id: result.groupId, is_new_group: result.isNewGroup });
   } catch (err: any) {
+    cleanupUploads(req);
     console.error('Error ingesting crash report:', err);
-    res.status(500).json({ error: 'Internal Server Error', message: err.message });
+    res.status(500).json({ error: 'Internal Server Error', message: 'Could not ingest crash report' });
+  }
+}
+
+function cleanupUploads(req: Request): void {
+  const files = ((req as any).files ?? []) as Express.Multer.File[];
+  for (const file of files) {
+    try { unlinkSync(file.path); } catch {}
   }
 }
 

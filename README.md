@@ -148,24 +148,27 @@ crash_hash = SHA256(exception_type + "|" + first_stack_frame + "|" + platform)[0
 - **Content-Type**: `application/json`（上传文件时使用 `multipart/form-data`）
 - **响应格式**: 所有成功响应为 JSON；错误响应格式为 `{ "error": "...", "message": "..." }`
 
-### 认证机制
+### 认证与权限（安全加固版）
 
-除公开端点外，所有 `/api/v1/*` 查询和管理接口均需认证。系统使用基于 Cookie 的 Session 认证：
+系统使用 SQLite 持久化用户、服务端会话和 API Key，不再使用配置文件中的固定 SHA256 密码或可伪造的自包含 Session：
 
-- 通过 `POST /web/login` 登录获取 `auth_token` Cookie
-- Cookie 属性：`httpOnly`、`sameSite: 'lax'`、有效期 24 小时
-- 默认凭据：用户名 `admin`，密码 `ghltbm123456`（可通过环境变量 `ADMIN_USERNAME` 和 `ADMIN_PASSWORD` 修改）
-- 未认证请求返回 `401 { "error": "Unauthorized", "message": "Authentication required" }`
+- 首次启动在 `users` 表创建管理员。部署时必须通过 `ADMIN_PASSWORD` 提供强密码；未提供时开发模式会生成一次性随机密码并输出到控制台。
+- 密码使用带随机 salt 的 `scrypt` 保存；修改密码、禁用账户或更改角色会撤销已有会话。
+- 角色分为 `admin`、`operator`、`viewer`：只有 `admin` 可创建账户、分配角色、重置其他账户密码、创建/撤销 API Key 和清空全部数据。
+- 管理后台使用 `HttpOnly`、`SameSite=Strict` Session Cookie；所有 Cookie 认证的写请求还需 `X-CSRF-Token`。
+- 客户端上报默认要求管理员创建的 API Key，可使用 `X-API-Key: crs_...` 或 `Authorization: Bearer crs_...`。
+- 登录和 API 均有速率限制；默认同源 CORS、隐藏框架标识、启用常用安全响应头；生产环境应启用 TLS 并设置 `COOKIE_SECURE=true`。
 
-**公开端点**（无需认证）：
-- `POST /api/v1/crash-report`
-- `POST /api/v1/unity/crash-report`
-- `POST /api/v1/player-feedback`
+管理入口：登录后管理员访问 `/web/accounts`。API Key 明文只在创建响应中显示一次。
+
+**公开且无需会话 Cookie的端点**：
+- `POST /api/v1/crash-report`（默认仍需 API Key）
+- `POST /api/v1/unity/crash-report`（默认仍需 API Key）
+- `POST /api/v1/player-feedback`（默认仍需 API Key）
 - `POST /web/login` / `GET /web/login`
 - `GET /health`
 
-**受保护端点**（需要登录）：
-- 所有查询、下载、管理类 API 均需携带有效 `auth_token` Cookie
+**受保护端点**：所有查询、下载和管理 API 均需有效 Session 或 API Key，并根据角色限制写操作。
 
 ---
 
@@ -1424,10 +1427,17 @@ http://<host>:8080/web/
 | `ATTACHMENTS_DIR` | `<DATA_DIR>/attachments` | 附件存储目录 |
 | `MAX_LOG_SIZE` | `10485760` (10MB) | stack_trace / log_text 字段最大字节数，超出自动截断 |
 | `MAX_ATTACHMENT_SIZE` | `20971520` (20MB) | 单个附件文件最大字节数 |
-| `CORS_ORIGINS` | `*` | CORS 允许的来源，多个用逗号分隔，如 `https://a.com,https://b.com` |
-| `ADMIN_USERNAME` | `admin` | 管理后台登录用户名 |
-| `ADMIN_PASSWORD` | `ghltbm123456` | 管理后台登录密码（存储为 SHA256 哈希） |
-| `SESSION_SECRET` | `<随机生成>` | Session token HMAC 签名密钥 |
+| `MAX_JSON_BODY_SIZE` | `12582912` (12MB) | JSON 请求体最大字节数 |
+| `CORS_ORIGINS` | `空` | 允许的浏览器来源，留空表示仅同源 |
+| `ADMIN_USERNAME` | `admin` | 首次启动时创建的管理员用户名 |
+| `ADMIN_PASSWORD` | `<随机生成>` | 仅首次建库使用；生产环境必须显式设置强密码 |
+| `COOKIE_SECURE` | 生产环境为 `true` | 是否只通过 HTTPS 发送认证 Cookie |
+| `SESSION_HOURS` | `12` | 登录会话有效期（小时） |
+| `API_REQUIRE_KEY` | `true` | 上报端点是否要求 API Key |
+| `TRUST_PROXY` | `false` | Express 可信代理设置；反向代理部署时按拓扑配置 |
+| `LOGIN_RATE_LIMIT` | `5` | 每 15 分钟、每 IP+用户名最大登录尝试数 |
+| `INGEST_RATE_LIMIT` | `120` | 每 IP 每分钟最大上报请求数 |
+| `API_RATE_LIMIT` | `600` | 每 IP 每分钟最大管理 API 请求数 |
 | `WEBHOOK_URL` | `空` | 新崩溃的 Webhook 通知地址 |
 | `WEBHOOK_TIMEOUT_MS` | `5000` | Webhook 请求超时（毫秒） |
 | `ALERT_ON_NEW_GROUP` | `true` | 是否在新崩溃分组出现时发送告警 |
@@ -1447,7 +1457,11 @@ services:
     environment:
       - PORT=8080
       - DATA_DIR=/app/data
-      - AUTH_TOKEN=my-secret-token
+      - ADMIN_USERNAME=admin
+      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?set a strong password}
+      - API_REQUIRE_KEY=true
+      - COOKIE_SECURE=true
+      - TRUST_PROXY=1
       - CORS_ORIGINS=https://my-dashboard.example.com
       - MAX_LOG_SIZE=52428800     # 50MB
     volumes:
@@ -1479,7 +1493,11 @@ docker run -d \
   --name crash-report-server \
   -p 8080:8080 \
   -v $(pwd)/server_data:/app/data \
-  -e AUTH_TOKEN=your-secret-token \
+  -e ADMIN_USERNAME=admin \
+  -e ADMIN_PASSWORD='use-a-unique-password-manager-value' \
+  -e API_REQUIRE_KEY=true \
+  -e COOKIE_SECURE=true \
+  -e TRUST_PROXY=1 \
   crash-report-server
 ```
 

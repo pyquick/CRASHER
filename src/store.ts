@@ -84,8 +84,24 @@ export function listGroups(query: CrashGroupQuery): PaginatedResult<CrashGroup> 
     params.push(query.end_date);
   }
   if (query.error_severity) {
-    conditions.push("cg.id IN (SELECT DISTINCT cr.group_id FROM crash_reports cr WHERE cr.error_severity = ?)");
+    conditions.push("id IN (SELECT DISTINCT cr.group_id FROM crash_reports cr WHERE cr.error_severity = ?)");
     params.push(query.error_severity);
+  }
+  if (query.platform) {
+    conditions.push("id IN (SELECT DISTINCT cr.group_id FROM crash_reports cr WHERE cr.platform = ?)");
+    params.push(query.platform);
+  }
+  if (query.app_version) {
+    conditions.push("id IN (SELECT DISTINCT cr.group_id FROM crash_reports cr WHERE cr.app_version = ?)");
+    params.push(query.app_version);
+  }
+  if (query.runtime) {
+    conditions.push("id IN (SELECT DISTINCT cr.group_id FROM crash_reports cr WHERE cr.runtime = ?)");
+    params.push(query.runtime);
+  }
+  if (query.environment) {
+    conditions.push("id IN (SELECT DISTINCT cr.group_id FROM crash_reports cr WHERE cr.environment = ?)");
+    params.push(query.environment);
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
