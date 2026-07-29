@@ -70,6 +70,7 @@ npm run dev
 
 ```bash
 # 构建并启动
+docker-compose build
 docker-compose up -d
 
 # 查看日志

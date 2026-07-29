@@ -112,6 +112,160 @@
         </div>
       </section>
 
+      <!-- 🔬 Crash Analysis -->
+      <section class="bg-surface-900 rounded-xl p-5 border border-gray-800" x-show="analysis">
+        <div class="flex items-center gap-2 mb-4">
+          <h2 class="text-sm font-semibold text-gray-300">🔬 Crash Analysis</h2>
+          <span class="text-xs px-2 py-0.5 rounded font-medium"
+                :class="{
+                  'bg-purple-900/50 text-purple-300': analysis?.detected_language === 'csharp',
+                  'bg-blue-900/50 text-blue-300': analysis?.detected_language === 'cpp' || analysis?.detected_language === 'c',
+                  'bg-cyan-900/50 text-cyan-300': analysis?.detected_language === 'go',
+                  'bg-green-900/50 text-green-300': analysis?.detected_language === 'python',
+                  'bg-gray-700 text-gray-300': analysis?.detected_language === 'unknown'
+                }"
+                x-text="languageLabel(analysis?.detected_language)"></span>
+        </div>
+
+        <!-- Summary -->
+        <div class="bg-surface-950 rounded-lg p-4 mb-4 text-sm text-gray-400 leading-relaxed"
+             style="white-space: pre-wrap;"
+             x-text="analysis?.summary"></div>
+
+        <!-- Trigger Point -->
+        <div class="bg-red-950/30 border border-red-900/50 rounded-lg p-4 mb-4"
+             x-show="analysis?.trigger_point">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-red-400 text-sm font-semibold">💥 Crash Trigger Point</span>
+          </div>
+          <div class="space-y-1">
+            <div class="flex items-start gap-2" x-show="analysis?.trigger_point?.file_path">
+              <span class="text-gray-500 text-xs w-20 shrink-0">File:</span>
+              <code class="text-red-300 font-mono text-sm break-all"
+                    x-text="analysis?.trigger_point?.file_path + (analysis?.trigger_point?.line_number ? ':' + analysis?.trigger_point?.line_number : '')"></code>
+            </div>
+            <div class="flex items-start gap-2" x-show="analysis?.trigger_point?.function_name">
+              <span class="text-gray-500 text-xs w-20 shrink-0">Function:</span>
+              <code class="text-red-300 font-mono text-sm" x-text="analysis?.trigger_point?.function_name"></code>
+            </div>
+            <div class="flex items-start gap-2" x-show="analysis?.trigger_point?.message">
+              <span class="text-gray-500 text-xs w-20 shrink-0">Detail:</span>
+              <pre class="text-red-200 text-sm whitespace-pre-wrap" x-text="analysis?.trigger_point?.message"></pre>
+            </div>
+            <div class="flex items-start gap-2" x-show="analysis?.trigger_point?.raw_snippet">
+              <span class="text-gray-500 text-xs w-20 shrink-0">Stack:</span>
+              <code class="text-red-400 font-mono text-xs break-all whitespace-pre-wrap"
+                    x-text="analysis?.trigger_point?.raw_snippet"></code>
+            </div>
+          </div>
+        </div>
+
+        <!-- File Tree Diagram -->
+        <div class="mb-4" x-show="analysis?.file_tree?.length > 0">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-gray-400 text-sm font-semibold">📁 Crash File Tree</span>
+            <span class="text-xs text-gray-600">(click directories to expand/collapse)</span>
+            <button @click="expandAllTree = !expandAllTree; toggleAllTreeNodes()"
+                    class="text-xs px-2 py-0.5 bg-surface-800 hover:bg-gray-700 rounded transition-colors ml-auto">
+              <span x-show="!expandAllTree">📂 Expand All</span>
+              <span x-show="expandAllTree">📁 Collapse All</span>
+            </button>
+          </div>
+          <div class="bg-surface-950 rounded-lg p-4 font-mono text-sm overflow-x-auto"
+               @click="onTreeClick($event)"
+               x-html="treeHTML">
+          </div>
+          <div class="flex items-center gap-4 mt-2 text-xs">
+            <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm" style="background:#dc2626"></span> Crash Site</span>
+            <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm" style="background:#ea580c"></span> Propagation</span>
+            <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm" style="background:#ca8a04"></span> Root Cause</span>
+            <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm" style="background:#6b7280"></span> Framework</span>
+          </div>
+        </div>
+
+        <!-- Color-Coded Stack Chain -->
+        <div x-show="analysis?.stack_chain?.length > 0">
+          <div class="flex items-center gap-2 mb-2">
+            <span class="text-gray-400 text-sm font-semibold">📋 Stack Chain</span>
+            <span class="text-xs text-gray-600">(color-coded by severity)</span>
+          </div>
+          <div class="space-y-1 max-h-[500px] overflow-y-auto bg-surface-950 rounded-lg p-3">
+            <template x-for="(frame, i) in analysis?.stack_chain" :key="i">
+              <div class="flex items-start gap-2 py-1 px-2 rounded hover:bg-gray-800/30 transition-colors">
+                <!-- Severity indicator -->
+                <span class="w-2 h-2 rounded-full mt-1.5 shrink-0"
+                      :class="{
+                        'bg-red-500': frame.severity === 'trigger',
+                        'bg-orange-500': frame.severity === 'propagation',
+                        'bg-yellow-500': frame.severity === 'source',
+                        'bg-gray-500': frame.severity === 'framework',
+                        'bg-gray-700': frame.severity === 'unknown'
+                      }"
+                      :title="frame.severity"></span>
+                <!-- Frame index -->
+                <span class="text-xs font-mono w-6 shrink-0"
+                      :class="{
+                        'text-red-400': frame.severity === 'trigger',
+                        'text-orange-400': frame.severity === 'propagation',
+                        'text-yellow-400': frame.severity === 'source',
+                        'text-gray-500': frame.severity === 'framework',
+                        'text-gray-600': frame.severity === 'unknown'
+                      }"
+                      x-text="'#' + i"></span>
+                <!-- Frame content -->
+                <div class="min-w-0 flex-1">
+                  <!-- Function + file:line -->
+                  <div class="flex flex-wrap items-baseline gap-x-2">
+                    <span class="font-mono text-sm"
+                          :class="{
+                            'text-red-300 font-semibold': frame.severity === 'trigger',
+                            'text-orange-200': frame.severity === 'propagation',
+                            'text-yellow-200': frame.severity === 'source',
+                            'text-gray-400': frame.severity === 'framework',
+                            'text-gray-500': frame.severity === 'unknown'
+                          }">
+                      <span x-show="frame.module_name" x-text="frame.module_name + '.'"></span>
+                      <span x-text="frame.function_name || '(unknown)'"></span>
+                    </span>
+                    <span class="font-mono text-xs"
+                          :class="{
+                            'text-red-400': frame.severity === 'trigger',
+                            'text-orange-400': frame.severity === 'propagation',
+                            'text-yellow-400': frame.severity === 'source',
+                            'text-gray-500': frame.severity === 'framework',
+                            'text-gray-600': frame.severity === 'unknown'
+                          }"
+                          x-show="frame.file_path">
+                      <span x-text="frame.file_path"></span>
+                      <span x-show="frame.line_number" x-text="':' + frame.line_number"></span>
+                    </span>
+                  </div>
+                  <!-- Raw line (truncated) -->
+                  <div class="text-xs text-gray-600 truncate mt-0.5"
+                       x-show="frame.raw_line && frame.raw_line !== (frame.function_name || '')"
+                       x-text="frame.raw_line.substring(0, 150)"></div>
+                </div>
+                <!-- Severity label -->
+                <span class="text-[10px] px-1.5 py-0.5 rounded shrink-0 font-medium"
+                      :class="{
+                        'bg-red-900/50 text-red-300': frame.severity === 'trigger',
+                        'bg-orange-900/50 text-orange-300': frame.severity === 'propagation',
+                        'bg-yellow-900/50 text-yellow-300': frame.severity === 'source',
+                        'bg-gray-800 text-gray-500': frame.severity === 'framework',
+                        'bg-gray-800 text-gray-600': frame.severity === 'unknown'
+                      }">
+                  <span x-show="frame.severity === 'trigger'">💥 CRASH</span>
+                  <span x-show="frame.severity === 'propagation'">⬆ PROPAGATE</span>
+                  <span x-show="frame.severity === 'source'">🎯 SOURCE</span>
+                  <span x-show="frame.severity === 'framework'">📦 FW</span>
+                  <span x-show="frame.severity === 'unknown'">—</span>
+                </span>
+              </div>
+            </template>
+          </div>
+        </div>
+      </section>
+
       <!-- C# Symbolicated Stack -->
       <section class="bg-surface-900 rounded-xl p-5 border border-gray-800" x-show="latestReport?.symbolication_status && latestReport.symbolication_status !== 'not_applicable'">
         <div class="flex items-center justify-between mb-3">
@@ -282,6 +436,11 @@
       <section class="bg-surface-900 rounded-xl p-5 border border-gray-800">
         <h2 class="text-sm font-semibold text-gray-300 mb-3">📥 Downloads</h2>
         <div class="space-y-2">
+          <a :href="'/api/v1/export/group/' + group?.id"
+             x-show="group"
+             class="block text-sm text-green-400 hover:text-green-300 hover:bg-gray-800 rounded-lg px-3 py-2 transition-colors">
+            📦 Export Package (.crashpkg)
+          </a>
           <a :href="'/api/v1/download/group/' + group?.id"
              x-show="group"
              class="block text-sm text-blue-400 hover:text-blue-300 hover:bg-gray-800 rounded-lg px-3 py-2 transition-colors">
@@ -302,7 +461,7 @@
         </div>
       </section>
 
-      <!-- Status Update -->
+      <!-- Actions -->
       <section class="bg-surface-900 rounded-xl p-5 border border-gray-800">
         <h2 class="text-sm font-semibold text-gray-300 mb-3">🔧 Actions</h2>
         <select x-model="newStatus"
@@ -319,6 +478,20 @@
           Update Status
         </button>
         <p x-show="statusMsg" class="text-xs mt-2 text-center" :class="statusErr ? 'text-red-400' : 'text-green-400'" x-text="statusMsg"></p>
+
+        <!-- Import package -->
+        <div class="mt-4 pt-4 border-t border-gray-800">
+          <h4 class="text-xs font-medium text-gray-500 mb-2">📥 Import Crash Package</h4>
+          <input type="file" id="import-file" accept=".crashpkg,.tar.gz,.tgz"
+                 @change="onImportFile($event)"
+                 class="hidden">
+          <button @click="document.getElementById('import-file').click()"
+                  class="w-full py-2 bg-green-700 hover:bg-green-600 rounded-lg text-sm font-medium transition-colors">
+            Choose .crashpkg File...
+          </button>
+          <p x-show="importProgress" class="text-xs text-blue-400 mt-2 text-center" x-text="importProgress"></p>
+          <p x-show="importMsg" class="text-xs mt-2 text-center" :class="importErr ? 'text-red-400' : 'text-green-400'" x-text="importMsg"></p>
+        </div>
       </section>
 
       <!-- Device Info -->
@@ -429,6 +602,13 @@
       selectedReport: null,
       attachments: [],
       dumpParsed: [],
+      analysis: null,
+      treeHTML: '',
+      expandedNodes: {},
+      expandAllTree: false,
+      importMsg: '',
+      importErr: false,
+      importProgress: '',
       newStatus: 'open',
       resolvedVersion: '',
       statusMsg: '',
@@ -437,6 +617,7 @@
       async init() {
         const id = window.location.pathname.split('/').pop();
         await this.loadGroup(id);
+        await this.loadAnalysis();
       },
 
       async loadGroup(id) {
@@ -507,6 +688,84 @@
         }
       },
 
+      /**
+       * Handle file selection for crash package import.
+       */
+      async onImportFile(event) {
+        const file = event.target.files?.[0];
+        if (!file) return;
+
+        this.importMsg = '';
+        this.importErr = false;
+        this.importProgress = 'Uploading and analyzing...';
+
+        try {
+          const formData = new FormData();
+          formData.append('package', file);
+
+          // First: dry-run
+          let res = await fetch('/api/v1/import', {
+            method: 'POST',
+            body: formData,
+          });
+          const dryResult = await res.json();
+
+          if (!res.ok) {
+            this.importMsg = dryResult.message || 'Import failed';
+            this.importErr = true;
+            this.importProgress = '';
+            return;
+          }
+
+          if (dryResult.conflicts?.length > 0) {
+            const conflictList = dryResult.conflicts.map(c => c.detail).join('\n');
+            this.importProgress = '';
+            this.importMsg = 'Conflicts found:\n' + conflictList + '\n\nImport anyway?';
+            this.importErr = true;
+            // Re-upload with confirm
+            this.importProgress = 'Confirming import...';
+
+            const formData2 = new FormData();
+            formData2.append('package', file);
+            res = await fetch('/api/v1/import?confirm=true', {
+              method: 'POST',
+              body: formData2,
+            });
+            const confirmResult = await res.json();
+            if (res.ok) {
+              this.importMsg = `Imported: ${confirmResult.new_reports} reports, ${confirmResult.new_attachments} attachments`;
+              this.importErr = false;
+            } else {
+              this.importMsg = confirmResult.message || 'Import failed';
+              this.importErr = true;
+            }
+          } else {
+            // No conflicts, confirm immediately
+            this.importProgress = 'Importing...';
+            const formData2 = new FormData();
+            formData2.append('package', file);
+            res = await fetch('/api/v1/import?confirm=true', {
+              method: 'POST',
+              body: formData2,
+            });
+            const result = await res.json();
+            if (res.ok) {
+              this.importMsg = `Imported: ${result.new_reports} reports, ${result.new_attachments} attachments (group #${result.group_id})`;
+              this.importErr = false;
+            } else {
+              this.importMsg = result.message || 'Import failed';
+              this.importErr = true;
+            }
+          }
+        } catch (err) {
+          this.importMsg = 'Network error during import';
+          this.importErr = true;
+        }
+        this.importProgress = '';
+        // Reset file input
+        event.target.value = '';
+      },
+
       formatDate(d) {
         if (!d) return '-';
         return new Date(d).toLocaleString();
@@ -519,6 +778,213 @@
         } catch {
           return '';
         }
+      },
+
+      async loadAnalysis() {
+        if (!this.latestReport) return;
+        try {
+          const res = await fetch('/api/v1/crash-reports/' + this.latestReport.id + '/analysis');
+          if (res.ok) {
+            this.analysis = await res.json();
+            // Initialize all directory nodes as expanded (show full tree initially)
+            this.expandedNodes = {};
+            this.expandAllTree = true;
+            this.initExpandedNodes(this.analysis.file_tree);
+            this.buildTreeHTML();
+          }
+        } catch (err) {
+          console.error('Failed to load analysis:', err);
+        }
+      },
+
+      /**
+       * Pre-populate expandedNodes: all directories start expanded.
+       */
+      initExpandedNodes(nodes) {
+        if (!nodes) return;
+        nodes.forEach(node => {
+          if (!node.is_file) {
+            this.expandedNodes[node.path] = true;
+            this.initExpandedNodes(node.children);
+          }
+        });
+      },
+
+      /**
+       * Build the full tree HTML string. Called whenever expandedNodes changes.
+       */
+      buildTreeHTML() {
+        if (!this.analysis?.file_tree) { this.treeHTML = ''; return; }
+        this.treeHTML = this.analysis.file_tree
+          .map((node, i) => this.renderTreeHTML(node, '', i === this.analysis.file_tree.length - 1))
+          .join('');
+      },
+
+      /**
+       * Toggle a directory node's expanded state.
+       */
+      toggleTreeNode(path) {
+        if (this.expandedNodes[path]) {
+          delete this.expandedNodes[path];
+        } else {
+          this.expandedNodes[path] = true;
+        }
+        this.expandedNodes = Object.assign({}, this.expandedNodes); // trigger reactivity
+        this.buildTreeHTML();
+      },
+
+      /**
+       * Expand or collapse all directory nodes.
+       */
+      toggleAllTreeNodes() {
+        if (this.expandAllTree) {
+          // Currently expanded → collapse all
+          this.expandedNodes = {};
+          this.buildTreeHTML();
+          this.expandAllTree = false;
+        } else {
+          // Currently collapsed → expand all
+          this.expandedNodes = {};
+          this.initExpandedNodes(this.analysis?.file_tree);
+          this.buildTreeHTML();
+          this.expandAllTree = true;
+        }
+      },
+
+      languageLabel(lang) {
+        const labels = {
+          csharp: 'C# / Unity', cpp: 'C++', c: 'C',
+          go: 'Go', python: 'Python',
+          node: 'Node.js', browser: 'Browser JS',
+          unknown: 'Auto-detected'
+        };
+        return labels[lang] || (lang ? lang.toUpperCase() : 'Unknown');
+      },
+
+      /**
+       * Render a file tree node. Uses CSS border-left on subtree wrappers
+       * for visible vertical guide lines instead of fragile │ characters.
+       * Each depth level adds consistent padding and a subtle border.
+       */
+      renderTreeHTML(node, prefix, isLast) {
+        const colorMap = {
+          red: '#f87171',
+          orange: '#fb923c',
+          yellow: '#facc15',
+          gray: '#9ca3af',
+        };
+        const color = colorMap[node.severity] || '#9ca3af';
+
+        // prefix is already pure-space indentation (no │ chars)
+        const connector = prefix === '' ? '' : (isLast ? ' └─ ' : ' ├─ ');
+        const depth = Math.floor(prefix.length / 4);
+        const isExpanded = !!this.expandedNodes[node.path];
+        const hasChildren = node.children && node.children.length > 0;
+        const subtreeId = 'st-' + this.hashPath(node.path);
+        const esc = (s) => this.escapeHtml(s);
+
+        let html = '';
+
+        if (node.is_file) {
+          // ── File row ──
+          const fileIcon = this.fileIcon(node.name);
+          html += `<div class="tree-row tree-file" style="color:${color};padding-left:${depth * 20 + 8}px">`;
+          html += `<span class="tree-connector">${esc(connector)}</span>`;
+          html += `<span class="tree-icon-file">${fileIcon}</span>`;
+          html += `<span style="${node.is_crash_site ? 'font-weight:600' : ''}">${esc(node.name)}</span>`;
+          if (node.is_crash_site && node.line_number) {
+            html += `<span class="tree-crash-tag">crash line ${node.line_number}</span>`;
+          } else if (node.line_number) {
+            html += `<span class="tree-line-num">:${node.line_number}</span>`;
+          }
+          html += '</div>';
+        } else if (hasChildren) {
+          // ── Directory row ──
+          const toggleClass = isExpanded ? 'expanded' : 'collapsed';
+          const innerLevel = isExpanded ? '' : ' (collapsed)' ;
+          html += `<div class="tree-row tree-dir" data-tree-toggle="${esc(node.path)}" style="color:#e2e8f0;padding-left:${depth * 20 + 8}px">`;
+          html += `<span class="tree-connector">${esc(connector)}</span>`;
+          html += `<span class="tree-toggle-icon ${toggleClass}">▼</span>`;
+          html += `<span class="tree-icon-dir">📁</span>`;
+          html += `<span style="font-weight:500">${esc(node.name)}</span>`;
+          html += '</div>';
+
+          // Subtree wrapper — solid left border gives a visible guide line
+          // connecting this directory to all its descendants
+          const subtreeClasses = isExpanded
+            ? 'tree-subtree'
+            : 'tree-subtree collapsed';
+          html += `<div id="${subtreeId}" class="${subtreeClasses}" style="border-left:1px solid #374151;margin-left:${depth * 20 + 19}px;padding-left:0">`;
+          // Pass an empty prefix — padding-left on each row handles depth visually,
+          // and the border-left on this wrapper creates the continuous guide line
+          node.children.forEach((child, idx) => {
+            html += this.renderTreeHTML(child, prefix + '    ', idx === node.children.length - 1);
+          });
+          html += '</div>';
+        } else {
+          // ── Empty directory ──
+          html += `<div class="tree-row" style="color:#6b7280;padding-left:${depth * 20 + 8}px">`;
+          html += `<span class="tree-connector">${esc(connector)}</span>`;
+          html += `<span class="tree-icon-dir">📁</span>`;
+          html += `<span>${esc(node.name)}</span>`;
+          html += `<span style="font-size:0.65rem;color:#4b5563;margin-left:6px">(empty)</span>`;
+          html += '</div>';
+        }
+
+        return html;
+      },
+
+      /**
+       * Generate a short stable hash from a tree path for DOM IDs.
+       */
+      hashPath(s) {
+        let h = 0;
+        for (let i = 0; i < s.length; i++) {
+          h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+        }
+        return 'p' + (h & 0x7fffffff).toString(36);
+      },
+
+      /**
+       * Event delegation handler: click on the tree container.
+       * If the click lands on a [data-tree-toggle] element, toggle that subtree.
+       */
+      onTreeClick(event) {
+        const dirRow = event.target.closest('[data-tree-toggle]');
+        if (!dirRow) return;
+
+        const dirPath = dirRow.getAttribute('data-tree-toggle');
+        if (!dirPath) return;
+
+        // Toggle Alpine state
+        if (this.expandedNodes[dirPath]) {
+          delete this.expandedNodes[dirPath];
+        } else {
+          this.expandedNodes[dirPath] = true;
+        }
+        // Full rebuild from clean Alpine state — no DOM classList toggling needed
+        this.buildTreeHTML();
+      },
+
+      /**
+       * Pick a file icon based on extension.
+       */
+      fileIcon(filename) {
+        const ext = (filename || '').split('.').pop()?.toLowerCase();
+        const icons = {
+          cs: '🎯', cpp: '🔧', c: '🔧', h: '📋', hpp: '📋',
+          go: '🔷', py: '🐍', js: '📜', ts: '📘',
+          json: '📦', xml: '📝', yaml: '📝', yml: '📝',
+          csproj: '⚙️', sln: '🔨',
+          dll: '🔌', so: '🔌', dylib: '🔌',
+          log: '📄', txt: '📄', md: '📖',
+        };
+        return icons[ext] || '📄';
+      },
+
+      escapeHtml(str) {
+        if (!str) return '';
+        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       },
 
       formatSize(bytes) {
