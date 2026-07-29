@@ -83,6 +83,10 @@ export function listGroups(query: CrashGroupQuery): PaginatedResult<CrashGroup> 
     conditions.push('last_seen <= ?');
     params.push(query.end_date);
   }
+  if (query.error_severity) {
+    conditions.push("cg.id IN (SELECT DISTINCT cr.group_id FROM crash_reports cr WHERE cr.error_severity = ?)");
+    params.push(query.error_severity);
+  }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
@@ -100,7 +104,8 @@ export function listGroups(query: CrashGroupQuery): PaginatedResult<CrashGroup> 
   const items = getDb()
     .prepare(
       `SELECT cg.*,
-              (SELECT cr.runtime FROM crash_reports cr WHERE cr.group_id = cg.id ORDER BY cr.created_at DESC LIMIT 1) as runtime
+              (SELECT cr.runtime FROM crash_reports cr WHERE cr.group_id = cg.id ORDER BY cr.created_at DESC LIMIT 1) as runtime,
+              (SELECT cr.error_severity FROM crash_reports cr WHERE cr.group_id = cg.id ORDER BY cr.created_at DESC LIMIT 1) as error_severity
        FROM crash_groups cg ${where} ORDER BY ${col} ${order} LIMIT ? OFFSET ?`
     )
     .all(...params, pageSize, (page - 1) * pageSize) as CrashGroup[];

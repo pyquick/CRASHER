@@ -196,6 +196,7 @@ export interface CrashGroupQuery {
   app_version?: string;
   runtime?: string;
   environment?: string;
+  error_severity?: string;
   search?: string;
   start_date?: string;
   end_date?: string;

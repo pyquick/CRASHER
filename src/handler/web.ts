@@ -215,7 +215,7 @@ router.get('/api-doc', (_req: Request, res: Response): void => {
           <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">environment</td><td class="pr-4"><code>string</code></td><td>部署环境: <code>production</code>, <code>staging</code>, <code>development</code></td></tr>
           <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">server_name</td><td class="pr-4"><code>string</code></td><td>服务名 / 应用标识</td></tr>
           <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">release</td><td class="pr-4"><code>string</code></td><td>发布版本号 / Git commit hash</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">error_severity</td><td class="pr-4"><code>string</code></td><td>严重级别: <code>fatal</code>, <code>error</code>, <code>warning</code>, <code>info</code> (默认 error)</td></tr>
+          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">error_severity</td><td class="pr-4"><code>string</code></td><td>严重级别: <code>warning</code>, <code>error</code>, <code>fatal</code>, <code>crash</code> (默认 <code>error</code>)</td></tr>
         </tbody>
       </table>
 

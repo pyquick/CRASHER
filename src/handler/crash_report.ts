@@ -47,6 +47,19 @@ async function handleCrashReport(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    // Normalize and validate error_severity
+    const allowedSeverities = ['warning', 'error', 'fatal', 'crash'];
+    if (input.error_severity) {
+      const sev = input.error_severity.toLowerCase();
+      if (!allowedSeverities.includes(sev)) {
+        res.status(400).json({ error: 'Bad Request', message: `error_severity must be one of: ${allowedSeverities.join(', ')}` });
+        return;
+      }
+      input.error_severity = sev;
+    } else {
+      input.error_severity = 'error';
+    }
+
     if (input.stack_trace && input.stack_trace.length > config.maxLogSize) {
       input.stack_trace = input.stack_trace.substring(0, config.maxLogSize) + '\n...[truncated]';
     }

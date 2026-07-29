@@ -1,4 +1,4 @@
-<div x-data="crashDetail">
+<div x-data="crashDetail" class="overflow-hidden">
   <!-- Back link and header -->
   <div class="flex items-center gap-4 mb-6">
     <a href="/web/crashes" class="text-gray-500 hover:text-gray-300 transition-colors">← Back to list</a>
@@ -185,7 +185,16 @@
           </div>
           <div class="bg-surface-950 rounded-lg p-3" x-show="latestReport?.error_severity">
             <p class="text-xs text-gray-500">Severity</p>
-            <p class="text-gray-200 font-medium" x-text="latestReport?.error_severity || 'error'"></p>
+            <p class="text-gray-200 font-medium">
+              <span class="text-xs px-2 py-0.5 rounded font-medium"
+                    :class="{
+                      'bg-yellow-900/50 text-yellow-300': (latestReport?.error_severity || 'error') === 'warning',
+                      'bg-orange-900/50 text-orange-300': (latestReport?.error_severity || 'error') === 'error',
+                      'bg-red-900/50 text-red-300': (latestReport?.error_severity || 'error') === 'fatal',
+                      'bg-purple-900/50 text-purple-300': (latestReport?.error_severity || 'error') === 'crash'
+                    }"
+                    x-text="(latestReport?.error_severity || 'error').toUpperCase()"></span>
+            </p>
           </div>
         </div>
       </section>
@@ -373,7 +382,7 @@
         <template x-if="selectedReport.log_text">
           <div>
             <h4 class="text-xs font-medium text-gray-500 mb-2">PLAYER LOG</h4>
-            <pre class="stack-trace text-gray-400 bg-surface-950 rounded-lg p-3 max-h-60 overflow-y-auto" x-text="selectedReport.log_text"></pre>
+            <pre class="stack-trace text-gray-400 bg-surface-950 rounded-lg p-3 max-h-60 overflow-y-auto overflow-x-auto" x-text="selectedReport.log_text"></pre>
           </div>
         </template>
         <template x-if="selectedReport.custom_data">

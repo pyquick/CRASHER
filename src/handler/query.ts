@@ -21,6 +21,7 @@ router.get('/crash-groups', (req, res) => {
     end_date: q.end_date as string | undefined,
     sort_by: q.sort_by as string | undefined,
     sort_order: (q.sort_order as 'asc' | 'desc') || 'desc',
+    error_severity: q.error_severity as string | undefined,
   }));
 });
 

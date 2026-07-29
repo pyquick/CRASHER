@@ -62,6 +62,17 @@
         </select>
       </div>
       <div>
+        <label class="block text-xs text-gray-500 mb-1">Severity</label>
+        <select x-model="filters.error_severity" @change="load()"
+                class="bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500">
+          <option value="">All</option>
+          <option value="warning">Warning</option>
+          <option value="error">Error</option>
+          <option value="fatal">Fatal</option>
+          <option value="crash">Crash</option>
+        </select>
+      </div>
+      <div>
         <label class="block text-xs text-gray-500 mb-1">Sort</label>
         <select x-model="filters.sort_by" @change="load()"
                 class="bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500">
@@ -83,6 +94,7 @@
         <tr class="border-b border-gray-800 text-gray-500 text-xs uppercase">
           <th class="text-left px-4 py-3 font-medium">Exception</th>
           <th class="text-left px-4 py-3 font-medium hidden md:table-cell">Last Seen</th>
+          <th class="text-left px-4 py-3 font-medium hidden sm:table-cell">Severity</th>
           <th class="text-left px-4 py-3 font-medium hidden sm:table-cell">Count</th>
           <th class="text-left px-4 py-3 font-medium hidden sm:table-cell">Runtime</th>
           <th class="text-left px-4 py-3 font-medium">Status</th>
@@ -97,6 +109,17 @@
               <p class="text-xs text-gray-500 mt-0.5 truncate max-w-xs" x-text="item.exception_message || 'No message'"></p>
             </td>
             <td class="px-4 py-3 text-gray-400 hidden md:table-cell" x-text="formatDate(item.last_seen)"></td>
+            <td class="px-4 py-3 hidden sm:table-cell">
+              <span class="text-xs px-2 py-0.5 rounded font-medium"
+                    :class="{
+                      'bg-yellow-900/50 text-yellow-300': item.error_severity === 'warning',
+                      'bg-orange-900/50 text-orange-300': item.error_severity === 'error',
+                      'bg-red-900/50 text-red-300': item.error_severity === 'fatal',
+                      'bg-purple-900/50 text-purple-300': item.error_severity === 'crash',
+                      'bg-gray-700 text-gray-300': !item.error_severity || item.error_severity === 'error'
+                    }"
+                    x-text="(item.error_severity || 'error').toUpperCase()"></span>
+            </td>
             <td class="px-4 py-3 hidden sm:table-cell">
               <span class="font-mono text-gray-300" x-text="item.total_count"></span>
             </td>
@@ -164,7 +187,7 @@
       loading: false,
       platforms: [],
       versions: [],
-      filters: { search: '', status: '', platform: '', app_version: '', runtime: '', environment: '', sort_by: 'last_seen' },
+      filters: { search: '', status: '', platform: '', app_version: '', runtime: '', environment: '', error_severity: '', sort_by: 'last_seen' },
 
       async init() {
         await Promise.all([this.loadPlatforms(), this.loadVersions(), this.load()]);
@@ -183,6 +206,7 @@
           if (this.filters.app_version) params.set('app_version', this.filters.app_version);
           if (this.filters.runtime) params.set('runtime', this.filters.runtime);
           if (this.filters.environment) params.set('environment', this.filters.environment);
+          if (this.filters.error_severity) params.set('error_severity', this.filters.error_severity);
           if (this.filters.search) params.set('search', this.filters.search);
 
           const res = await fetch('/api/v1/crash-groups?' + params.toString());
