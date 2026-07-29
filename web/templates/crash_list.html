@@ -220,7 +220,7 @@
 
       formatDate(d) {
         if (!d) return '-';
-        return new Date(d + 'Z').toLocaleString();
+        return new Date(d).toLocaleString();
       }
     }));
   });
