@@ -323,6 +323,24 @@ check("GET /download/report/99999 → 404", r.status_code == 404)
 r = s2.get(f"{API}/download/attachment/99999", timeout=5)
 check("GET /download/attachment/99999 → 404", r.status_code == 404)
 
+# 6f. Export crash group
+r = s2.get(f"{API}/export/group/{gid}", timeout=10)
+check(f"GET /export/group/{gid} → 200", r.status_code == 200)
+check("content-type is gzip", "gzip" in r.headers.get("Content-Type", ""))
+
+# 6g. Import crash package (dry-run)
+r = s2.post(f"{API}/import?confirm=false", files={
+    "package": ("test.crashpkg", r.content, "application/gzip"),
+}, timeout=10)
+check("POST /import (dry-run) → 200", r.status_code == 200)
+check("dry_run is true", r.json().get("dry_run") is True)
+
+# 6h. Import crash package (dry-run, no confirm param)
+r = s2.post(f"{API}/import", files={
+    "package": ("test.crashpkg", b"invalid_gzip_data", "application/gzip"),
+}, timeout=10)
+check("POST /import (bad package) → 400", r.status_code == 400)
+
 # ──────────────────────────────────────────────────
 # 7. Symbols (authenticated)
 # ──────────────────────────────────────────────────
@@ -344,9 +362,27 @@ data = r.json()
 sym_id = data.get("id")
 check("has id", sym_id is not None)
 
-# 7c. Delete non-existent symbol
+# 7c. Download symbol file
+r = s2.get(f"{API}/symbols/{sym_id}/download", timeout=10)
+check(f"GET /symbols/{sym_id}/download → 200", r.status_code == 200)
+check("file content contains FAKE_SYMBOL_DATA", b"FAKE_SYMBOL_DATA" in r.content)
+check("content-disposition set", "attachment" in r.headers.get("Content-Disposition", ""))
+
+# 7d. Download non-existent symbol
+r = s2.get(f"{API}/symbols/99999/download", timeout=5)
+check("GET /symbols/99999/download → 404", r.status_code == 404)
+
+# 7e. Delete non-existent symbol
 r = s2.delete(f"{API}/symbols/99999", timeout=5)
 check("DELETE /symbols/99999 → 404", r.status_code == 404)
+
+# 7f. Delete the symbol we uploaded
+r = s2.delete(f"{API}/symbols/{sym_id}", timeout=5)
+check(f"DELETE /symbols/{sym_id} → 200", r.status_code == 200)
+
+# Verify deletion
+r = s2.get(f"{API}/symbols/{sym_id}/download", timeout=5)
+check(f"GET /symbols/{sym_id}/download (after delete) → 404", r.status_code == 404)
 
 # ──────────────────────────────────────────────────
 # 8. Web HTML pages (authenticated)

@@ -179,6 +179,7 @@ router.get('/api-doc', (_req: Request, res: Response): void => {
         <li><a href="#symbols" class="toc-link">7. 符号管理</a></li>
         <li><a href="#dump" class="toc-link">8. Dump 解析</a></li>
         <li><a href="#stats" class="toc-link">9. 统计与工具</a></li>
+        <li><a href="#export" class="toc-link">10. 导出导入</a></li>
       </ul>
     </div>
 
@@ -696,6 +697,21 @@ router.get('/api-doc', (_req: Request, res: Response): void => {
 
       <div class="mt-4 pt-4 border-t border-gray-700">
         <h2 class="text-lg font-semibold mb-3">
+          <span class="method-badge bg-green-600 text-white mr-3">GET</span>
+          /api/v1/symbols/:id/download
+        </h2>
+        <p class="text-gray-400 mb-2">下载已上传的符号文件。</p>
+        <pre><code>curl -O http://localhost:8080/api/v1/symbols/1/download</code></pre>
+        <h4 class="text-xs text-gray-500 mt-2">错误响应</h4>
+        <pre><code>// 400
+{ "error": "Invalid ID" }
+
+// 404
+{ "error": "Not found" }</code></pre>
+      </div>
+
+      <div class="mt-4 pt-4 border-t border-gray-700">
+        <h2 class="text-lg font-semibold mb-3">
           <span class="method-badge bg-red-600 text-white mr-3">DELETE</span>
           /api/v1/symbols/:id
         </h2>
@@ -787,6 +803,54 @@ router.get('/api-doc', (_req: Request, res: Response): void => {
           <pre class="mt-2"><code>curl http://localhost:8080/api/v1/versions
 # → ["1.5.2", "1.5.1", "1.5.0"]</code></pre>
         </div>
+      </div>
+    </section>
+
+    <!-- ============================================================ -->
+    <!-- 10. Export / Import -->
+    <!-- ============================================================ -->
+    <section id="export" class="section-card mb-6">
+      <h2 class="text-xl font-semibold mb-4">📦 导出导入</h2>
+
+      <div class="border-l-2 border-green-500 pl-4 mb-4">
+        <h3 class="font-medium">
+          <span class="method-badge bg-green-600 text-white mr-2 text-xs">GET</span>
+          /api/v1/export/group/:id
+        </h3>
+        <p class="text-sm text-gray-400 mt-1">导出崩溃分组为 <code>.crashpkg</code> (tar.gz)，包含 manifest.json、所有报告 JSON 及附件文件。</p>
+        <pre class="mt-2"><code>curl http://localhost:8080/api/v1/export/group/1 -o crash-group-1.crashpkg</code></pre>
+      </div>
+
+      <div class="border-l-2 border-purple-500 pl-4">
+        <h3 class="font-medium">
+          <span class="method-badge bg-purple-600 text-white mr-2 text-xs">POST</span>
+          /api/v1/import
+        </h3>
+        <p class="text-sm text-gray-400 mt-1">导入 <code>.crashpkg</code> 崩溃数据包。<strong>Query:</strong> <code>confirm=true</code> 正式写入，<code>confirm=false</code> 为试运行（仅检查冲突）。支持 multipart 上传、raw binary 或 base64 编码。</p>
+        <pre class="mt-2"><code># 试运行
+curl -X POST "http://localhost:8080/api/v1/import?confirm=false" \\
+  -F "package=@crash-group-1.crashpkg"
+
+# 正式导入
+curl -X POST "http://localhost:8080/api/v1/import?confirm=true" \\
+  -F "package=@crash-group-1.crashpkg"</code></pre>
+        <h4 class="text-xs text-gray-500 mt-3">试运行响应</h4>
+        <pre><code>{
+  "dry_run": true,
+  "conflicts": [{ "crash_hash": "a8002ef4f65bcd40", "existing_group_id": 1 }],
+  "new_groups": 0,
+  "new_reports": 5,
+  "new_attachments": 2
+}</code></pre>
+        <h4 class="text-xs text-gray-500 mt-3">正式导入响应</h4>
+        <pre><code>{
+  "dry_run": false,
+  "conflicts": [],
+  "new_groups": 1,
+  "new_reports": 5,
+  "new_attachments": 2,
+  "group_id": 10
+}</code></pre>
       </div>
     </section>
 

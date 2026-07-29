@@ -130,4 +130,31 @@ router.delete('/symbols/:id', (req: Request, res: Response): void => {
   res.json({ success: true });
 });
 
+/**
+ * GET /api/v1/symbols/:id/download
+ * Download a symbol file.
+ */
+router.get('/symbols/:id/download', (req: Request, res: Response): void => {
+  const id = parseInt(String(req.params.id), 10);
+  if (isNaN(id)) {
+    res.status(400).json({ error: 'Invalid ID' });
+    return;
+  }
+
+  const symbol = store.getSymbolById(id);
+  if (!symbol) {
+    res.status(404).json({ error: 'Not found' });
+    return;
+  }
+
+  res.download(symbol.file_path, symbol.filename, (err) => {
+    if (err) {
+      console.error('Error downloading symbol file:', err);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Download failed', message: err.message });
+      }
+    }
+  });
+});
+
 export default router;

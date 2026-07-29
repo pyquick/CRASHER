@@ -10,19 +10,25 @@
 - [架构设计](#架构设计)
 - [去重策略](#去重策略)
 - [API 参考](#api-参考)
-  - [提交崩溃报告](#1-提交崩溃报告)
-  - [查询崩溃分组列表](#2-查询崩溃分组列表)
-  - [查询崩溃分组详情](#3-查询崩溃分组详情)
-  - [更新崩溃分组状态](#4-更新崩溃分组状态)
-  - [查询单条报告列表](#5-查询单条报告列表)
-  - [查询单条报告详情](#6-查询单条报告详情)
-  - [仪表盘统计](#7-仪表盘统计)
-  - [获取平台列表](#8-获取平台列表)
-  - [获取版本列表](#9-获取版本列表)
-  - [上传符号文件](#10-上传符号文件)
-  - [查询符号文件列表](#11-查询符号文件列表)
-  - [删除符号文件](#12-删除符号文件)
-  - [健康检查](#13-健康检查)
+  - [认证机制](#认证机制)
+  - [1. 提交崩溃报告](#1-提交崩溃报告)
+  - [2. Unity 专属崩溃上报](#2-unity-专属崩溃上报)
+  - [3. 玩家主动反馈](#3-玩家主动反馈)
+  - [4. 查询崩溃分组列表](#4-查询崩溃分组列表)
+  - [5. 查询崩溃分组详情](#5-查询崩溃分组详情)
+  - [6. 更新崩溃分组状态](#6-更新崩溃分组状态)
+  - [7. 查询单条报告列表](#7-查询单条报告列表)
+  - [8. 查询单条报告详情](#8-查询单条报告详情)
+  - [9. 符号化信息查询](#9-符号化信息查询)
+  - [10. 崩溃分析](#10-崩溃分析)
+  - [11. 数据导出导入](#11-数据导出导入)
+  - [12. 文件下载](#12-文件下载)
+  - [13. 仪表盘统计](#13-仪表盘统计)
+  - [14. 平台与版本列表](#14-平台与版本列表)
+  - [15. 玩家反馈管理](#15-玩家反馈管理)
+  - [16. 符号文件管理](#16-符号文件管理)
+  - [17. 数据清理](#17-数据清理)
+  - [18. 健康检查](#18-健康检查)
 - [Unity 客户端集成](#unity-客户端集成)
 - [Web 管理后台](#web-管理后台)
 - [配置参考](#配置参考)
@@ -142,6 +148,25 @@ crash_hash = SHA256(exception_type + "|" + first_stack_frame + "|" + platform)[0
 - **Content-Type**: `application/json`（上传文件时使用 `multipart/form-data`）
 - **响应格式**: 所有成功响应为 JSON；错误响应格式为 `{ "error": "...", "message": "..." }`
 
+### 认证机制
+
+除公开端点外，所有 `/api/v1/*` 查询和管理接口均需认证。系统使用基于 Cookie 的 Session 认证：
+
+- 通过 `POST /web/login` 登录获取 `auth_token` Cookie
+- Cookie 属性：`httpOnly`、`sameSite: 'lax'`、有效期 24 小时
+- 默认凭据：用户名 `admin`，密码 `ghltbm123456`（可通过环境变量 `ADMIN_USERNAME` 和 `ADMIN_PASSWORD` 修改）
+- 未认证请求返回 `401 { "error": "Unauthorized", "message": "Authentication required" }`
+
+**公开端点**（无需认证）：
+- `POST /api/v1/crash-report`
+- `POST /api/v1/unity/crash-report`
+- `POST /api/v1/player-feedback`
+- `POST /web/login` / `GET /web/login`
+- `GET /health`
+
+**受保护端点**（需要登录）：
+- 所有查询、下载、管理类 API 均需携带有效 `auth_token` Cookie
+
 ---
 
 ### 1. 提交崩溃报告
@@ -255,7 +280,81 @@ curl -X POST http://localhost:8080/api/v1/crash-report \
 
 ---
 
-### 2. 查询崩溃分组列表
+### 2. Unity 专属崩溃上报
+
+```
+POST /api/v1/unity/crash-report
+```
+
+Unity 客户端专用端点，会对 `User-Agent`（含 "unity"）或 `X-Client-Type: unity` 请求头进行校验。请求参数与通用端点完全一致，但会自动设置 `runtime = 'unity'`、`framework = 'unity'`。
+
+> **注意**: 非 Unity 客户端调用此端点将返回 `403 Forbidden`。
+
+```bash
+# Unity 客户端调用（需要 unity User-Agent 或 x-client-type header）
+curl -X POST http://localhost:8080/api/v1/unity/crash-report \
+  -H "x-client-type: unity" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "exception_type": "UnityException",
+    "stack_trace": "(0xDEAD) at MyScript.Update() [0x00000]",
+    "unity_version": "6000.0.23f1",
+    "platform": "iOS"
+  }'
+```
+
+#### 成功响应 — `201 Created`
+
+```json
+{ "id": 42, "group_id": 7, "is_new_group": false, "runtime": "unity" }
+```
+
+---
+
+### 3. 玩家主动反馈
+
+```
+POST /api/v1/player-feedback
+```
+
+玩家在游戏内手动填写的 Bug、建议或其他反馈。无需认证。
+
+**必填字段**: `title`（最大 200 字符）、`description`（最大 `MAX_LOG_SIZE` 字符）
+
+**可选字段**: `category`（`bug`/`suggestion`/`other`，默认 `bug`）、`severity`（`low`/`normal`/`high`/`critical`，默认 `normal`）、`player_id`、`player_name`、`contact`、`app_version`、`platform`、`device_model`、`scene_name`、`custom_data`、`client_timestamp`
+
+```bash
+curl -X POST http://localhost:8080/api/v1/player-feedback \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "购买后无法装备新武器",
+    "description": "在商店购买武器后，点击装备按钮没有任何反应。",
+    "category": "bug",
+    "severity": "high",
+    "player_id": "player-123",
+    "app_version": "2.0.0",
+    "platform": "Android",
+    "scene_name": "Shop"
+  }'
+```
+
+#### 上传附件
+
+使用 `multipart/form-data`，将 JSON 放入 `feedback` 字段，并可重复附加 `attachments` 文件字段（最多 10 个）。
+
+#### 成功响应 — `201 Created`
+
+```json
+{
+  "id": 1,
+  "status": "new",
+  "attachments": [{ "id": 1, "filename": "screenshot.png", "file_size": 245760 }]
+}
+```
+
+---
+
+### 4. 查询崩溃分组列表
 
 ```
 GET /api/v1/crash-groups
@@ -317,7 +416,7 @@ curl "http://localhost:8080/api/v1/crash-groups?search=Null"
 
 ---
 
-### 3. 查询崩溃分组详情
+### 5. 查询崩溃分组详情
 
 ```
 GET /api/v1/crash-groups/:id
@@ -371,7 +470,7 @@ curl http://localhost:8080/api/v1/crash-groups/1
 
 ---
 
-### 4. 更新崩溃分组状态
+### 6. 更新崩溃分组状态
 
 ```
 PUT /api/v1/crash-groups/:id/status
@@ -421,7 +520,7 @@ curl -X PUT http://localhost:8080/api/v1/crash-groups/1/status \
 
 ---
 
-### 5. 查询单条报告列表
+### 7. 查询单条报告列表
 
 ```
 GET /api/v1/crash-reports
@@ -455,7 +554,7 @@ curl "http://localhost:8080/api/v1/crash-reports?platform=iOS&page_size=50"
 
 ---
 
-### 6. 查询单条报告详情
+### 8. 查询单条报告详情
 
 ```
 GET /api/v1/crash-reports/:id
@@ -509,7 +608,132 @@ curl http://localhost:8080/api/v1/crash-reports/1
 
 ---
 
-### 7. 仪表盘统计
+### 9. 符号化信息查询
+
+```
+GET /api/v1/crash-reports/:id/symbolication
+```
+
+查询指定报告的符号化（地址→函数名翻译）结果。
+
+```bash
+curl http://localhost:8080/api/v1/crash-reports/1/symbolication
+```
+
+#### 响应
+
+```json
+{
+  "report_id": 1,
+  "runtime": "unity",
+  "build_guid": "a1b2c3d4e5f6a7b8",
+  "symbolication_status": "symbolicated",
+  "symbolicated_stack": "PlayerController.Update() (Assets/Scripts/Player.cs:42)\n...",
+  "symbolication_info": {},
+  "symbol_id": 1
+}
+```
+
+---
+
+### 10. 崩溃分析
+
+```
+GET /api/v1/crash-reports/:id/analysis
+```
+
+对指定报告进行 AI 辅助分析，返回崩溃原因分析和修复建议。
+
+```bash
+curl http://localhost:8080/api/v1/crash-reports/1/analysis
+```
+
+#### 响应
+
+```json
+{
+  "report_id": 1,
+  "analysis": "..."
+}
+```
+
+---
+
+### 11. 数据导出导入
+
+```
+GET  /api/v1/export/group/:id
+POST /api/v1/import
+```
+
+**导出崩溃分组** — 下载为 `.crashpkg`（tar.gz 格式），包含 `manifest.json`、所有报告 JSON、附件文件。
+
+```bash
+# 导出分组
+curl http://localhost:8080/api/v1/export/group/1 \
+  -o crash-group-1.crashpkg
+```
+
+**导入崩溃数据包**
+
+```bash
+# 试运行（不写入数据，仅检查冲突）
+curl -X POST http://localhost:8080/api/v1/import?confirm=false \
+  -F "package=@crash-group-1.crashpkg"
+
+# 正式导入
+curl -X POST "http://localhost:8080/api/v1/import?confirm=true" \
+  -F "package=@crash-group-1.crashpkg"
+```
+
+试运行响应返回冲突信息和预期数量：
+
+```json
+{
+  "dry_run": true,
+  "conflicts": [{ "crash_hash": "a8002ef4f65bcd40", "existing_group_id": 1 }],
+  "new_groups": 0,
+  "new_reports": 5,
+  "new_attachments": 2
+}
+```
+
+正式导入响应增加 `group_id` 字段：
+
+```json
+{ "dry_run": false, "conflicts": [], "new_groups": 1, "new_reports": 5, "new_attachments": 2, "group_id": 10 }
+```
+
+---
+
+### 12. 文件下载
+
+```
+GET /api/v1/download/report/:id
+GET /api/v1/download/group/:id
+GET /api/v1/download/dump/:reportId
+GET /api/v1/download/attachment/:id
+GET /api/v1/download/player-feedback/attachment/:id
+```
+
+下载崩溃报告、分组、Dump 解析信息或附件的 JSON/文件。
+
+| 路径 | 说明 | 响应格式 |
+|------|------|----------|
+| `/download/report/:id` | 下载报告 JSON | `crash-report-{id}.json` |
+| `/download/group/:id` | 下载分组 + 所有报告 JSON | `crash-group-{id}.json` |
+| `/download/dump/:reportId` | 下载 Dump 解析信息 | `dump-info-{id}.json` |
+| `/download/attachment/:id` | 下载崩溃报告附件 | 原始文件流 |
+| `/download/player-feedback/attachment/:id` | 下载玩家反馈附件 | 原始文件流 |
+
+```bash
+curl http://localhost:8080/api/v1/download/report/1 -o report-1.json
+curl http://localhost:8080/api/v1/download/attachment/5 -o screenshot.png
+```
+
+---
+
+### 13. 仪表盘统计
 
 ```
 GET /api/v1/stats/dashboard
@@ -571,7 +795,7 @@ curl http://localhost:8080/api/v1/stats/dashboard
 
 ---
 
-### 8. 获取平台列表
+### 14. 平台与版本列表
 
 ```
 GET /api/v1/platforms
@@ -591,9 +815,6 @@ curl http://localhost:8080/api/v1/platforms
 
 ---
 
-### 9. 获取版本列表
-
-```
 GET /api/v1/versions
 ```
 
@@ -611,7 +832,63 @@ curl http://localhost:8080/api/v1/versions
 
 ---
 
-### 10. 上传符号文件
+### 15. 玩家反馈管理
+
+```
+GET    /api/v1/player-feedback
+GET    /api/v1/player-feedback/:id
+PUT    /api/v1/player-feedback/:id/status
+```
+
+查询、管理玩家提交的反馈。所有接口需要认证。
+
+#### 查询参数（GET /api/v1/player-feedback）
+
+| 参数 | 类型 | 默认值 | 说明 |
+|------|------|--------|------|
+| `page` | number | 1 | 页码 |
+| `page_size` | number | 20（最大 100） | 每页条数 |
+| `status` | string | — | 筛选状态：`new` / `in_progress` / `resolved` / `closed` |
+| `category` | string | — | 筛选分类：`bug` / `suggestion` / `other` |
+| `search` | string | — | 搜索 title/description/player_name |
+
+```bash
+# 查询所有 bug 反馈
+curl "http://localhost:8080/api/v1/player-feedback?category=bug&status=new"
+
+# 查看详情
+curl http://localhost:8080/api/v1/player-feedback/1
+
+# 更新状态
+curl -X PUT http://localhost:8080/api/v1/player-feedback/1/status \
+  -H "Content-Type: application/json" \
+  -d '{"status": "resolved"}'
+```
+
+#### 更新状态
+
+```json
+// Request
+{ "status": "new" | "in_progress" | "resolved" | "closed" }
+
+// Response
+{ "success": true }
+```
+
+---
+
+### 16. 符号文件管理
+
+```
+POST   /api/v1/symbols
+GET    /api/v1/symbols
+GET    /api/v1/symbols/:id/download
+DELETE /api/v1/symbols/:id
+```
+
+管理用于堆栈符号化的调试符号文件。所有接口需要认证。
+
+#### 上传符号文件
 
 ```
 POST /api/v1/symbols
@@ -626,15 +903,20 @@ curl -X POST http://localhost:8080/api/v1/symbols \
   -F "build_guid=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
 ```
 
-#### 请求参数（multipart/form-data）
+**请求参数（multipart/form-data）**
 
 | 字段 | 类型 | 必填 | 说明 |
 |------|------|------|------|
 | `file` | file | **是** | 符号文件（最大 500MB） |
 | `platform` | string | 否（默认 `unknown`） | 平台：`Android` / `iOS` / `Windows` / `Mac` / `WebGL` / `Linux` |
 | `build_guid` | string | **是** | Unity Build GUID（可在 `Player Settings` 或构建日志中找到） |
+| `symbol_type` | string | 否（自动检测） | 类型：`symbol_map` / `elf` / `dsym` |
+| `module_name` | string | 否 | 模块名称 |
+| `architecture` | string | 否 | 架构，如 `arm64` / `x86_64` |
 
-#### 成功响应 — `201 Created`
+**符号类型自动检测**: 文件名包含 `symbolmap`/`.map`/`.txt` → `symbol_map`；以 `.dsym`/`.zip` 结尾 → `dsym`；以 `.so`/`.sym`/`.dbg` 结尾 → `elf`
+
+**成功响应 — `201 Created`**
 
 ```json
 {
@@ -644,11 +926,14 @@ curl -X POST http://localhost:8080/api/v1/symbols \
   "filename": "libil2cpp.so.sym",
   "file_size": 52428800,
   "file_path": "/app/data/symbols/abc123def456.sym",
+  "symbol_type": "elf",
+  "module_name": "",
+  "architecture": "",
   "uploaded_at": "2026-07-27 03:41:55"
 }
 ```
 
-#### 错误响应
+**错误响应**
 
 ```json
 // 400
@@ -656,9 +941,7 @@ curl -X POST http://localhost:8080/api/v1/symbols \
 { "error": "Bad Request", "message": "build_guid is required" }
 ```
 
----
-
-### 11. 查询符号文件列表
+#### 查询符号文件列表
 
 ```
 GET /api/v1/symbols
@@ -666,7 +949,7 @@ GET /api/v1/symbols
 
 分页查询已上传的符号文件。
 
-#### 查询参数
+**查询参数**
 
 | 参数 | 类型 | 默认值 | 说明 |
 |------|------|--------|------|
@@ -679,7 +962,7 @@ GET /api/v1/symbols
 curl "http://localhost:8080/api/v1/symbols?platform=Android"
 ```
 
-#### 响应
+**响应**
 
 ```json
 {
@@ -691,6 +974,7 @@ curl "http://localhost:8080/api/v1/symbols?platform=Android"
       "filename": "libil2cpp.so.sym",
       "file_size": 52428800,
       "file_path": "/app/data/symbols/abc123def456.sym",
+      "symbol_type": "elf",
       "uploaded_at": "2026-07-27 03:41:55"
     }
   ],
@@ -701,9 +985,32 @@ curl "http://localhost:8080/api/v1/symbols?platform=Android"
 }
 ```
 
----
+#### 下载符号文件
 
-### 12. 删除符号文件
+```
+GET /api/v1/symbols/:id/download
+```
+
+下载上传的符号文件。
+
+```bash
+curl http://localhost:8080/api/v1/symbols/1/download \
+  -o libil2cpp.so.sym
+```
+
+**响应**: 文件流（`Content-Disposition: attachment`）
+
+**错误响应**
+
+```json
+// 400
+{ "error": "Invalid ID" }
+
+// 404
+{ "error": "Not found" }
+```
+
+#### 删除符号文件
 
 ```
 DELETE /api/v1/symbols/:id
@@ -715,13 +1022,13 @@ DELETE /api/v1/symbols/:id
 curl -X DELETE http://localhost:8080/api/v1/symbols/1
 ```
 
-#### 成功响应
+**成功响应**
 
 ```json
 { "success": true }
 ```
 
-#### 错误响应
+**错误响应**
 
 ```json
 // 400
@@ -733,13 +1040,33 @@ curl -X DELETE http://localhost:8080/api/v1/symbols/1
 
 ---
 
-### 13. 健康检查
+### 17. 数据清理
+
+```
+POST /api/v1/clear-crashes
+```
+
+删除所有崩溃数据（附件文件 + 数据库记录）。需要认证，**此操作不可逆**。
+
+```bash
+curl -X POST http://localhost:8080/api/v1/clear-crashes
+```
+
+**响应**
+
+```json
+{ "success": true, "message": "All crash data cleared" }
+```
+
+---
+
+### 18. 健康检查
 
 ```
 GET /health
 ```
 
-用于 Docker healthcheck 或负载均衡器探活。
+用于 Docker healthcheck 或负载均衡器探活。无需认证。
 
 ```bash
 curl http://localhost:8080/health
@@ -1053,42 +1380,6 @@ var customData = new Dictionary<string, object>
 
 ---
 
-## 玩家主动反馈 API
-
-玩家在游戏内手动填写的 Bug、建议或其他反馈应提交到公开接口：
-
-```http
-POST /api/v1/player-feedback
-Content-Type: application/json
-```
-
-必填字段为 `title` 和 `description`；可选字段包括：
-
-- `category`：`bug`（默认）、`suggestion` 或 `other`
-- `severity`：`low`、`normal`（默认）、`high` 或 `critical`
-- `player_id`、`player_name`、`contact`
-- `app_version`、`platform`、`device_model`、`scene_name`
-- `custom_data`、`client_timestamp`
-
-```json
-{
-  "title": "购买后无法装备新武器",
-  "description": "在商店购买武器后，点击装备按钮没有任何反应。",
-  "category": "bug",
-  "severity": "high",
-  "player_id": "player-123",
-  "app_version": "2.0.0",
-  "platform": "Android",
-  "scene_name": "Shop"
-}
-```
-
-上传截图或日志时，使用 `multipart/form-data`，将 JSON 放入 `feedback` 字段，并可重复附加 `attachments` 文件字段（最多 10 个）。成功时返回 `201` 及反馈 `id`。Unity 客户端可复用已有的 `UnityWebRequest` 提交方式，将玩家填写的标题和描述发送到该地址；建议同时附带 `Application.version`、`Application.platform`、设备型号、当前场景和玩家 ID。管理端接口（需登录）包括：
-
-- `GET /api/v1/player-feedback`：分页、按 `status`、`category`、`search` 筛选
-- `GET /api/v1/player-feedback/:id`：查看详情及附件
-- `PUT /api/v1/player-feedback/:id/status`：更新为 `new`、`in_progress`、`resolved` 或 `closed`
-
 ---
 
 ## Web 管理后台
@@ -1134,7 +1425,16 @@ http://<host>:8080/web/
 | `MAX_LOG_SIZE` | `10485760` (10MB) | stack_trace / log_text 字段最大字节数，超出自动截断 |
 | `MAX_ATTACHMENT_SIZE` | `20971520` (20MB) | 单个附件文件最大字节数 |
 | `CORS_ORIGINS` | `*` | CORS 允许的来源，多个用逗号分隔，如 `https://a.com,https://b.com` |
-| `AUTH_TOKEN` | `<随机生成>` | API 鉴权令牌（当前版本预留，未强制校验） |
+| `ADMIN_USERNAME` | `admin` | 管理后台登录用户名 |
+| `ADMIN_PASSWORD` | `ghltbm123456` | 管理后台登录密码（存储为 SHA256 哈希） |
+| `SESSION_SECRET` | `<随机生成>` | Session token HMAC 签名密钥 |
+| `WEBHOOK_URL` | `空` | 新崩溃的 Webhook 通知地址 |
+| `WEBHOOK_TIMEOUT_MS` | `5000` | Webhook 请求超时（毫秒） |
+| `ALERT_ON_NEW_GROUP` | `true` | 是否在新崩溃分组出现时发送告警 |
+| `ALERT_THRESHOLD_COUNT` | `10` | 崩溃次数达到此阈值时发送告警 |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` / `SMTP_USER` / `SMTP_PASSWORD` | `空` | 邮件告警 SMTP 配置 |
+| `ALERT_EMAIL_FROM` / `ALERT_EMAIL_TO` | `空` | 邮件告警的发件/收件地址 |
+| `ADDR2LINE_PATH` | `llvm-addr2line` | ELF 符号解析工具路径 |
 
 ### Docker Compose 示例
 
@@ -1248,23 +1548,38 @@ e:/Server/
 │   ├── database.ts              # 数据库：SQLite 连接、WAL 模式、Schema 自动迁移
 │   ├── model.ts                 # 类型定义：所有数据模型和接口的 TypeScript 类型
 │   ├── store.ts                 # 数据访问层：所有数据库 CRUD 操作
-│   ├── service.ts               # 业务逻辑层：崩溃 hash 计算、去重分组、报告注入
-│   ├── middleware.ts             # 中间件：请求日志、全局错误处理、404 处理
+│   ├── service.ts               # 业务逻辑层：崩溃 hash 计算、去重分组、报告注入、告警
+│   ├── middleware.ts             # 中间件：Session 认证、请求日志、全局错误处理
+│   ├── analysis/
+│   │   └── analyzer.ts          # AI 辅助崩溃分析
+│   ├── symbolication/
+│   │   ├── types.ts             # 符号化类型定义
+│   │   ├── service.ts           # 符号化调度服务（按类型选择解析器）
+│   │   ├── symbol_map.ts        # IL2CPP 文本符号表解析（二分查找）
+│   │   ├── elf.ts               # ELF/SO 符号解析（llvm-addr2line）
+│   │   └── dsym.ts              # Apple dSYM 符号解析（atos）
 │   └── handler/
-│       ├── crash_report.ts      # 崩溃上报 API：提交、查询分组、查询报告、统计
-│       ├── symbol.ts            # 符号文件 API：上传、列表、删除
-│       └── web.ts               # Web 管理后台：模板渲染、路由分发
+│       ├── crash_report.ts      # 公共崩溃上报 API
+│       ├── feedback.ts          # 玩家反馈上报 API
+│       ├── unity.ts             # Unity 专属上报 API
+│       ├── symbol.ts            # 符号文件 API：上传、下载、列表、删除
+│       ├── query.ts             # 数据查询管理 API：分组、报告、统计、导出导入、下载
+│       └── web.ts               # Web 管理后台：模板渲染、登录、API 文档页面
 ├── web/
 │   └── templates/
 │       ├── layout.html          # 基础布局模板（深色主题侧边栏 + 顶栏）
+│       ├── login.html           # 登录页面
 │       ├── dashboard.html       # 仪表盘页面（统计卡片 + Chart.js 图表）
 │       ├── crash_list.html      # 崩溃列表页面（搜索、筛选、分页表格）
 │       ├── crash_detail.html    # 崩溃详情页面（堆栈、日志、设备信息、操作面板）
-│       └── symbol_list.html     # 符号管理页面（上传、列表、删除）
+│       ├── symbol_list.html     # 符号管理页面（上传、列表、删除）
+│       └── feedback_list.html   # 玩家反馈管理页面
 ├── data/                        # 运行时数据目录（Git 忽略）
 │   ├── crash_reports.db         # SQLite 数据库文件
 │   ├── symbols/                 # 上传的符号文件
 │   └── attachments/             # 上传的附件文件
+├── example.py                   # Python 集成示例代码
+├── test_api.py                  # API 自动化测试脚本
 ├── Dockerfile                   # 多阶段构建：TypeScript 编译 → 精简运行时镜像
 ├── docker-compose.yml           # Docker Compose 编排
 ├── package.json                 # Node.js 项目配置
