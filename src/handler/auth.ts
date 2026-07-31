@@ -13,6 +13,13 @@ import {
 
 const router = Router();
 
+function maskEmail(email: string): string {
+  const [name, domain] = email.split('@');
+  if (!name || !domain) return email;
+  const dn = domain.split('.');
+  return `${name[0]}***@${dn[0][0]}***.${dn.slice(1).join('.')}`;
+}
+
 // ── Initial Setup (no users yet) ──
 
 /**
@@ -388,7 +395,8 @@ router.post('/me/totp/disable', requireApiAuth, requireCsrf, (req: Request, res:
 /**
  * POST /api/v1/auth/forgot-password
  * Initiate the forgot-password flow. Rate-limited to prevent enumeration.
- * Always returns success to avoid username enumeration.
+ * Admin accounts with TOTP enabled get a self-service flow (TOTP + email verification).
+ * Non-admin accounts get the existing token-based flow (contact admin).
  */
 router.post('/forgot-password', rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -397,18 +405,58 @@ router.post('/forgot-password', rateLimit({
 }), (req: Request, res: Response): void => {
   const username = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
   if (!username || username.length > 64) {
-    // Still respond "success" to avoid enumeration
     res.json({ success: true, message: 'If the account exists, a reset request has been created. Contact an administrator with your username to complete the reset.' });
     return;
   }
+  const user = auth.lookupUserByUsername(username);
+  if (user && user.role === 'admin' && user.totp_enabled) {
+    auth.writeAuditLog(user.id, 'password_reset.self_requested', 'user', String(user.id), req.ip ?? '', {});
+    res.json({ success: true, requires_totp: true, username: user.username });
+    return;
+  }
+  // Non-admin or admin without TOTP: existing token flow
   const result = auth.createPasswordResetToken(username);
   auth.writeAuditLog(null, 'password_reset.requested', 'user', username.substring(0, 64), req.ip ?? '', { success: !!result });
   if (result) {
     console.log(`[reset] TOKEN for ${result.username}: ${result.token} (valid 15m)`);
-    res.json({ success: true, message: 'If the account exists, a reset request has been created. Contact an administrator with your username to complete the reset.' });
-  } else {
-    res.json({ success: true, message: 'If the account exists, a reset request has been created. Contact an administrator with your username to complete the reset.' });
   }
+  res.json({ success: true, message: 'If the account exists, a reset request has been created. Contact an administrator with your username to complete the reset.' });
+});
+
+/**
+ * POST /api/v1/auth/forgot-password/totp
+ * Step 2 of admin self-reset: verify TOTP and send email verification code.
+ */
+router.post('/forgot-password/totp', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 3,
+  key: req => `forgot-totp:${req.ip}`,
+}), async (req: Request, res: Response): Promise<void> => {
+  const username = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
+  const totpCode = typeof req.body?.totp_code === 'string' ? req.body.totp_code.replace(/\s/g, '') : '';
+  if (!username || !totpCode) {
+    res.status(400).json({ error: 'Bad Request', message: 'Username and TOTP code are required' });
+    return;
+  }
+  const user = auth.lookupUserByUsername(username);
+  if (!user || user.role !== 'admin' || !user.totp_enabled) {
+    res.status(400).json({ error: 'Bad Request', message: 'Invalid request' });
+    return;
+  }
+  if (!auth.verifyTotp(user.id, totpCode)) {
+    auth.writeAuditLog(user.id, 'password_reset.self_totp_failed', 'user', String(user.id), req.ip ?? '', {});
+    res.status(400).json({ error: 'Bad Request', message: 'Invalid 2FA code' });
+    return;
+  }
+  const session = auth.createAdminResetSession(user.id);
+  if (!session) {
+    res.status(400).json({ error: 'Bad Request', message: 'No verified email address found. Contact another admin for help.' });
+    return;
+  }
+  auth.writeAuditLog(user.id, 'password_reset.self_totp_ok', 'user', String(user.id), req.ip ?? '', {});
+  sendVerificationEmail(session.email, session.emailCode).catch(() => {});
+  console.log(`[reset] ADMIN-SELF-RESET code for ${user.username} (${session.email}): ${session.emailCode}`);
+  res.json({ success: true, temp_token: session.tempToken, message: 'Verification code sent to your primary email.', email_hint: maskEmail(session.email) });
 });
 
 /**

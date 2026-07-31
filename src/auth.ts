@@ -136,6 +136,10 @@ export function getUserById(id: number): User | undefined {
   return getDb().prepare('SELECT * FROM users WHERE id = ?').get(id) as User | undefined;
 }
 
+export function lookupUserByUsername(username: string): User | null {
+  return getDb().prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').get(username.trim()) as User | undefined || null;
+}
+
 export function updateUser(id: number, changes: { role?: UserRole; is_active?: boolean }): boolean {
   const user = getUserById(id);
   if (!user) return false;
@@ -378,6 +382,53 @@ function nowSqlDateTimePlus(minutes: number): string {
 
 export function purgeExpiredResetTokens(): void {
   getDb().prepare("DELETE FROM password_reset_tokens WHERE expires_at <= datetime('now')").run();
+}
+
+// ── Admin Self-Reset Session (TOTP + email verification) ──
+
+interface AdminResetSession {
+  userId: number;
+  emailCodeHash: string;
+  expires: number;
+}
+
+const adminResetSessions = new Map<string, AdminResetSession>();
+
+export function createAdminResetSession(userId: number): { tempToken: string; emailCode: string; email: string } | null {
+  const email = getPrimaryEmail(userId);
+  if (!email) return null;
+  const emailCode = String(Math.floor(100000 + Math.random() * 900000));
+  const tempToken = randomBytes(32).toString('base64url');
+  adminResetSessions.set(tempToken, {
+    userId,
+    emailCodeHash: createHash('sha256').update(emailCode).digest('hex'),
+    expires: Date.now() + 15 * 60 * 1000,
+  });
+  return { tempToken, emailCode, email };
+}
+
+export function consumeAdminResetSession(tempToken: string, emailCode: string, newPassword: string): AuthenticatedUser | null {
+  const session = adminResetSessions.get(tempToken);
+  if (!session || session.expires < Date.now()) {
+    adminResetSessions.delete(tempToken);
+    return null;
+  }
+  const codeHash = createHash('sha256').update(emailCode.trim()).digest('hex');
+  if (codeHash !== session.emailCodeHash) return null;
+  adminResetSessions.delete(tempToken);
+
+  const user = getUserById(session.userId);
+  if (!user || user.is_active !== 1) return null;
+  const passwordError = validatePassword(newPassword, user.username);
+  if (passwordError) throw new Error(passwordError);
+  if (verifyPassword(newPassword, user.password_hash)) throw new Error('New password must be different from the current password');
+
+  getDb().prepare(`
+    UPDATE users SET password_hash = ?, session_version = session_version + 1,
+      updated_at = datetime('now') WHERE id = ?
+  `).run(hashPassword(newPassword), user.id);
+  getDb().prepare('DELETE FROM sessions WHERE user_id = ?').run(user.id);
+  return publicUser(user);
 }
 
 // ── Email Management ──

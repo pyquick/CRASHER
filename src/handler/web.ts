@@ -79,8 +79,33 @@ router.post('/reset-password', rateLimit({
   limit: 5,
   key: req => `web-reset:${req.ip}`,
 }), (req: Request, res: Response): void => {
-  const token = typeof req.body?.reset_token === 'string' ? req.body.reset_token.trim() : '';
   const newPassword = typeof req.body?.new_password === 'string' ? req.body.new_password : '';
+
+  // ── Admin self-reset flow (TOTP + email verification) ──
+  const adminToken = typeof req.body?.admin_token === 'string' ? req.body.admin_token.trim() : '';
+  const emailCode = typeof req.body?.email_code === 'string' ? req.body.email_code.replace(/\s/g, '') : '';
+  if (adminToken) {
+    if (!emailCode || !newPassword) {
+      res.status(400).json({ error: 'Bad Request', message: 'Email code and new password are required' });
+      return;
+    }
+    try {
+      const user = auth.consumeAdminResetSession(adminToken, emailCode, newPassword);
+      if (!user) {
+        auth.writeAuditLog(null, 'password_reset.failed', 'user', '', req.ip ?? '', { reason: 'admin_self_reset' });
+        res.status(400).json({ error: 'Bad Request', message: 'Invalid or expired verification code' });
+        return;
+      }
+      auth.writeAuditLog(user.id, 'password_reset.completed', 'user', String(user.id), req.ip ?? '', { self_reset: true });
+      res.json({ success: true, message: 'Password has been reset successfully. Please log in with your new password.', username: user.username });
+    } catch (error: any) {
+      res.status(400).json({ error: 'Bad Request', message: error.message });
+    }
+    return;
+  }
+
+  // ── Token-based reset flow (non-admin or admin reset by another admin) ──
+  const token = typeof req.body?.reset_token === 'string' ? req.body.reset_token.trim() : '';
   const totpCode = typeof req.body?.totp_code === 'string' ? req.body.totp_code.replace(/\s/g, '') : '';
   if (!token || !newPassword) {
     res.status(400).json({ error: 'Bad Request', message: 'Reset token and new password are required' });
