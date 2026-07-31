@@ -158,9 +158,9 @@ router.get('/accounts', requireAuth, requireRole('admin', 'operator'), (_req: Re
 
 /**
  * GET /web/api-doc
- * Simple API documentation page.
+ * Public API documentation — no auth required.
  */
-router.get('/api-doc', requireAuth, (_req: Request, res: Response): void => {
+router.get('/api-doc', (_req: Request, res: Response): void => {
   res.type('html').send(`
 <!DOCTYPE html>
 <html lang="zh-CN">
