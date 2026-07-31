@@ -1,6 +1,15 @@
 export type UserRole = 'admin' | 'operator' | 'viewer';
 export type ApiKeyTier = 'admin' | 'operator' | 'viewer';
 
+export interface UserEmail {
+  id: number;
+  user_id: number;
+  email: string;
+  email_verified: number;
+  is_primary: number;
+  created_at: string;
+}
+
 export interface User {
   id: number;
   username: string;
@@ -8,6 +17,8 @@ export interface User {
   role: UserRole;
   is_active: number;
   session_version: number;
+  totp_secret: string | null;
+  totp_enabled: number;
   created_at: string;
   updated_at: string;
   last_login_at: string | null;
@@ -17,6 +28,7 @@ export interface AuthenticatedUser {
   id: number;
   username: string;
   role: UserRole;
+  totp_enabled?: number;
 }
 
 export interface ApiKeyRecord {

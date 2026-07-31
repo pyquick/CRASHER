@@ -1,7 +1,7 @@
-import { createHash, pbkdf2Sync, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
+import { createHash, createHmac, pbkdf2Sync, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 import { config } from './config.js';
 import { getDb } from './database.js';
-import type { ApiKeyRecord, ApiKeyTier, AuthenticatedUser, User, UserRole } from './model.js';
+import type { ApiKeyRecord, ApiKeyTier, AuthenticatedUser, User, UserEmail, UserRole } from './model.js';
 
 const SCRYPT_KEY_LENGTH = 64;
 // SHA-256 via PBKDF2: 128-bit salt, 310,000 iterations, 32-byte output (256-bit)
@@ -76,13 +76,16 @@ export function passwordIsCurrent(encoded: string): boolean {
   return encoded.startsWith('pbkdf2-sha256$');
 }
 
-function publicUser(user: Pick<User, 'id' | 'username' | 'role'>): AuthenticatedUser {
-  return { id: user.id, username: user.username, role: user.role };
+function publicUser(user: { id: number; username: string; role: UserRole; totp_enabled?: number | null }): AuthenticatedUser {
+  return { id: user.id, username: user.username, role: user.role, totp_enabled: user.totp_enabled ?? 0 };
+}
+
+export function hasUsers(): boolean {
+  return (getDb().prepare('SELECT COUNT(*) AS count FROM users').get() as { count: number }).count > 0;
 }
 
 export function bootstrapAdmin(): void {
-  const count = (getDb().prepare('SELECT COUNT(*) AS count FROM users').get() as { count: number }).count;
-  if (count > 0) return;
+  if (hasUsers()) return;
   createUser(config.bootstrapAdminUsername, config.bootstrapAdminPassword, 'admin');
   console.warn(`[security] Initial admin account created: ${config.bootstrapAdminUsername}`);
   if (config.generatedBootstrapPassword) {
@@ -195,7 +198,7 @@ export function createSession(userId: number): string {
 
 export function getValidSession(rawToken: string, now: string): { user: AuthenticatedUser } | null {
   const row = getDb().prepare(`
-    SELECT u.id, u.username, u.role, u.is_active, u.session_version, s.session_version AS stored_version
+    SELECT u.id, u.username, u.role, u.totp_enabled, u.is_active, u.session_version, s.session_version AS stored_version
     FROM sessions s JOIN users u ON u.id = s.user_id
     WHERE s.id_hash = ? AND s.expires_at > ?
   `).get(hashLookupToken(rawToken), nowSqlDateTime()) as (AuthenticatedUser & { is_active: number; session_version: number; stored_version: number }) | undefined;
@@ -305,7 +308,7 @@ export function createPasswordResetToken(username: string): { token: string; use
 export function consumeResetToken(rawToken: string): AuthenticatedUser | null {
   const tokenHash = createHash('sha256').update(rawToken).digest('hex');
   const row = getDb().prepare(`
-    SELECT u.id, u.username, u.role
+    SELECT u.id, u.username, u.role, u.totp_enabled
     FROM password_reset_tokens t
     JOIN users u ON u.id = t.user_id
     WHERE t.token_hash = ? AND t.expires_at > datetime('now') AND t.used_at IS NULL AND u.is_active = 1
@@ -313,6 +316,19 @@ export function consumeResetToken(rawToken: string): AuthenticatedUser | null {
   if (!row) return null;
   getDb().prepare("UPDATE password_reset_tokens SET used_at = datetime('now') WHERE token_hash = ?").run(tokenHash);
   return row;
+}
+
+/**
+ * Look up the user associated with a reset token WITHOUT consuming it.
+ */
+export function lookupResetToken(rawToken: string): AuthenticatedUser | null {
+  const tokenHash = createHash('sha256').update(rawToken).digest('hex');
+  return getDb().prepare(`
+    SELECT u.id, u.username, u.role, u.totp_enabled
+    FROM password_reset_tokens t
+    JOIN users u ON u.id = t.user_id
+    WHERE t.token_hash = ? AND t.expires_at > datetime('now') AND t.used_at IS NULL AND u.is_active = 1
+  `).get(tokenHash) as AuthenticatedUser | undefined || null;
 }
 
 /**
@@ -362,4 +378,178 @@ function nowSqlDateTimePlus(minutes: number): string {
 
 export function purgeExpiredResetTokens(): void {
   getDb().prepare("DELETE FROM password_reset_tokens WHERE expires_at <= datetime('now')").run();
+}
+
+// ── Email Management ──
+
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function validateEmailFormat(email: string): string | null {
+  const normalized = email.trim().toLowerCase();
+  if (!normalized || normalized.length > 254) return 'Email is required and must be at most 254 characters';
+  if (!EMAIL_PATTERN.test(normalized)) return 'Invalid email address';
+  return null;
+}
+
+export function listEmails(userId: number): UserEmail[] {
+  return getDb().prepare('SELECT * FROM user_emails WHERE user_id = ? ORDER BY is_primary DESC, created_at ASC').all(userId) as UserEmail[];
+}
+
+export function addEmail(userId: number, email: string): { code: string; email: string } {
+  const normalized = email.trim().toLowerCase();
+  const formatError = validateEmailFormat(normalized);
+  if (formatError) throw new Error(formatError);
+
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const tokenHash = createHash('sha256').update(code).digest('hex');
+  const expiresSql = nowSqlDateTimePlus(15);
+  const isPrimary = listEmails(userId).length === 0 ? 1 : 0;
+
+  getDb().prepare(`
+    INSERT INTO user_emails (user_id, email, email_verify_token_hash, email_verify_expires_at, is_primary)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(userId, normalized, tokenHash, expiresSql, isPrimary);
+
+  return { code, email: normalized };
+}
+
+export function resendVerificationCode(userId: number, emailId: number): { code: string; email: string } | null {
+  const email = getDb().prepare('SELECT * FROM user_emails WHERE id = ? AND user_id = ? AND email_verified = 0')
+    .get(emailId, userId) as UserEmail | undefined;
+  if (!email) return null;
+
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const tokenHash = createHash('sha256').update(code).digest('hex');
+  const expiresSql = nowSqlDateTimePlus(15);
+  getDb().prepare('UPDATE user_emails SET email_verify_token_hash = ?, email_verify_expires_at = ? WHERE id = ?')
+    .run(tokenHash, expiresSql, emailId);
+  return { code, email: email.email };
+}
+
+export function verifyEmailCode(userId: number, emailId: number, code: string): UserEmail | null {
+  const tokenHash = createHash('sha256').update(code.trim()).digest('hex');
+  const row = getDb().prepare(`
+    SELECT * FROM user_emails WHERE id = ? AND user_id = ? AND email_verify_token_hash = ? AND email_verify_expires_at > datetime('now')
+  `).get(emailId, userId, tokenHash) as UserEmail | undefined;
+  if (!row) return null;
+
+  getDb().prepare('UPDATE user_emails SET email_verified = 1, email_verify_token_hash = NULL, email_verify_expires_at = NULL WHERE id = ?').run(emailId);
+  row.email_verified = 1;
+  return row;
+}
+
+export function setPrimaryEmail(userId: number, emailId: number): boolean {
+  const row = getDb().prepare('SELECT * FROM user_emails WHERE id = ? AND user_id = ? AND email_verified = 1').get(emailId, userId);
+  if (!row) return false;
+  getDb().prepare('UPDATE user_emails SET is_primary = 0 WHERE user_id = ?').run(userId);
+  getDb().prepare('UPDATE user_emails SET is_primary = 1 WHERE id = ?').run(emailId);
+  return true;
+}
+
+export function deleteEmail(userId: number, emailId: number): boolean {
+  const count = (getDb().prepare('SELECT COUNT(*) AS c FROM user_emails WHERE user_id = ?').get(userId) as { c: number }).c;
+  if (count <= 1) throw new Error('Cannot remove your only email address');
+  const email = getDb().prepare('SELECT * FROM user_emails WHERE id = ? AND user_id = ?').get(emailId, userId) as UserEmail | undefined;
+  if (!email) return false;
+  const wasPrimary = !!email.is_primary;
+  getDb().prepare('DELETE FROM user_emails WHERE id = ? AND user_id = ?').run(emailId, userId);
+  // If we deleted the primary, make another one primary
+  if (wasPrimary) {
+    const next = getDb().prepare('SELECT id FROM user_emails WHERE user_id = ? LIMIT 1').get(userId) as { id: number } | undefined;
+    if (next) getDb().prepare('UPDATE user_emails SET is_primary = 1 WHERE id = ?').run(next.id);
+  }
+  return true;
+}
+
+export function getPrimaryEmail(userId: number): string | null {
+  const row = getDb().prepare('SELECT email FROM user_emails WHERE user_id = ? AND is_primary = 1 AND email_verified = 1').get(userId) as { email: string } | undefined;
+  return row ? row.email : null;
+}
+
+// ── TOTP (RFC 6238) ──
+
+const TOTP_PERIOD = 30;
+const TOTP_DIGITS = 6;
+
+function base32Decode(input: string): Buffer {
+  const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+  let bits = 0, value = 0;
+  const output: number[] = [];
+  for (let i = 0; i < input.length; i++) {
+    const c = input[i].toUpperCase();
+    if (c === '=') break;
+    const idx = alphabet.indexOf(c);
+    if (idx === -1) continue;
+    value = (value << 5) | idx;
+    bits += 5;
+    if (bits >= 8) { output.push((value >>> (bits - 8)) & 0xff); bits -= 8; }
+  }
+  return Buffer.from(output);
+}
+
+function generateTotp(secret: string, time = Math.floor(Date.now() / 1000)): string {
+  const counter = Math.floor(time / TOTP_PERIOD);
+  const counterBuf = Buffer.alloc(8);
+  counterBuf.writeBigInt64BE(BigInt(counter), 0);
+  const hmacSig = createHmac('sha1', base32Decode(secret)).update(counterBuf).digest();
+  const offset = hmacSig[hmacSig.length - 1] & 0x0f;
+  const code = ((hmacSig[offset] & 0x7f) << 24) | ((hmacSig[offset + 1] & 0xff) << 16) | ((hmacSig[offset + 2] & 0xff) << 8) | (hmacSig[offset + 3] & 0xff);
+  return String(code % 10 ** TOTP_DIGITS).padStart(TOTP_DIGITS, '0');
+}
+
+export function generateTotpSecret(username: string): string {
+  const buf = randomBytes(20);
+  const base32 = (buf: Buffer): string => {
+    const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
+    let result = '', bits = 0, value = 0;
+    for (let i = 0; i < buf.length; i++) { value = (value << 8) | buf[i]; bits += 8; while (bits >= 5) { result += alphabet[(value >>> (bits - 5)) & 0x1f]; bits -= 5; } }
+    if (bits > 0) result += alphabet[(value << (5 - bits)) & 0x1f];
+    return result + '====';
+  };
+  const secret = base32(buf).replace(/=+$/, '');
+  const qrUri = `otpauth://totp/CrashReporter:${encodeURIComponent(username)}?secret=${secret}&issuer=CrashReporter&algorithm=SHA1&digits=6&period=30`;
+  return `${secret}\n${qrUri}`;
+}
+
+export function enableTotp(userId: number, code: string, secret: string): boolean {
+  if (!verifyTotpCode(secret, code)) return false;
+  getDb().prepare('UPDATE users SET totp_secret = ?, totp_enabled = 1 WHERE id = ?').run(secret, userId);
+  return true;
+}
+
+export function disableTotp(userId: number, code: string): boolean {
+  const row = getDb().prepare('SELECT totp_secret FROM users WHERE id = ? AND totp_enabled = 1').get(userId) as { totp_secret: string } | undefined;
+  if (!row) return false;
+  if (!verifyTotpCode(row.totp_secret, code)) return false;
+  getDb().prepare('UPDATE users SET totp_secret = NULL, totp_enabled = 0 WHERE id = ?').run(userId);
+  return true;
+}
+
+function verifyTotpCode(secret: string, code: string): boolean {
+  if (code.length !== TOTP_DIGITS || !/^\d+$/.test(code)) return false;
+  const now = Math.floor(Date.now() / 1000);
+  return generateTotp(secret, now) === code || generateTotp(secret, now - TOTP_PERIOD) === code;
+}
+
+export function verifyTotp(userId: number, code: string): boolean {
+  const row = getDb().prepare('SELECT totp_secret FROM users WHERE id = ? AND totp_enabled = 1').get(userId) as { totp_secret: string } | undefined;
+  if (!row) return false;
+  return verifyTotpCode(row.totp_secret, code);
+}
+
+// ── TOTP temporary token (for login 2FA step) ──
+
+const totpTempTokens = new Map<string, { userId: number; expires: number }>();
+
+export function createTotpTempToken(userId: number): string {
+  const token = randomBytes(32).toString('base64url');
+  totpTempTokens.set(token, { userId, expires: Date.now() + 60_000 });
+  return token;
+}
+
+export function consumeTotpTempToken(token: string): number | null {
+  const entry = totpTempTokens.get(token);
+  if (!entry || entry.expires < Date.now()) { totpTempTokens.delete(token); return null; }
+  totpTempTokens.delete(token);
+  return entry.userId;
 }

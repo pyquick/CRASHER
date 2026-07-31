@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { randomBytes } from 'crypto';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
@@ -62,7 +63,7 @@ function envBool(key: string, fallback: boolean): boolean {
 
 function loadConfig(): Config {
   const port = envInt('PORT', 8080);
-  const dataDir = resolve(env('DATA_DIR', resolve(__dirname, '..', '..', 'data')));
+  const dataDir = resolve(env('DATA_DIR', resolve(__dirname, '..', 'data')));
   const dbPath = env('DB_PATH', resolve(dataDir, 'crash_reports.db'));
   const symbolsDir = env('SYMBOLS_DIR', resolve(dataDir, 'symbols'));
   const attachmentsDir = env('ATTACHMENTS_DIR', resolve(dataDir, 'attachments'));

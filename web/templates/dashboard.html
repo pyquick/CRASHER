@@ -276,7 +276,7 @@
       },
 
       async clearCrashes() {
-        if (!confirm('Delete ALL crash data? This cannot be undone.')) return;
+        if (!await Modal.confirm('Clear All Crashes', 'Delete ALL crash data? This cannot be undone.', 'Delete All')) return;
         this.clearing = true;
         this.clearMsg = '';
         try {

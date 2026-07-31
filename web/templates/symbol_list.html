@@ -200,7 +200,7 @@
       },
 
       async deleteSymbol(id) {
-        if (!confirm('Delete this symbol file?')) return;
+        if (!await Modal.confirm('Delete Symbol', 'Delete this symbol file?', 'Delete')) return;
         try {
           const res = await fetch('/api/v1/symbols/' + id, { method: 'DELETE' });
           if (res.ok) {

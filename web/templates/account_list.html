@@ -1,4 +1,100 @@
 <div x-data="accountSecurity" x-init="load()" class="space-y-8">
+
+  <!-- ── Email Addresses ── -->
+  <section class="bg-surface-900 border border-gray-800 rounded-xl p-5">
+    <h2 class="text-lg font-semibold mb-1">Email Addresses</h2>
+    <p class="text-sm text-gray-500 mb-4">Manage your email addresses. The primary verified email is used for password reset notifications.</p>
+
+    <div class="space-y-2 mb-4">
+      <template x-for="e in emails" :key="e.id">
+        <div class="flex items-center justify-between p-3 bg-surface-950 rounded-lg border border-gray-800">
+          <div class="flex items-center gap-3">
+            <span class="text-sm" x-text="e.email"></span>
+            <span x-show="e.email_verified" class="text-xs text-green-400">verified</span>
+            <span x-show="!e.email_verified" class="text-xs text-yellow-400">unverified</span>
+            <span x-show="e.is_primary" class="text-xs px-1.5 py-0.5 rounded bg-blue-900/50 text-blue-300">primary</span>
+          </div>
+          <div class="flex items-center gap-2">
+            <button x-show="!e.email_verified" @click="verifyEmail(e)" class="text-xs text-blue-400 hover:text-blue-300">Verify</button>
+            <button x-show="e.email_verified && !e.is_primary" @click="setPrimary(e)" class="text-xs text-gray-400 hover:text-gray-300">Set primary</button>
+            <button @click="removeEmail(e)" class="text-xs text-red-400 hover:text-red-300">Remove</button>
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <!-- Add email -->
+    <div class="flex flex-wrap gap-3">
+      <input x-model="newEmail" type="email" placeholder="your@email.com" class="fc max-w-xs">
+      <button @click="addEmail" :disabled="sendingCode" class="btn btn-blue btn-sm">
+        <span x-show="!sendingCode">Add Email</span>
+        <span x-show="sendingCode">Sending...</span>
+      </button>
+    </div>
+    <p x-show="emailMsg" class="mt-2 text-sm" :class="emailFailed ? 'text-red-400' : 'text-blue-400'" x-text="emailMsg"></p>
+
+    <!-- Verify inline form -->
+    <div x-show="verifyEmailId" class="mt-4 p-4 bg-surface-950 rounded-lg border border-gray-800 space-y-3">
+      <p x-show="!verifySending" class="text-sm text-blue-400">Enter the verification code sent to <span class="font-semibold" x-text="verifyEmailAddr"></span>.</p>
+      <p x-show="verifySending" class="text-sm text-blue-400">Sending verification code to <span class="font-semibold" x-text="verifyEmailAddr"></span>...</p>
+      <div class="flex flex-wrap items-center gap-3">
+        <input x-model="verifyCode" type="text" maxlength="6" placeholder="000000" class="fc fc-sm w-24 text-center font-mono tracking-[0.2em]">
+        <button @click="doVerify" class="btn btn-green btn-sm">Confirm</button>
+        <button @click="resendCode" :disabled="resendCooldown > 0 || verifySending" class="btn btn-gray btn-sm">
+          <span x-show="resendCooldown > 0">Resend (<span x-text="resendCooldown"></span>s)</span>
+          <span x-show="resendCooldown === 0">Resend</span>
+        </button>
+        <button @click="verifyEmailId = null; stopResendTimer()" class="text-xs text-gray-500 hover:text-gray-300">Cancel</button>
+      </div>
+      <p x-show="verifyMsg" class="text-sm" :class="verifyFailed ? 'text-red-400' : 'text-green-400'" x-text="verifyMsg"></p>
+    </div>
+  </section>
+
+  <!-- ── Two-Factor Authentication ── -->
+  <section class="bg-surface-900 border border-gray-800 rounded-xl p-5">
+    <h2 class="text-lg font-semibold mb-1">Two-Factor Authentication</h2>
+    <p class="text-sm text-gray-500 mb-4">Protect your account with a time-based one-time password (TOTP).</p>
+
+    <div x-show="!totpSetup.show">
+      <div class="flex items-center gap-3 mb-3">
+        <span class="text-sm text-gray-400">Status:</span>
+        <span x-show="totpEnabled" class="text-sm text-green-400">Enabled</span>
+        <span x-show="!totpEnabled" class="text-sm text-gray-500">Disabled</span>
+      </div>
+      <div class="flex gap-3">
+        <button x-show="!totpEnabled" @click="setupTotp" :disabled="totpSetup.loading" class="btn btn-blue btn-sm">Enable 2FA</button>
+        <button x-show="totpEnabled" @click="disableTotpPrompt" class="btn btn-red btn-sm">Disable 2FA</button>
+      </div>
+    </div>
+
+    <!-- TOTP Setup -->
+    <div x-show="totpSetup.show" class="p-4 bg-surface-950 rounded-lg border border-gray-800 space-y-4">
+      <p class="text-sm text-gray-400">Scan this QR code with Google Authenticator, Microsoft Authenticator, or any TOTP app.</p>
+      <div class="flex items-start gap-4 flex-wrap">
+        <div class="bg-white p-2 rounded-lg" id="totp-qr"></div>
+        <div class="text-xs text-gray-500 space-y-1">
+          <p>Or enter this key manually:</p>
+          <code class="text-blue-400 break-all select-all" x-text="totpSetup.secret"></code>
+        </div>
+      </div>
+      <div class="flex items-center gap-3">
+        <input x-model="totpCode" type="text" maxlength="6" placeholder="000000" @input="totpAutoVerify()"
+               class="fc fc-sm w-24 text-center font-mono tracking-[0.2em]">
+        <button @click="totpSetup.show = false; totpCode = ''" :disabled="totpSetup.loading" class="text-xs text-gray-500 hover:text-gray-300">Cancel</button>
+      </div>
+      <p x-show="totpSetup.error" class="text-sm text-red-400" x-text="totpSetup.error"></p>
+    </div>
+
+    <!-- Disable TOTP prompt -->
+    <div x-show="totpDisable.show" class="flex items-center gap-3 mt-4 p-3 bg-surface-950 rounded-lg border border-gray-800">
+      <input x-model="totpCode" type="text" maxlength="6" placeholder="000000" class="fc fc-sm w-24 text-center font-mono tracking-[0.2em]">
+      <button @click="doDisableTotp" :disabled="totpDisable.loading" class="btn btn-red btn-sm">Confirm Disable</button>
+      <button @click="totpDisable.show = false; totpCode = ''" class="text-xs text-gray-500 hover:text-gray-300">Cancel</button>
+      <p x-show="totpDisable.error" class="text-xs text-red-400" x-text="totpDisable.error"></p>
+    </div>
+  </section>
+
+  <!-- ── Accounts (admin only) ── -->
   <section class="bg-surface-900 border border-gray-800 rounded-xl p-5 admin-only" style="display:none">
     <div class="flex items-center justify-between mb-5">
       <div>
@@ -7,7 +103,6 @@
       </div>
       <button @click="showCreate = !showCreate" class="btn btn-blue">New account</button>
     </div>
-
     <form x-show="showCreate" @submit.prevent="createUser" class="grid md:grid-cols-4 gap-3 mb-5 p-4 bg-surface-950 rounded-lg border border-gray-800">
       <input x-model="newUser.username" required placeholder="Username" autocomplete="off" class="fc">
       <input x-model="newUser.password" type="password" placeholder="Password (omit for viewer auto-generate)" autocomplete="new-password" class="fc">
@@ -16,7 +111,6 @@
       </select>
       <button class="btn btn-green">Create</button>
     </form>
-
     <p x-show="message" x-text="message" class="text-sm mb-4" :class="failed ? 'text-red-400' : 'text-green-400'"></p>
     <div class="overflow-x-auto">
       <table class="w-full text-sm">
@@ -30,7 +124,7 @@
               <td class="text-gray-500" x-text="user.last_login_at || 'never'"></td>
               <td class="text-right space-x-2">
                 <button @click="toggleUser(user)" class="text-xs text-yellow-400 hover:text-yellow-300" x-text="user.is_active ? 'Disable' : 'Enable'"></button>
-                <button @click="resetPassword(user)" class="text-xs text-blue-400 hover:text-blue-300">Reset password</button>
+                <button x-show="user.role !== 'admin'" @click="resetPassword(user)" class="text-xs text-blue-400 hover:text-blue-300">Reset password</button>
               </td>
             </tr>
           </template>
@@ -39,9 +133,10 @@
     </div>
   </section>
 
+  <!-- ── API Keys ── -->
   <section class="bg-surface-900 border border-gray-800 rounded-xl p-5">
     <div class="flex items-center justify-between mb-5">
-      <div><h2 class="text-lg font-semibold">Ingestion API keys</h2><p class="text-sm text-gray-500">Use X-API-Key or Authorization: Bearer for client submissions.</p></div>
+      <div><h2 class="text-lg font-semibold">Ingestion API Keys</h2><p class="text-sm text-gray-500">Use X-API-Key or Authorization: Bearer for client submissions.</p></div>
       <button @click="showCreateKey = !showCreateKey" class="btn btn-blue">Create key</button>
     </div>
     <form x-show="showCreateKey" @submit.prevent="createKeyFromForm" class="grid md:grid-cols-3 gap-3 mb-5 p-4 bg-surface-950 rounded-lg border border-gray-800">
@@ -79,17 +174,89 @@
 
 <script>
   document.addEventListener('alpine:init', () => Alpine.data('accountSecurity', () => ({
-    users: [], keys: [], showCreate: false, showCreateKey: false, createdKey: '', message: '', failed: false, newKey: { name: '', tier: 'operator' }, newUser: { username: '', password: '', role: 'viewer' },
-    async request(url, options = {}) { const response = await fetch(url, options); const data = await response.json(); if (!response.ok) throw new Error(data.message || 'Request failed'); return data; },
-    async load() { this.users = []; try { const users = await this.request('/api/v1/auth/users'); this.users = users.items; } catch {} this.keys = []; try { const keys = await this.request('/api/v1/auth/api-keys'); this.keys = keys.items; } catch {} },
+    users: [], keys: [], emails: [],
+    showCreate: false, showCreateKey: false, createdKey: '', message: '', failed: false,
+    newKey: { name: '', tier: 'operator' }, newUser: { username: '', password: '', role: 'viewer' },
+    // Email
+    newEmail: '', sendingCode: false, emailMsg: '', emailFailed: false,
+    verifyEmailId: null, verifyEmailAddr: '', verifyCode: '', verifying: false, verifyMsg: '', verifyFailed: false,
+    verifySending: false, resendCooldown: 0, _resendTimer: null,
+    // TOTP
+    totpEnabled: false, totpCode: '', totpSetup: { show: false, loading: false, secret: '', error: '' },
+    totpDisable: { show: false, loading: false, error: '' },
+
+    async request(url, options = {}) { const r = await fetch(url, options); const d = await r.json(); if (!r.ok) throw new Error(d.message || 'Request failed'); return d; },
+    async load() { this.users = []; try { const u = await this.request('/api/v1/auth/users'); this.users = u.items; } catch {} this.keys = []; try { const k = await this.request('/api/v1/auth/api-keys'); this.keys = k.items; } catch {} this.emails = []; try { const e = await this.request('/api/v1/auth/me/emails'); this.emails = e.items; } catch {} try { const me = await this.request('/api/v1/auth/me'); this.totpEnabled = !!me.user.totp_enabled; } catch {} },
     notify(message, failed = false) { this.message = message; this.failed = failed; },
-    async createUser() { try { const payload = { username: this.newUser.username, role: this.newUser.role }; if (this.newUser.password) payload.password = this.newUser.password; const result = await this.request('/api/v1/auth/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); this.newUser = { username: '', password: '', role: 'viewer' }; this.showCreate = false; const pw = result.initial_password; this.notify(pw ? 'Account created. One-time password (copy now): ' + pw : 'Account created'); await this.load(); } catch (error) { this.notify(error.message, true); } },
-    async updateUser(user) { try { await this.request('/api/v1/auth/users/' + user.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: user.role }) }); this.notify('Account updated'); } catch (error) { this.notify(error.message, true); await this.load(); } },
-    async toggleUser(user) { try { await this.request('/api/v1/auth/users/' + user.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_active: !Boolean(user.is_active) }) }); this.notify('Account updated'); await this.load(); } catch (error) { this.notify(error.message, true); } },
-    async resetPassword(user) { const password = prompt('New strong password for ' + user.username); if (!password) return; try { await this.request('/api/v1/auth/users/' + user.id + '/password', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ new_password: password }) }); this.notify('Password reset; existing sessions were revoked'); } catch (error) { this.notify(error.message, true); } },
-    async createKeyFromForm() { try { const key = await this.request('/api/v1/auth/api-keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: this.newKey.name, tier: this.newKey.tier }) }); this.createdKey = key.key; this.showCreateKey = false; this.newKey = { name: '', tier: 'operator' }; await this.load(); } catch (error) { this.notify(error.message, true); } },
-    async revokeKey(key) { if (!confirm('Revoke this API key?')) return; try { await this.request('/api/v1/auth/api-keys/' + key.id, { method: 'DELETE' }); this.notify('API key revoked'); await this.load(); } catch (error) { this.notify(error.message, true); } },
-    async updateTier(key, event) { const tier = event.target.value; if (!confirm('Change tier to ' + tier + '?')) { event.target.value = key.tier; return; } try { await this.request('/api/v1/auth/api-keys/' + key.id + '/tier', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tier }) }); key.tier = tier; this.notify('API key tier updated'); } catch (error) { event.target.value = key.tier; this.notify(error.message, true); } },
+
+    // ── Email ──
+    async addEmail() { this.emailMsg = ''; this.emailFailed = false; if (!this.newEmail) return; this.sendingCode = true; try { const r = await this.request('/api/v1/auth/me/emails', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: this.newEmail }) }); this.emailMsg = r.message; this.newEmail = ''; await this.load(); } catch (e) { this.emailMsg = e.message; this.emailFailed = true; } this.sendingCode = false; },
+    verifyEmail(e) {
+      this.verifyEmailId = e.id; this.verifyEmailAddr = e.email; this.verifyCode = ''; this.verifyMsg = ''; this.emailMsg = '';
+      this._sendVerifyCode(e.id);
+    },
+    async _sendVerifyCode(id) {
+      this.verifySending = true; this.verifyMsg = '';
+      try {
+        const r = await this.request('/api/v1/auth/me/emails/' + id + '/resend', { method: 'POST' });
+        this.verifyMsg = r.message || 'Code sent.'; this.verifyFailed = false;
+      } catch (e) {
+        this.verifyMsg = e.message; this.verifyFailed = true;
+      }
+      this.verifySending = false;
+      this._startResendTimer();
+    },
+    resendCode() { if (this.resendCooldown > 0 || this.verifySending) return; this._sendVerifyCode(this.verifyEmailId); },
+    _startResendTimer() {
+      this.stopResendTimer();
+      this.resendCooldown = 60;
+      this._resendTimer = setInterval(() => { this.resendCooldown--; if (this.resendCooldown <= 0) this.stopResendTimer(); }, 1000);
+    },
+    stopResendTimer() { if (this._resendTimer) { clearInterval(this._resendTimer); this._resendTimer = null; } this.resendCooldown = 0; },
+    async doVerify() { this.verifyMsg = ''; this.verifyFailed = false; if (!this.verifyCode) return; this.verifying = true; try { await this.request('/api/v1/auth/me/emails/' + this.verifyEmailId + '/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: this.verifyCode }) }); this.verifyMsg = 'Verified!'; this.verifyEmailId = null; this.verifyCode = ''; await this.load(); } catch (e) { this.verifyMsg = e.message; this.verifyFailed = true; } this.verifying = false; },
+    async setPrimary(e) { try { await this.request('/api/v1/auth/me/emails/' + e.id + '/primary', { method: 'POST' }); await this.load(); } catch (e) { this.notify(e.message, true); } },
+    async removeEmail(e) { if (!await Modal.confirm('Remove Email', 'Remove ' + e.email + '?', 'Remove')) return; try { await this.request('/api/v1/auth/me/emails/' + e.id, { method: 'DELETE' }); await this.load(); } catch (err) { this.notify(err.message, true); } },
+
+    // ── 2FA ──
+    async setupTotp() { this.totpSetup = { show: true, loading: true, secret: '', error: '' }; try { const r = await this.request('/api/v1/auth/me/totp/setup'); this.totpSetup.secret = r.secret; this.totpCode = ''; renderQr(r.qr_uri); } catch (e) { this.totpSetup.error = e.message; this.totpSetup.show = false; } this.totpSetup.loading = false; },
+    totpAutoVerify() { if (this.totpCode.replace(/\s/g, '').length === 6) this.confirmTotp(); },
+    async confirmTotp() { this.totpSetup.error = ''; if (this.totpSetup.loading) return; this.totpSetup.loading = true; try { await this.request('/api/v1/auth/me/totp/enable', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: this.totpCode.replace(/\s/g, ''), secret: this.totpSetup.secret }) }); this.totpEnabled = true; this.totpSetup.show = false; this.totpCode = ''; this.notify('2FA enabled'); } catch (e) { this.totpSetup.error = e.message; } this.totpSetup.loading = false; },
+    disableTotpPrompt() { this.totpDisable = { show: true, loading: false, error: '' }; this.totpCode = ''; },
+    async doDisableTotp() { this.totpDisable.error = ''; this.totpDisable.loading = true; try { await this.request('/api/v1/auth/me/totp/disable', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: this.totpCode }) }); this.totpEnabled = false; this.totpDisable.show = false; this.totpCode = ''; this.notify('2FA disabled'); } catch (e) { this.totpDisable.error = e.message; } this.totpDisable.loading = false; },
+
+    // ── Accounts ──
+    async createUser() { try { const p = { username: this.newUser.username, role: this.newUser.role }; if (this.newUser.password) p.password = this.newUser.password; const r = await this.request('/api/v1/auth/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) }); this.newUser = { username: '', password: '', role: 'viewer' }; this.showCreate = false; const pw = r.initial_password; this.notify(pw ? 'Account created. One-time password (copy now): ' + pw : 'Account created'); await this.load(); } catch (e) { this.notify(e.message, true); } },
+    async updateUser(user) { try { await this.request('/api/v1/auth/users/' + user.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: user.role }) }); this.notify('Account updated'); } catch (e) { this.notify(e.message, true); await this.load(); } },
+    async toggleUser(user) { try { await this.request('/api/v1/auth/users/' + user.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_active: !Boolean(user.is_active) }) }); this.notify('Account updated'); await this.load(); } catch (e) { this.notify(e.message, true); } },
+    async resetPassword(user) { const p = await Modal.prompt('Reset Password', 'New password for ' + user.username, 'password', 'Enter new strong password', 'Reset'); if (!p) return; try { await this.request('/api/v1/auth/users/' + user.id + '/password', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ new_password: p }) }); this.notify('Password reset'); } catch (e) { this.notify(e.message, true); } },
+
+    // ── API Keys ──
+    async createKeyFromForm() { try { const k = await this.request('/api/v1/auth/api-keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: this.newKey.name, tier: this.newKey.tier }) }); this.createdKey = k.key; this.showCreateKey = false; this.newKey = { name: '', tier: 'operator' }; await this.load(); } catch (e) { this.notify(e.message, true); } },
+    async revokeKey(key) { if (!await Modal.confirm('Revoke API Key', 'Permanently revoke key "' + key.name + '"?', 'Revoke')) return; try { await this.request('/api/v1/auth/api-keys/' + key.id, { method: 'DELETE' }); this.notify('API key revoked'); await this.load(); } catch (e) { this.notify(e.message, true); } },
+    async updateTier(key, ev) { const tier = ev.target.value; if (!await Modal.confirm('Change Tier', 'Change "' + key.name + '" tier to ' + tier + '?', 'Change')) { ev.target.value = key.tier; return; } try { await this.request('/api/v1/auth/api-keys/' + key.id + '/tier', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tier }) }); key.tier = tier; this.notify('Tier updated'); } catch (e) { ev.target.value = key.tier; this.notify(e.message, true); } },
     tierClass(tier) { return { admin: 'bg-red-900/50 text-red-300', operator: 'bg-blue-900/50 text-blue-300', viewer: 'bg-gray-700 text-gray-300' }[tier] || 'bg-gray-700 text-gray-300'; }
   })));
+
+  function renderQr(uri) {
+    const el = document.getElementById('totp-qr');
+    if (!el) return;
+    el.innerHTML = '';
+    const size = 160;
+    const canvas = document.createElement('canvas');
+    canvas.width = size; canvas.height = size;
+    const ctx = canvas.getContext('2d');
+    function drawQr(data) {
+      const n = Math.sqrt(data.length);
+      const ms = size / n;
+      for (let y = 0; y < n; y++) for (let x = 0; x < n; x++) {
+        ctx.fillStyle = data[y * n + x] ? '#000' : '#fff';
+        ctx.fillRect(x * ms, y * ms, ms, ms);
+      }
+    }
+    // Simple QR encoder via external URL as data URI
+    const img = new Image();
+    img.onload = () => { ctx.drawImage(img, 0, 0, size, size); };
+    img.src = 'https://api.qrserver.com/v1/create-qr-code/?size=' + size + 'x' + size + '&data=' + encodeURIComponent(uri);
+    el.appendChild(canvas);
+  }
 </script>

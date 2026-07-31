@@ -236,7 +236,66 @@
     </main>
   </div>
 
+  <!-- Global Modal -->
+  <div id="global-modal" style="display:none" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onclick="if(event.target===this) Modal._cancel()">
+    <div class="bg-surface-900 border border-gray-700 rounded-xl p-6 w-full max-w-sm mx-4 shadow-2xl" onclick="event.stopPropagation()">
+      <h3 id="modal-title" class="text-sm font-semibold mb-3"></h3>
+      <p id="modal-message" class="text-sm text-gray-400 mb-4"></p>
+      <input id="modal-input" type="text" class="fc w-full mb-4" style="display:none" onkeyup="if(event.key==='Enter') Modal._confirm()">
+      <div class="flex justify-end gap-3">
+        <button id="modal-cancel-btn" class="btn bg-gray-700 hover:bg-gray-600 text-sm" style="display:none" onclick="Modal._cancel()">Cancel</button>
+        <button id="modal-ok-btn" class="btn btn-blue text-sm" onclick="Modal._confirm()">OK</button>
+      </div>
+    </div>
+  </div>
+
   <script>
+    window.Modal = (() => {
+      let resolve = null;
+      const el = {
+        root: () => document.getElementById('global-modal'),
+        title: () => document.getElementById('modal-title'),
+        msg: () => document.getElementById('modal-message'),
+        input: () => document.getElementById('modal-input'),
+        ok: () => document.getElementById('modal-ok-btn'),
+        cancel: () => document.getElementById('modal-cancel-btn'),
+      };
+      function show(title, message, type, opts) {
+        return new Promise(r => {
+          resolve = r;
+          el.title().textContent = title;
+          el.msg().textContent = message || '';
+          el.msg().style.display = message ? '' : 'none';
+          el.ok().textContent = (opts && opts.okLabel) || 'OK';
+          if (type === 'input') {
+            el.input().style.display = '';
+            el.input().value = '';
+            el.input().type = (opts && opts.inputType) || 'text';
+            el.input().placeholder = (opts && opts.placeholder) || '';
+            el.input().focus();
+          } else {
+            el.input().style.display = 'none';
+          }
+          el.cancel().style.display = type !== 'info' ? '' : 'none';
+          el.root().style.display = '';
+        });
+      }
+      const api = {
+        confirm(title, message, okLabel) { return show(title, message, 'confirm', { okLabel }); },
+        prompt(title, message, inputType, placeholder, okLabel) { return show(title, message, 'input', { inputType, placeholder, okLabel }); },
+        alert(title, message) { return show(title, message, 'info', {}); },
+      };
+      api._confirm = function () {
+        const result = el.input().style.display === 'none' ? true : el.input().value;
+        el.root().style.display = 'none';
+        if (resolve) { resolve(result); resolve = null; }
+      };
+      api._cancel = function () {
+        el.root().style.display = 'none';
+        if (resolve) { resolve(null); resolve = null; }
+      };
+      return api;
+    })();
     function readCookie(name) {
       const prefix = encodeURIComponent(name) + '=';
       const item = document.cookie.split('; ').find(value => value.startsWith(prefix));

@@ -25,10 +25,12 @@ import unityHandler from './handler/unity.js';
 import queryHandler from './handler/query.js';
 import sourceHandler from './handler/source.js';
 import webHandler from './handler/web.js';
+import { testSmtpConnection } from './notification/service.js';
 
 initDb();
 purgeExpiredSessions();
 purgeExpiredResetTokens();
+testSmtpConnection();
 
 const app = express();
 app.disable('x-powered-by');

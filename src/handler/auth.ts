@@ -1,6 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { config } from '../config.js';
 import * as auth from '../auth.js';
+import { sendVerificationEmail } from '../notification/service.js';
 import {
   rateLimit,
   readSession,
@@ -11,6 +12,51 @@ import {
 } from '../middleware.js';
 
 const router = Router();
+
+// ── Initial Setup (no users yet) ──
+
+/**
+ * GET /api/v1/auth/setup-status
+ * Returns whether the server needs initial admin setup.
+ */
+router.get('/setup-status', (_req: Request, res: Response): void => {
+  res.json({ needs_setup: !auth.hasUsers() });
+});
+
+/**
+ * POST /api/v1/auth/setup
+ * Create the first admin account. Only works when zero users exist.
+ * Auto-logs in the new admin on success.
+ */
+router.post('/setup', (req: Request, res: Response): void => {
+  if (auth.hasUsers()) {
+    res.status(403).json({ error: 'Forbidden', message: 'Setup has already been completed' });
+    return;
+  }
+  const username = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
+  const password = typeof req.body?.password === 'string' ? req.body.password : '';
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim() : '';
+  if (!username || !password) {
+    res.status(400).json({ error: 'Bad Request', message: 'Username and password are required' });
+    return;
+  }
+  try {
+    const user = auth.createUser(username, password, 'admin');
+    if (email) {
+      try { auth.addEmail(user.id, email); } catch { /* duplicate or invalid — skip */ }
+    }
+    const token = auth.createSession(user.id);
+    res.cookie('auth_token', token, {
+      httpOnly: true, secure: config.cookieSecure, sameSite: 'strict',
+      maxAge: config.sessionHours * 60 * 60 * 1000, path: '/',
+    });
+    setCsrfCookie(res);
+    auth.writeAuditLog(user.id, 'setup.completed', 'user', String(user.id), req.ip ?? '', {});
+    res.json({ success: true, user });
+  } catch (error: any) {
+    res.status(400).json({ error: 'Bad Request', message: error.message });
+  }
+});
 
 router.get('/csrf', requireApiAuth, (req: Request, res: Response): void => {
   res.json({ csrf_token: setCsrfCookie(res) });
@@ -30,6 +76,13 @@ router.post('/login', rateLimit({
     return;
   }
 
+  const full = auth.getUserById(user.id);
+  if (full?.totp_enabled) {
+    const tempToken = auth.createTotpTempToken(user.id);
+    res.json({ success: true, requires_totp: true, temp_token: tempToken });
+    return;
+  }
+
   const token = auth.createSession(user.id);
   res.cookie('auth_token', token, {
     httpOnly: true,
@@ -43,6 +96,42 @@ router.post('/login', rateLimit({
   res.json({ success: true, user });
 });
 
+router.post('/login/totp', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  key: req => `totp:${req.ip}`,
+}), (req: Request, res: Response): void => {
+  const tempToken = typeof req.body?.temp_token === 'string' ? req.body.temp_token : '';
+  const totpCode = typeof req.body?.totp_code === 'string' ? req.body.totp_code.replace(/\s/g, '') : '';
+  if (!tempToken || !totpCode) {
+    res.status(400).json({ error: 'Bad Request', message: 'Temporary token and TOTP code are required' });
+    return;
+  }
+  const userId = auth.consumeTotpTempToken(tempToken);
+  if (!userId) {
+    res.status(400).json({ error: 'Bad Request', message: 'Invalid or expired temporary token. Please log in again.' });
+    return;
+  }
+  if (!auth.verifyTotp(userId, totpCode)) {
+    auth.writeAuditLog(userId, 'login.totp_failed', 'user', String(userId), req.ip ?? '', {});
+    res.status(401).json({ success: false, message: 'Invalid TOTP code' });
+    return;
+  }
+  const user = auth.getUserById(userId);
+  if (!user || !user.is_active) {
+    res.status(401).json({ success: false, message: 'Account is disabled' });
+    return;
+  }
+  const sessionToken = auth.createSession(userId);
+  res.cookie('auth_token', sessionToken, {
+    httpOnly: true, secure: config.cookieSecure, sameSite: 'strict',
+    maxAge: config.sessionHours * 60 * 60 * 1000, path: '/',
+  });
+  setCsrfCookie(res);
+  auth.writeAuditLog(userId, 'login.succeeded', 'user', String(userId), req.ip ?? '', { totp: true });
+  res.json({ success: true, user: { id: user.id, username: user.username, role: user.role, totp_enabled: user.totp_enabled } });
+});
+
 router.post('/logout', requireApiAuth, (req: Request, res: Response): void => {
   const session = readSession(req);
   if (session) auth.deleteSession(session.sessionId);
@@ -53,7 +142,9 @@ router.post('/logout', requireApiAuth, (req: Request, res: Response): void => {
 });
 
 router.get('/me', requireApiAuth, (req: Request, res: Response): void => {
-  res.json({ user: req.authUser });
+  const u = req.authUser!;
+  const full = auth.getUserById(u.id);
+  res.json({ user: { id: u.id, username: u.username, role: u.role, totp_enabled: full?.totp_enabled ?? 0 } });
 });
 
 router.get('/users', requireApiAuth, requireRole('admin'), (_req: Request, res: Response): void => {
@@ -107,6 +198,11 @@ router.put('/users/:id/password', requireApiAuth, requireRole('admin', 'operator
     res.status(403).json({ error: 'Forbidden', message: 'Operators may only change their own password' });
     return;
   }
+  const target = auth.getUserById(id);
+  if (target && target.role === 'admin') {
+    res.status(403).json({ error: 'Forbidden', message: 'Admin passwords cannot be changed directly. Use the forgot-password flow to reset your password.' });
+    return;
+  }
   try {
     if (!auth.changePassword(req.authUser!, id, req.body?.current_password, String(req.body?.new_password ?? ''))) {
       res.status(404).json({ error: 'Not Found', message: 'User not found' });
@@ -153,6 +249,140 @@ router.delete('/api-keys/:id', requireApiAuth, requireRole('admin', 'operator'),
   res.json({ success: true });
 });
 
+// ── Email Management Routes ──
+
+router.get('/me/emails', requireApiAuth, (req: Request, res: Response): void => {
+  res.json({ items: auth.listEmails(req.authUser!.id) });
+});
+
+router.post('/me/emails', requireApiAuth, requireCsrf, async (req: Request, res: Response): Promise<void> => {
+  const email = typeof req.body?.email === 'string' ? req.body.email.trim() : '';
+  if (!email) {
+    res.status(400).json({ error: 'Bad Request', message: 'Email is required' });
+    return;
+  }
+  try {
+    const result = auth.addEmail(req.authUser!.id, email);
+    const sendResult = await sendVerificationEmail(result.email, result.code);
+    auth.writeAuditLog(req.authUser!.id, 'email.added', 'user', String(req.authUser!.id), req.ip ?? '', { email: result.email, smtp: sendResult.ok });
+    if (sendResult.ok) {
+      res.json({ success: true, method: 'smtp', message: `Verification code sent to ${result.email}.` });
+    } else {
+      res.json({ success: true, method: 'console', message: `SMTP unavailable: ${sendResult.error || 'not configured'}. Verification code logged to console.` });
+    }
+  } catch (error: any) {
+    res.status(400).json({ error: 'Bad Request', message: error.message });
+  }
+});
+
+router.post('/me/emails/:id/verify', requireApiAuth, requireCsrf, (req: Request, res: Response): void => {
+  const id = parseInt(String(req.params.id), 10);
+  const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
+  if (!Number.isInteger(id) || id <= 0 || !code) {
+    res.status(400).json({ error: 'Bad Request', message: 'Email ID and verification code are required' });
+    return;
+  }
+  const result = auth.verifyEmailCode(req.authUser!.id, id, code);
+  if (!result) {
+    res.status(400).json({ error: 'Bad Request', message: 'Invalid or expired verification code' });
+    return;
+  }
+  auth.writeAuditLog(req.authUser!.id, 'email.verified', 'user', String(req.authUser!.id), req.ip ?? '', { email: result.email });
+  res.json({ success: true, email: result.email, email_verified: true });
+});
+
+router.post('/me/emails/:id/primary', requireApiAuth, requireCsrf, (req: Request, res: Response): void => {
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'Bad Request', message: 'Invalid email ID' });
+    return;
+  }
+  if (!auth.setPrimaryEmail(req.authUser!.id, id)) {
+    res.status(400).json({ error: 'Bad Request', message: 'Email not found or not verified. Verify it first.' });
+    return;
+  }
+  res.json({ success: true });
+});
+
+router.delete('/me/emails/:id', requireApiAuth, requireCsrf, (req: Request, res: Response): void => {
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'Bad Request', message: 'Invalid email ID' });
+    return;
+  }
+  try {
+    const deleted = auth.deleteEmail(req.authUser!.id, id);
+    if (!deleted) {
+      res.status(404).json({ error: 'Not Found', message: 'Email not found' });
+      return;
+    }
+    res.json({ success: true });
+  } catch (error: any) {
+    res.status(400).json({ error: 'Bad Request', message: error.message });
+  }
+});
+
+router.post('/me/emails/:id/resend', requireApiAuth, requireCsrf, async (req: Request, res: Response): Promise<void> => {
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'Bad Request', message: 'Invalid email ID' });
+    return;
+  }
+  const result = auth.resendVerificationCode(req.authUser!.id, id);
+  if (!result) {
+    res.status(400).json({ error: 'Bad Request', message: 'Email not found or already verified' });
+    return;
+  }
+  const sendResult = await sendVerificationEmail(result.email, result.code);
+  if (sendResult.ok) {
+    res.json({ success: true, message: `Verification code sent to ${result.email}.` });
+  } else {
+    res.json({ success: true, message: `SMTP unavailable: ${sendResult.error || 'not configured'}. Code logged to console.` });
+  }
+});
+
+// ── TOTP Routes ──
+
+router.get('/me/totp/setup', requireApiAuth, (req: Request, res: Response): void => {
+  const full = auth.getUserById(req.authUser!.id);
+  if (full?.totp_enabled) {
+    res.status(400).json({ error: 'Bad Request', message: '2FA is already enabled. Disable it first to set up a new one.' });
+    return;
+  }
+  const data = auth.generateTotpSecret(req.authUser!.username);
+  const [secret, qrUri] = data.split('\n');
+  res.json({ secret, qr_uri: qrUri });
+});
+
+router.post('/me/totp/enable', requireApiAuth, requireCsrf, (req: Request, res: Response): void => {
+  const code = typeof req.body?.code === 'string' ? req.body.code.replace(/\s/g, '') : '';
+  const secret = typeof req.body?.secret === 'string' ? req.body.secret : '';
+  if (!code || !secret) {
+    res.status(400).json({ error: 'Bad Request', message: 'TOTP code and secret are required' });
+    return;
+  }
+  if (!auth.enableTotp(req.authUser!.id, code, secret)) {
+    res.status(400).json({ error: 'Bad Request', message: 'Invalid TOTP code' });
+    return;
+  }
+  auth.writeAuditLog(req.authUser!.id, 'totp.enabled', 'user', String(req.authUser!.id), req.ip ?? '', {});
+  res.json({ success: true });
+});
+
+router.post('/me/totp/disable', requireApiAuth, requireCsrf, (req: Request, res: Response): void => {
+  const code = typeof req.body?.code === 'string' ? req.body.code.replace(/\s/g, '') : '';
+  if (!code) {
+    res.status(400).json({ error: 'Bad Request', message: 'TOTP code is required' });
+    return;
+  }
+  if (!auth.disableTotp(req.authUser!.id, code)) {
+    res.status(400).json({ error: 'Bad Request', message: 'Invalid TOTP code or 2FA not enabled' });
+    return;
+  }
+  auth.writeAuditLog(req.authUser!.id, 'totp.disabled', 'user', String(req.authUser!.id), req.ip ?? '', {});
+  res.json({ success: true });
+});
+
 // ── Password Reset Routes ──
 
 /**
@@ -182,48 +412,36 @@ router.post('/forgot-password', rateLimit({
 });
 
 /**
- * POST /api/v1/auth/reset-password
- * Complete a password reset using a valid reset token.
- * Public endpoint — no existing authentication required.
- */
-router.post('/reset-password', rateLimit({
-  windowMs: 15 * 60 * 1000,
-  limit: 5,
-  key: req => `reset:${req.ip}`,
-}), (req: Request, res: Response): void => {
-  const token = typeof req.body?.reset_token === 'string' ? req.body.reset_token.trim() : '';
-  const newPassword = typeof req.body?.new_password === 'string' ? req.body.new_password : '';
-  if (!token || !newPassword) {
-    res.status(400).json({ error: 'Bad Request', message: 'Reset token and new password are required' });
-    return;
-  }
-  try {
-    const user = auth.resetPasswordWithToken(token, newPassword);
-    if (!user) {
-      auth.writeAuditLog(null, 'password_reset.failed', 'user', '', req.ip ?? '', {});
-      res.status(400).json({ error: 'Bad Request', message: 'Invalid or expired reset token' });
-      return;
-    }
-    auth.writeAuditLog(user.id, 'password_reset.completed', 'user', String(user.id), req.ip ?? '', {});
-    res.json({ success: true, message: 'Password has been reset successfully. Please log in with your new password.', username: user.username });
-  } catch (error: any) {
-    res.status(400).json({ error: 'Bad Request', message: error.message });
-  }
-});
-
-/**
  * POST /api/v1/auth/admin-reset/:id
  * Admin generates a password reset token for any user.
  */
-router.post('/admin-reset/:id', requireApiAuth, requireRole('admin'), requireCsrf, (req: Request, res: Response): void => {
+router.post('/admin-reset/:id', requireApiAuth, requireRole('admin'), requireCsrf, async (req: Request, res: Response): Promise<void> => {
   const id = parseInt(String(req.params.id), 10);
   if (!Number.isInteger(id) || id <= 0) {
     res.status(400).json({ error: 'Bad Request', message: 'Invalid user ID' });
     return;
   }
+  if (id === req.authUser!.id) {
+    res.status(403).json({ error: 'Forbidden', message: 'Admins cannot reset their own password. Use the forgot-password flow.' });
+    return;
+  }
+  const targetUser = auth.getUserById(id);
+  if (!targetUser || !targetUser.is_active) {
+    res.status(404).json({ error: 'Not Found', message: 'User not found or inactive' });
+    return;
+  }
+  if (targetUser.role === 'admin') {
+    res.status(403).json({ error: 'Forbidden', message: 'Cannot reset another admin account.' });
+    return;
+  }
   const adminPassword = typeof req.body?.admin_password === 'string' ? req.body.admin_password : '';
   if (!adminPassword || !auth.authenticateUser(req.authUser!.username, adminPassword)) {
     res.status(403).json({ error: 'Forbidden', message: 'Admin password is required to generate a reset token' });
+    return;
+  }
+  const adminPrimaryEmail = auth.getPrimaryEmail(req.authUser!.id);
+  if (!adminPrimaryEmail) {
+    res.status(403).json({ error: 'Forbidden', message: 'You must verify a primary email address before resetting passwords. Visit Account Security to set up your email.' });
     return;
   }
   const result = auth.adminResetPassword(req.authUser!, id);
@@ -233,6 +451,11 @@ router.post('/admin-reset/:id', requireApiAuth, requireRole('admin'), requireCsr
   }
   auth.writeAuditLog(req.authUser!.id, 'password_reset.admin_initiated', 'user', String(id), req.ip ?? '', {});
   console.log(`[reset] ADMIN-RESET token for ${result.username} (by ${req.authUser!.username}): ${result.token} (valid 15m)`);
+  // Send token to target user's primary email if they have one
+  const targetEmail = auth.getPrimaryEmail(id);
+  if (targetEmail) {
+    sendVerificationEmail(targetEmail, result.token).catch(() => {});
+  }
   res.json({ success: true, username: result.username, expires_in_minutes: 15 });
 });
 

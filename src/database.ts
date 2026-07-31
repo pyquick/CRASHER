@@ -2,7 +2,6 @@ import Database from 'better-sqlite3';
 import { mkdirSync } from 'fs';
 import { dirname } from 'path';
 import { config } from './config.js';
-import { bootstrapAdmin } from './auth.js';
 
 let db: Database.Database;
 
@@ -27,8 +26,6 @@ export function initDb(): Database.Database {
   db.pragma('foreign_keys = ON');
 
   runMigrations(db);
-  bootstrapAdmin();
-
   return db;
 }
 
@@ -97,6 +94,17 @@ function runMigrations(db: Database.Database): void {
       target_id TEXT NOT NULL DEFAULT '',
       ip_address TEXT NOT NULL DEFAULT '',
       details TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS user_emails (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      email TEXT NOT NULL UNIQUE,
+      email_verified INTEGER NOT NULL DEFAULT 0,
+      email_verify_token_hash TEXT,
+      email_verify_expires_at TEXT,
+      is_primary INTEGER NOT NULL DEFAULT 0,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -279,6 +287,10 @@ function runMigrations(db: Database.Database): void {
   // v6 migration: projects and source snapshots
   addColumnIfNotExists(db, 'crash_groups', 'project_id', 'INTEGER REFERENCES projects(id) ON DELETE SET NULL');
   addColumnIfNotExists(db, 'crash_reports', 'project_id', 'INTEGER REFERENCES projects(id) ON DELETE SET NULL');
+
+  // v7 migration: TOTP columns on users
+  addColumnIfNotExists(db, 'users', 'totp_secret', 'TEXT');
+  addColumnIfNotExists(db, 'users', 'totp_enabled', 'INTEGER NOT NULL DEFAULT 0');
 
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_crash_reports_build_guid ON crash_reports(build_guid);
