@@ -27,6 +27,7 @@ router.get('/crash-groups', (req, res) => {
   res.json(store.listGroups({
     page: parseInt(String(q.page), 10) || 1,
     page_size: Math.min(parseInt(String(q.page_size), 10) || 20, 100),
+    project_id: q.project_id !== undefined ? parseInt(String(q.project_id), 10) : undefined,
     status: q.status as string | undefined,
     platform: q.platform as string | undefined,
     app_version: q.app_version as string | undefined,
@@ -69,6 +70,7 @@ router.get('/crash-reports', requireRole('admin', 'operator'), (req, res) => {
     page: parseInt(String(q.page), 10) || 1,
     page_size: Math.min(parseInt(String(q.page_size), 10) || 20, 100),
     group_id: q.group_id ? parseInt(String(q.group_id), 10) : undefined,
+    project_id: q.project_id !== undefined ? parseInt(String(q.project_id), 10) : undefined,
     platform: q.platform as string | undefined,
     app_version: q.app_version as string | undefined,
     start_date: q.start_date as string | undefined,
@@ -125,6 +127,23 @@ router.get('/crash-reports/:id/analysis', requireRole('admin', 'operator'), (req
   const report = store.getReportById(id);
   if (!report) { res.status(404).json({ error: 'Not found' }); return; }
 
+  const sourceSnapshot = report.project_id
+    ? store.findSourceSnapshot(report.project_id, report.release)
+    : undefined;
+  const sourceFiles = sourceSnapshot
+    ? store.getSourceFilesForSnapshot(sourceSnapshot.id)
+      .filter(file => !report.runtime || file.language === report.runtime ||
+        (report.runtime === 'unity' && file.language === 'csharp') ||
+        (report.runtime === 'node' && ['javascript', 'typescript'].includes(file.language)))
+      .flatMap(file => {
+        try {
+          return [{ relative_path: file.relative_path, language: file.language, content: readFileSync(file.storage_path, 'utf-8') }];
+        } catch {
+          return [];
+        }
+      })
+    : [];
+
   const analysis = analyzeCrash({
     id: report.id,
     exception_type: report.exception_type,
@@ -134,7 +153,14 @@ router.get('/crash-reports/:id/analysis', requireRole('admin', 'operator'), (req
     runtime: report.runtime,
     runtime_version: report.runtime_version,
     symbolicated_stack: report.symbolicated_stack || undefined,
-  });
+  }, sourceSnapshot ? {
+    project_name: report.project_name || 'Unassigned',
+    requested_release: report.release,
+    snapshot_release: sourceSnapshot.release,
+    snapshot_id: sourceSnapshot.id,
+    match_type: sourceSnapshot.match_type,
+    files: sourceFiles,
+  } : undefined);
 
   if (!analysis) {
     res.status(500).json({ error: 'Analysis failed' });
@@ -356,6 +382,9 @@ router.post('/import', requireRole('admin', 'operator'), importUpload.single('pa
     // ── Confirmed: write to DB ──
     const now = new Date().toISOString();
 
+    const manifestProjectName = typeof manifest.group.project_name === 'string' ? manifest.group.project_name.trim() : '';
+    const manifestProject = manifestProjectName ? store.getOrCreateProject(manifestProjectName, now) : undefined;
+
     // Map old report IDs to new report IDs for attachment linking
     const oldToNewId = new Map<number, number>();
 
@@ -369,7 +398,8 @@ router.post('/import', requireRole('admin', 'operator'), importUpload.single('pa
         manifest.group.crash_hash,
         manifest.group.exception_type,
         manifest.group.exception_message || '',
-        now
+        now,
+        manifestProject?.id ?? null
       );
       groupId = newGroup.id;
     }
@@ -393,10 +423,14 @@ router.post('/import', requireRole('admin', 'operator'), importUpload.single('pa
         continue;
       }
 
+      const importProjectName = typeof reportData.project_name === 'string' ? reportData.project_name.trim() : '';
+      const importProject = importProjectName ? store.getOrCreateProject(importProjectName, now) : undefined;
+
       // Create the report with the new group ID
       const newReport = store.createReport(
         {
           exception_type: reportData.exception_type,
+          project_name: importProjectName,
           exception_message: reportData.exception_message,
           stack_trace: reportData.stack_trace,
           log_text: reportData.log_text,
@@ -424,7 +458,8 @@ router.post('/import', requireRole('admin', 'operator'), importUpload.single('pa
         groupId,
         reportData.client_ip || 'imported',
         reportData.created_at || now,
-        reportData.dump_info || ''
+        reportData.dump_info || '',
+        importProject?.id ?? null
       );
 
       oldToNewId.set(oldId, newReport.id);
@@ -488,6 +523,10 @@ router.post('/import', requireRole('admin', 'operator'), importUpload.single('pa
 // ── Stats and analytics ──
 
 router.get('/stats/dashboard', (_req, res) => { res.json(store.getDashboardStats()); });
+
+router.get('/projects', (_req, res) => {
+  res.json(store.listProjects());
+});
 
 router.get('/platforms', (_req, res) => {
   res.json((getDb().prepare("SELECT DISTINCT platform FROM crash_reports WHERE platform != '' ORDER BY platform").all() as any[]).map(r => r.platform));

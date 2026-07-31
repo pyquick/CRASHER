@@ -112,7 +112,7 @@ router.get('/symbols', requireAuth, (_req: Request, res: Response): void => {
   res.type('html').send(renderTemplate('symbol_list.html', 'Symbols - Crash Report Server'));
 });
 
-router.get('/accounts', requireAuth, requireRole('admin'), (_req: Request, res: Response): void => {
+router.get('/accounts', requireAuth, requireRole('admin', 'operator'), (_req: Request, res: Response): void => {
   res.type('html').send(renderTemplate('account_list.html', 'Account Security - Crash Report Server'));
 });
 
@@ -157,18 +157,52 @@ router.get('/api-doc', requireAuth, (_req: Request, res: Response): void => {
     <div class="section-card mb-8">
       <h2 class="text-lg font-semibold mb-3">📑 目录</h2>
       <ul class="grid grid-cols-1 sm:grid-cols-2 gap-1 text-sm text-gray-400">
+        <li><a href="#auth" class="toc-link">0. 鉴权与权限</a></li>
         <li><a href="#generic" class="toc-link">1. 通用崩溃上报</a></li>
-        <li><a href="#feedback" class="toc-link">2. 玩家主动反馈</a></li>
-        <li><a href="#unity" class="toc-link">3. Unity 专属端点</a></li>
-        <li><a href="#groups" class="toc-link">4. 崩溃分组</a></li>
-        <li><a href="#reports" class="toc-link">5. 崩溃报告</a></li>
-        <li><a href="#downloads" class="toc-link">6. 文件下载</a></li>
-        <li><a href="#symbols" class="toc-link">7. 符号管理</a></li>
-        <li><a href="#dump" class="toc-link">8. Dump 解析</a></li>
-        <li><a href="#stats" class="toc-link">9. 统计与工具</a></li>
-        <li><a href="#export" class="toc-link">10. 导出导入</a></li>
+        <li><a href="#sources" class="toc-link">2. 项目源码快照</a></li>
+        <li><a href="#feedback" class="toc-link">3. 玩家主动反馈</a></li>
+        <li><a href="#unity" class="toc-link">4. Unity 专属端点</a></li>
+        <li><a href="#groups" class="toc-link">5. 崩溃分组</a></li>
+        <li><a href="#reports" class="toc-link">6. 崩溃报告与分析</a></li>
+        <li><a href="#downloads" class="toc-link">7. 文件下载</a></li>
+        <li><a href="#symbols" class="toc-link">8. 符号管理</a></li>
+        <li><a href="#dump" class="toc-link">9. Dump 解析</a></li>
+        <li><a href="#stats" class="toc-link">10. 项目、统计与工具</a></li>
+        <li><a href="#export" class="toc-link">11. 导出导入</a></li>
       </ul>
     </div>
+
+    <section id="auth" class="section-card mb-6">
+      <h2 class="text-xl font-semibold mb-4">鉴权与权限</h2>
+      <p class="text-gray-400 mb-3">默认 <code>API_REQUIRE_KEY=true</code>。以下写入端点接受 <code>Authorization: Bearer &lt;api-key&gt;</code> 或 <code>X-API-Key: &lt;api-key&gt;</code>：崩溃上报、玩家反馈、Unity 上报和项目源码上传。viewer key 不能写入。</p>
+      <pre><code>curl -H "Authorization: Bearer &lt;api-key&gt;" ...
+# 或
+curl -H "X-API-Key: &lt;api-key&gt;" ...</code></pre>
+      <p class="text-sm text-gray-400 mt-3">查询、下载、分析、符号和管理 API 需要登录会话 Cookie。修改类请求还必须携带 <code>csrf_token</code> Cookie 和同值的 <code>X-CSRF-Token</code> 请求头。admin/operator 可查看崩溃详情；viewer 仅能访问允许的只读列表页面；删除符号、删除反馈和清空崩溃仅限 admin。</p>
+      <pre><code># 登录并保存 auth_token 与 csrf_token Cookie
+curl -c cookies.txt -H "Content-Type: application/json" \\
+  -d '{"username":"admin","password":"..."}' \\
+  http://localhost:8080/api/v1/auth/login
+
+# 获取或刷新 CSRF token
+curl -b cookies.txt -c cookies.txt http://localhost:8080/api/v1/auth/csrf</code></pre>
+      <p class="text-xs text-gray-500 mt-2">账户 API 位于 <code>/api/v1/auth</code>：<code>/me</code>、<code>/users</code>、<code>/api-keys</code>、用户密码修改、管理员密码重置、忘记/重置密码和 API Key tier 修改。</p>
+      <h3 class="font-medium mt-5 mb-2">端点总览</h3>
+      <div class="overflow-x-auto">
+        <table class="w-full text-sm border-collapse">
+          <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">方法与路径</th><th class="text-left py-2">鉴权</th><th class="text-left py-2">权限</th></tr></thead>
+          <tbody class="text-gray-400">
+            <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /crash-report</code>、<code>/unity/crash-report</code>、<code>/player-feedback</code>、<code>/project-sources</code></td><td>API Key（可配置关闭）</td><td>operator/admin key</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /crash-groups</code>、<code>/stats/dashboard</code>、<code>/projects</code>、<code>/platforms</code>、<code>/versions</code></td><td>Session</td><td>已登录用户</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /crash-groups/:id</code>、<code>/crash-reports*</code>、下载、导入导出</td><td>Session</td><td>admin/operator</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /symbols</code></td><td>Session</td><td>已登录用户</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /symbols</code>、<code>GET /symbols/:id/download</code></td><td>Session</td><td>admin/operator</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1"><code>DELETE /symbols/:id</code>、<code>DELETE /player-feedback/:id</code>、<code>POST /clear-crashes</code></td><td>Session + CSRF</td><td>admin</td></tr>
+            <tr><td class="py-1"><code>/auth/users</code>、<code>/auth/api-keys</code>、密码重置</td><td>Session；写操作加 CSRF</td><td>按端点角色限制</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
 
     <!-- ============================================================ -->
     <!-- 1. Generic Crash Report -->
@@ -178,7 +212,7 @@ router.get('/api-doc', requireAuth, (_req: Request, res: Response): void => {
         <span class="method-badge bg-green-600 text-white mr-3">POST</span>
         /api/v1/crash-report
       </h2>
-      <p class="text-gray-400 mb-4">提交崩溃报告。支持 JSON 和 multipart/form-data 两种格式。适用于任意运行时（Node.js、Python、Go、Browser JS、C# 等）。</p>
+      <p class="text-gray-400 mb-4">提交崩溃报告。支持 JSON 和 multipart/form-data 两种格式。multipart 可使用普通表单字段，也可把完整 JSON 放入 <code>report</code> 字段；附件字段名为 <code>attachments</code>，最多 10 个。默认需要 operator/admin API key。</p>
 
       <h3 class="font-medium mb-3">📥 请求体参数 (JSON)</h3>
 
@@ -194,9 +228,10 @@ router.get('/api-doc', requireAuth, (_req: Request, res: Response): void => {
         </thead>
         <tbody class="text-gray-400">
           <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><strong class="text-gray-200">exception_type</strong> <span class="field-required">*必填</span></td><td class="pr-4"><code>string</code></td><td>异常类型，如 TypeError, NullReferenceException, SIGSEGV</td></tr>
+          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><strong>project_name</strong></td><td class="pr-4"><code>string</code></td><td>项目名称（可选，最长 100 字符）。相同崩溃在不同项目中独立分组；未提供时归入 Unassigned</td></tr>
           <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">exception_message</td><td class="pr-4"><code>string</code></td><td>异常消息文本</td></tr>
           <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">stack_trace</td><td class="pr-4"><code>string</code></td><td>堆栈跟踪。运行时会自动识别栈格式用于 hash 分组</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">log_text</td><td class="pr-4"><code>string</code></td><td>完整日志文本 (单条最大 2 MB)</td></tr>
+          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">log_text</td><td class="pr-4"><code>string</code></td><td>完整日志文本，超过 <code>MAX_LOG_SIZE</code> 时截断（默认 10 MiB）</td></tr>
           <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><strong>runtime</strong></td><td class="pr-4"><code>string</code></td><td>运行时环境: <code>node</code>, <code>browser</code>, <code>python</code>, <code>go</code>, <code>unity</code>, <code>csharp</code>, ...</td></tr>
           <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">runtime_version</td><td class="pr-4"><code>string</code></td><td>运行时版本，如 <code>20.11.0</code>, <code>3.12.3</code>, <code>2022.3.10f1</code></td></tr>
           <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">framework</td><td class="pr-4"><code>string</code></td><td>框架/引擎: <code>express</code>, <code>react</code>, <code>django</code>, <code>gin</code>, <code>unity</code>, ...</td></tr>
@@ -265,8 +300,10 @@ router.get('/api-doc', requireAuth, (_req: Request, res: Response): void => {
       <h3 class="font-medium mb-2 mt-6">📋 示例请求</h3>
       <h4 class="text-xs text-gray-500 mb-1 mt-3">Node.js (Express) 崩溃</h4>
       <pre><code>curl -X POST http://localhost:8080/api/v1/crash-report \\
+  -H "X-API-Key: &lt;key&gt;" \\
   -H "Content-Type: application/json" \\
   -d '{
+    "project_name": "api-gateway",
     "exception_type": "TypeError",
     "exception_message": "Cannot read properties of undefined (reading 'id')",
     "stack_trace": "at UserController.getUser (/app/controllers/user.js:42:15)\\n    at Layer.handle (/app/node_modules/express/lib/router/layer.js:95:5)",
@@ -281,6 +318,7 @@ router.get('/api-doc', requireAuth, (_req: Request, res: Response): void => {
 
       <h4 class="text-xs text-gray-500 mb-1 mt-3">Python 崩溃</h4>
       <pre><code>curl -X POST http://localhost:8080/api/v1/crash-report \\
+  -H "X-API-Key: &lt;key&gt;" \\
   -H "Content-Type: application/json" \\
   -d '{
     "exception_type": "ValueError",
@@ -294,6 +332,7 @@ router.get('/api-doc', requireAuth, (_req: Request, res: Response): void => {
 
       <h4 class="text-xs text-gray-500 mb-1 mt-3">Multipart 表单上传 (含 dump 附件)</h4>
       <pre><code>curl -X POST http://localhost:8080/api/v1/crash-report \\
+  -H "X-API-Key: &lt;key&gt;" \\
   -F "exception_type=NullReferenceException" \\
   -F "stack_trace=at PlayerController.Update () [0x00000] in ..." \\
   -F "runtime=unity" \\
@@ -306,9 +345,38 @@ router.get('/api-doc', requireAuth, (_req: Request, res: Response): void => {
   "group_id": 7,
   "is_new_group": false
 }</code></pre>
-      <p class="text-xs text-gray-500 mt-2">相同异常类型 + 堆栈 + 运行时的崩溃自动归入同一分组 (SHA256 hash)。</p>
+      <p class="text-xs text-gray-500 mt-2">未提供项目名时继续使用旧版分组算法并显示为 Unassigned；提供项目名时，项目名也参与 SHA-256 分组 hash，因此不同项目不会混组。</p>
     </section>
 
+
+    <section id="sources" class="section-card mb-6">
+      <h2 class="text-xl font-semibold mb-4"><span class="method-badge bg-green-600 text-white mr-3">POST</span>/api/v1/project-sources</h2>
+      <p class="text-gray-400 mb-3">上传项目源码快照，用于 Crash Analysis 定位崩溃行、函数定义和可能的调用位置。源码只作为文本检索，不会被执行或编译。</p>
+      <p class="text-sm text-gray-400 mb-2">multipart 字段：<code>project_name</code> 必填（1–100 字符）；<code>release</code> 可选（最多 200 字符）；可重复提交 <code>files</code>（单次最多 100 个散装文件），或通过 <code>archive</code> 上传一个 <code>.tar.gz/.tgz</code> 项目包，两者可同时使用。成功上传会创建不可变源码快照。</p>
+      <p class="text-sm text-gray-400 mb-2">分析时先按 <code>project_name + release</code> 精确匹配；没有对应 release 时回退该项目最新快照。默认限制：单源码文件 2 MiB、上传/解包总量 64 MiB、快照最多 5000 个受支持的文本源码文件。</p>
+      <pre><code>curl -X POST http://localhost:8080/api/v1/project-sources \\
+  -H "X-API-Key: &lt;key&gt;" \\
+  -F "project_name=api-gateway" \\
+  -F "release=abc1234" \\
+  -F "archive=@api-gateway.tar.gz"
+
+# 也可以上传多个散装源码文件
+curl -X POST http://localhost:8080/api/v1/project-sources \\
+  -H "X-API-Key: &lt;key&gt;" \\
+  -F "project_name=api-gateway" \\
+  -F "release=abc1234" \\
+  -F "files=@src/app.ts;filename=src/app.ts" \\
+  -F "files=@src/service.ts;filename=src/service.ts"</code></pre>
+      <h3 class="font-medium mb-2 mt-4">响应 (201)</h3>
+      <pre><code>{
+  "project": { "id": 3, "name": "api-gateway" },
+  "release": "abc1234",
+  "snapshot_id": 9,
+  "accepted": [{ "path": "src/app.ts", "file_size": 2048, "language": "typescript" }],
+  "skipped": [{ "path": "assets/logo.png", "reason": "unsupported extension" }]
+}</code></pre>
+      <p class="text-xs text-gray-500 mt-2">仅接收支持语言的文本源码；拒绝绝对路径、<code>..</code> 路径、二进制、超大文件和超限解包内容。</p>
+    </section>
 
     <!-- ============================================================ -->
     <!-- 2. Player Feedback -->
@@ -337,6 +405,7 @@ router.get('/api-doc', requireAuth, (_req: Request, res: Response): void => {
 
       <h3 class="font-medium mb-2 mt-4">📋 JSON 示例</h3>
       <pre><code>curl -X POST http://localhost:8080/api/v1/player-feedback \\
+  -H "X-API-Key: &lt;key&gt;" \\
   -H "Content-Type: application/json" \\
   -d '{
     "title": "购买后无法装备新武器",
@@ -353,6 +422,7 @@ router.get('/api-doc', requireAuth, (_req: Request, res: Response): void => {
       <h3 class="font-medium mb-2 mt-4">📎 上传截图或日志</h3>
       <p class="text-sm text-gray-400 mb-2">使用 <code>multipart/form-data</code> 时，将完整 JSON 放入 <code>feedback</code> 字段；可重复提交 <code>attachments</code> 文件字段，最多 10 个文件，单文件大小受 <code>MAX_ATTACHMENT_SIZE</code> 限制。</p>
       <pre><code>curl -X POST http://localhost:8080/api/v1/player-feedback \\
+  -H "X-API-Key: &lt;key&gt;" \\
   -F 'feedback={"title":"任务卡住","description":"完成对话后无法继续","category":"bug"};type=application/json' \\
   -F "attachments=@screenshot.png" \\
   -F "attachments=@Player.log"</code></pre>
@@ -411,6 +481,8 @@ router.get('/api-doc', requireAuth, (_req: Request, res: Response): void => {
 
       <h4 class="text-xs text-gray-500 mb-1 mt-4">示例</h4>
       <pre><code>curl -X POST http://localhost:8080/api/v1/unity/crash-report \\
+  -H "X-API-Key: &lt;key&gt;" \\
+  -H "X-Client-Type: unity" \\
   -H "Content-Type: application/json" \\
   -d '{
     "exception_type": "NullReferenceException",
@@ -457,6 +529,7 @@ router.get('/api-doc', requireAuth, (_req: Request, res: Response): void => {
         <tbody class="text-gray-400">
           <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>page</code></td><td class="pr-4">number</td><td class="pr-4">1</td><td>页码</td></tr>
           <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>page_size</code></td><td class="pr-4">number</td><td class="pr-4">20</td><td>每页条数 (最大 100)</td></tr>
+          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>project_id</code></td><td class="pr-4">number</td><td class="pr-4">-</td><td>项目 ID；传 <code>0</code> 仅显示 Unassigned</td></tr>
           <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>status</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>状态筛选: <code>open</code>, <code>resolved</code>, <code>ignored</code></td></tr>
           <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>runtime</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>运行时筛选: <code>node</code>, <code>python</code>, <code>go</code>, <code>unity</code>, ...</td></tr>
           <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>environment</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>环境筛选: <code>production</code>, <code>staging</code>, <code>development</code></td></tr>
@@ -554,6 +627,7 @@ router.get('/api-doc', requireAuth, (_req: Request, res: Response): void => {
           <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>page</code></td><td class="pr-4">number</td><td>页码 (默认 1)</td></tr>
           <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>page_size</code></td><td class="pr-4">number</td><td>每页条数 (默认 20, 最大 100)</td></tr>
           <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>group_id</code></td><td class="pr-4">number</td><td>按崩溃分组 ID 筛选</td></tr>
+          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>project_id</code></td><td class="pr-4">number</td><td>按项目 ID 筛选；<code>0</code> 表示 Unassigned</td></tr>
           <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>platform</code></td><td class="pr-4">string</td><td>平台筛选</td></tr>
           <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>app_version</code></td><td class="pr-4">string</td><td>版本号筛选</td></tr>
           <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>start_date</code></td><td class="pr-4">string</td><td>起始日期</td></tr>
@@ -591,10 +665,32 @@ router.get('/api-doc', requireAuth, (_req: Request, res: Response): void => {
   ]
 }</code></pre>
       </div>
-    </section>
 
-    <!-- ============================================================ -->
-    <!-- 5. Downloads -->
+      <div class="mt-6 pt-4 border-t border-gray-700">
+        <h2 class="text-lg font-semibold mb-3"><span class="method-badge bg-blue-600 text-white mr-3">GET</span>/api/v1/crash-reports/:id/analysis</h2>
+        <p class="text-gray-400 mb-3">返回结构化 Crash Analysis：语言检测、文件树、触发点、彩色堆栈链，以及匹配源码快照后的真实崩溃代码、函数定义和最多 20 个可能引用位置。</p>
+        <p class="text-sm text-gray-500 mb-2">源码匹配要求报告包含 <code>project_name</code>，并已通过 <code>/project-sources</code> 上传该项目源码。优先使用相同 <code>release</code>，否则 <code>match_type=latest</code>。</p>
+        <pre><code>{
+  "detected_language": "typescript",
+  "trigger_point": { "file_path": "src/service.ts", "line_number": 42, "function_name": "loadUser" },
+  "source_analysis": {
+    "project_name": "api-gateway",
+    "requested_release": "abc1234",
+    "snapshot_release": "abc1234",
+    "match_type": "exact",
+    "crash_source": { "file_path": "src/service.ts", "line_number": 42, "snippet": "..." },
+    "function_definition": { "file_path": "src/service.ts", "line_number": 35, "snippet": "..." },
+    "references": [],
+    "warnings": []
+  }
+}</code></pre>
+      </div>
+
+      <div class="mt-6 pt-4 border-t border-gray-700">
+        <h2 class="text-lg font-semibold mb-3"><span class="method-badge bg-blue-600 text-white mr-3">GET</span>/api/v1/crash-reports/:id/symbolication</h2>
+        <p class="text-gray-400">返回 Unity/C# 符号化状态、符号化堆栈、Build GUID、匹配 symbol ID 和 warning。</p>
+      </div>
+    </section>
     <!-- ============================================================ -->
     <section id="downloads" class="section-card mb-6">
       <h2 class="text-xl font-semibold mb-4">⬇️ 文件下载端点</h2>
@@ -664,7 +760,10 @@ router.get('/api-doc', requireAuth, (_req: Request, res: Response): void => {
         <tbody class="text-gray-400">
           <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><strong class="text-gray-200">file</strong> <span class="field-required">*必填</span></td><td class="pr-4">file</td><td>符号文件 (最大 500 MB)</td></tr>
           <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><strong>build_guid</strong> <span class="field-required">*必填</span></td><td class="pr-4">string</td><td>构建 GUID，用于匹配 dump</td></tr>
-          <tr><td class="py-1.5 pr-4">platform</td><td class="pr-4">string</td><td>平台标识 (默认 unknown)</td></tr>
+          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">platform</td><td class="pr-4">string</td><td>平台标识 (默认 unknown)</td></tr>
+          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">symbol_type</td><td class="pr-4">string</td><td><code>symbol_map</code>、<code>dsym</code>、<code>elf</code> 或 <code>unknown</code>；未传时按文件名识别</td></tr>
+          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">module_name</td><td class="pr-4">string</td><td>模块/程序集名称</td></tr>
+          <tr><td class="py-1.5 pr-4">architecture</td><td class="pr-4">string</td><td>架构，例如 arm64、x86_64</td></tr>
         </tbody>
       </table>
 
@@ -758,16 +857,22 @@ router.get('/api-doc', requireAuth, (_req: Request, res: Response): void => {
     <!-- 8. Stats & Utilities -->
     <!-- ============================================================ -->
     <section id="stats" class="section-card mb-6">
-      <h2 class="text-xl font-semibold mb-4">📊 统计与工具端点</h2>
+      <h2 class="text-xl font-semibold mb-4">📊 项目、统计与工具端点</h2>
 
       <div class="space-y-4">
+        <div class="border-l-2 border-blue-500 pl-4">
+          <h3 class="font-medium"><span class="method-badge bg-blue-600 text-white mr-2 text-xs">GET</span>/api/v1/projects</h3>
+          <p class="text-sm text-gray-400 mt-1">返回项目列表以及每个项目的 <code>crash_count</code>，用于 <code>project_id</code> 筛选。</p>
+          <pre class="mt-2"><code>[{ "id": 3, "name": "api-gateway", "crash_count": 42, "created_at": "...", "updated_at": "..." }]</code></pre>
+        </div>
+
         <div class="border-l-2 border-blue-500 pl-4">
           <h3 class="font-medium">
             <span class="method-badge bg-blue-600 text-white mr-2 text-xs">GET</span>
             /api/v1/stats/dashboard
           </h3>
           <p class="text-sm text-gray-400 mt-1">获取仪表盘统计数据。</p>
-          <p class="text-xs text-gray-500 mt-1">返回: total_crashes, total_groups, open_groups, resolved_groups, crashes_today, crashes_week, top_crashes[], platform_distribution[], version_distribution[], runtime_distribution[], daily_trend[]</p>
+          <p class="text-xs text-gray-500 mt-1">返回: total_crashes, total_groups, open_groups, resolved_groups, crashes_today, crashes_week, top_crashes[], platform_distribution[], version_distribution[], runtime_distribution[], environment_distribution[], daily_trend[]</p>
           <pre class="mt-2"><code>curl http://localhost:8080/api/v1/stats/dashboard</code></pre>
         </div>
 

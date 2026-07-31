@@ -2,10 +2,8 @@
   <!-- Stat Cards -->
 
   <!-- Admin Actions -->
-  <div x-cloak x-show="isAdmin" class="mb-8 flex justify-end"
-    <button @click="async () => { if (!confirm('Delete ALL crash data? This cannot be undone.')) return; clearing = true; clearMsg = ''; try { const r = await fetch('/api/v1/clear-crashes', { method: 'POST' }); const d = await r.json(); if (!r.ok) throw new Error(d.message || 'Clear failed'); clearMsg = d.message; await loadStats(); } catch (error) { clearMsg = error.message; } clearing = false; }"
-            :disabled="clearing"
-            class="px-4 py-2 bg-red-600/20 hover:bg-red-600/40 text-red-400 border border-red-800 rounded-lg text-sm font-medium transition-colors disabled:opacity-50">
+  <div class="mb-8 flex justify-end admin-only" style="display:none">
+    <button @click="clearCrashes()" :disabled="clearing" class="btn btn-red">
       <span x-show="!clearing">🗑 Clear All Crashes</span>
       <span x-show="clearing">Clearing...</span>
     </button>
@@ -127,6 +125,8 @@
     Alpine.data('dashboard', () => ({
       stats: {},
       loaded: false,
+      clearing: false,
+      clearMsg: '',
       trendChart: null,
       platformChart: null,
       versionChart: null,
@@ -275,11 +275,29 @@
         });
       },
 
+      async clearCrashes() {
+        if (!confirm('Delete ALL crash data? This cannot be undone.')) return;
+        this.clearing = true;
+        this.clearMsg = '';
+        try {
+          const r = await fetch('/api/v1/clear-crashes', { method: 'POST' });
+          const d = await r.json();
+          if (!r.ok) throw new Error(d.message || 'Clear failed');
+          this.clearMsg = d.message;
+          await this.loadStats();
+        } catch (error) {
+          this.clearMsg = error.message;
+        }
+        this.clearing = false;
+      },
+
       computeEnvCounts() {
-        this.envCounts = {};
-        if (this.stats.runtime_distribution) {
-          // Count environment from crash reports — simplified for dashboard stats
-          this.envCounts = { production: 0, staging: 0, development: 0 };
+        this.envCounts = { production: 0, staging: 0, development: 0 };
+        if (this.stats.environment_distribution) {
+          this.stats.environment_distribution.forEach(d => {
+            const env = (d.environment || '').toLowerCase();
+            if (env in this.envCounts) this.envCounts[env] = d.count;
+          });
         }
       }
     }));

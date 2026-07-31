@@ -7,6 +7,7 @@ import { ingestCrash } from '../service.js';
 import * as store from '../store.js';
 import { parseDump } from '../dump/parser.js';
 import type { CrashReportInput } from '../model.js';
+import { normalizeOptionalProjectName } from '../source.js';
 
 const router = Router();
 
@@ -45,6 +46,13 @@ async function handleCrashReport(req: Request, res: Response): Promise<void> {
     if (!input.exception_type || typeof input.exception_type !== 'string') {
       cleanupUploads(req);
       res.status(400).json({ error: 'Bad Request', message: 'exception_type is required' });
+      return;
+    }
+    try {
+      input.project_name = normalizeOptionalProjectName(input.project_name);
+    } catch (err: any) {
+      cleanupUploads(req);
+      res.status(400).json({ error: 'Bad Request', message: err.message });
       return;
     }
 
@@ -118,7 +126,7 @@ function cleanupUploads(req: Request): void {
 function extractFormReport(body: Record<string, unknown>): CrashReportInput {
   const s = (k: string) => String(body[k] ?? '');
   const input: CrashReportInput = {
-    exception_type: s('exception_type'), exception_message: s('exception_message'),
+    exception_type: s('exception_type'), project_name: s('project_name'), exception_message: s('exception_message'),
     stack_trace: s('stack_trace'), log_text: s('log_text'),
     runtime: s('runtime'), runtime_version: s('runtime_version'),
     framework: s('framework'), environment: s('environment'),

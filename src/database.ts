@@ -18,6 +18,7 @@ export function initDb(): Database.Database {
   mkdirSync(dirname(config.dbPath), { recursive: true });
   mkdirSync(config.symbolsDir, { recursive: true });
   mkdirSync(config.attachmentsDir, { recursive: true });
+  mkdirSync(config.sourcesDir, { recursive: true });
 
   db = new Database(config.dbPath);
 
@@ -106,6 +107,31 @@ function runMigrations(db: Database.Database): void {
       expires_at TEXT NOT NULL,
       used_at TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS projects (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS source_snapshots (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      project_id INTEGER NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+      release TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS source_files (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      snapshot_id INTEGER NOT NULL REFERENCES source_snapshots(id) ON DELETE CASCADE,
+      relative_path TEXT NOT NULL,
+      storage_path TEXT NOT NULL,
+      file_size INTEGER NOT NULL DEFAULT 0,
+      language TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(snapshot_id, relative_path)
     );
 
     CREATE TABLE IF NOT EXISTS crash_groups (
@@ -250,10 +276,19 @@ function runMigrations(db: Database.Database): void {
   // v5 migration: API key tier
   addColumnIfNotExists(db, 'api_keys', 'tier', "TEXT NOT NULL DEFAULT 'operator'");
 
+  // v6 migration: projects and source snapshots
+  addColumnIfNotExists(db, 'crash_groups', 'project_id', 'INTEGER REFERENCES projects(id) ON DELETE SET NULL');
+  addColumnIfNotExists(db, 'crash_reports', 'project_id', 'INTEGER REFERENCES projects(id) ON DELETE SET NULL');
+
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_crash_reports_build_guid ON crash_reports(build_guid);
     CREATE INDEX IF NOT EXISTS idx_crash_reports_symbol_id ON crash_reports(symbol_id);
     CREATE INDEX IF NOT EXISTS idx_symbols_type ON symbols(symbol_type);
+    CREATE INDEX IF NOT EXISTS idx_projects_name ON projects(name);
+    CREATE INDEX IF NOT EXISTS idx_source_snapshots_project_release ON source_snapshots(project_id, release, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_source_files_snapshot_path ON source_files(snapshot_id, relative_path);
+    CREATE INDEX IF NOT EXISTS idx_crash_groups_project_id ON crash_groups(project_id);
+    CREATE INDEX IF NOT EXISTS idx_crash_reports_project_id ON crash_reports(project_id);
   `);
 }
 

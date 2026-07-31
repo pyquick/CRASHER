@@ -7,6 +7,7 @@ import { ingestCrash } from '../service.js';
 import * as store from '../store.js';
 import { parseDump } from '../dump/parser.js';
 import type { CrashReportInput } from '../model.js';
+import { normalizeOptionalProjectName } from '../source.js';
 
 const router = Router();
 
@@ -64,6 +65,13 @@ router.post('/unity/crash-report', upload.array('attachments', 10), async (req: 
     if (!input.exception_type || typeof input.exception_type !== 'string') {
       cleanupUploads(req);
       res.status(400).json({ error: 'Bad Request', message: 'exception_type is required' });
+      return;
+    }
+    try {
+      input.project_name = normalizeOptionalProjectName(input.project_name);
+    } catch (err: any) {
+      cleanupUploads(req);
+      res.status(400).json({ error: 'Bad Request', message: err.message });
       return;
     }
 
@@ -128,6 +136,7 @@ function extractUnityFormReport(body: Record<string, unknown>): CrashReportInput
   const s = (k: string) => String(body[k] ?? '');
   return {
     exception_type: s('exception_type'),
+    project_name: s('project_name'),
     exception_message: s('exception_message'),
     stack_trace: s('stack_trace'),
     log_text: s('log_text'),

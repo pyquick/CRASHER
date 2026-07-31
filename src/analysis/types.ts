@@ -54,6 +54,25 @@ export interface FileTreeNode {
   children: FileTreeNode[];
 }
 
+export interface SourceLocation {
+  file_path: string;
+  line_number: number;
+  function_name: string;
+  snippet: string;
+}
+
+export interface SourceAnalysis {
+  project_name: string;
+  requested_release: string;
+  snapshot_release: string;
+  snapshot_id: number;
+  match_type: 'exact' | 'latest';
+  crash_source: SourceLocation | null;
+  function_definition: SourceLocation | null;
+  references: SourceLocation[];
+  warnings: string[];
+}
+
 /**
  * The complete crash analysis result.
  */
@@ -89,4 +108,7 @@ export interface CrashAnalysis {
   /** Runtime info */
   runtime: string;
   runtime_version: string;
+
+  /** Source-code evidence, when a project source snapshot is available */
+  source_analysis?: SourceAnalysis;
 }

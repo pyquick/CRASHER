@@ -1,1606 +1,538 @@
-# 💥 Crash Report Server
+# Crash Report Server
 
-轻量级 Unity 错误上报服务器 — 接收 Unity 游戏客户端提交的崩溃/异常报告，自动去重分组，提供 Web 管理后台用于查看、搜索和管理崩溃。
+基于 Express 5、TypeScript 和 SQLite 的跨平台崩溃收集服务。支持项目分类、崩溃去重、源码快照分析、Unity 符号化、Dump 解析、玩家反馈和 Web 管理后台。
 
----
+## 功能
 
-## 目录
-
-- [快速开始](#快速开始)
-- [架构设计](#架构设计)
-- [去重策略](#去重策略)
-- [API 参考](#api-参考)
-  - [认证机制](#认证机制)
-  - [1. 提交崩溃报告](#1-提交崩溃报告)
-  - [2. Unity 专属崩溃上报](#2-unity-专属崩溃上报)
-  - [3. 玩家主动反馈](#3-玩家主动反馈)
-  - [4. 查询崩溃分组列表](#4-查询崩溃分组列表)
-  - [5. 查询崩溃分组详情](#5-查询崩溃分组详情)
-  - [6. 更新崩溃分组状态](#6-更新崩溃分组状态)
-  - [7. 查询单条报告列表](#7-查询单条报告列表)
-  - [8. 查询单条报告详情](#8-查询单条报告详情)
-  - [9. 符号化信息查询](#9-符号化信息查询)
-  - [10. 崩溃分析](#10-崩溃分析)
-  - [11. 数据导出导入](#11-数据导出导入)
-  - [12. 文件下载](#12-文件下载)
-  - [13. 仪表盘统计](#13-仪表盘统计)
-  - [14. 平台与版本列表](#14-平台与版本列表)
-  - [15. 玩家反馈管理](#15-玩家反馈管理)
-  - [16. 符号文件管理](#16-符号文件管理)
-  - [17. 数据清理](#17-数据清理)
-  - [18. 健康检查](#18-健康检查)
-- [Unity 客户端集成](#unity-客户端集成)
-- [Web 管理后台](#web-管理后台)
-- [配置参考](#配置参考)
-- [部署指南](#部署指南)
-- [项目结构](#项目结构)
-
----
+- JSON 或 multipart 崩溃上报，支持最多 10 个附件
+- 按 `project_name` 分类崩溃；未传项目名的旧客户端显示为 `Unassigned`
+- 相同崩溃在不同项目中独立分组
+- 上传散装源码或 `.tar.gz`/`.tgz` 项目快照
+- Crash Analysis 定位真实崩溃代码、函数定义和可能的调用位置
+- release 精确匹配源码；没有对应版本时回退项目最新快照
+- C#、C/C++、Go、Python、JavaScript/TypeScript、Java/Kotlin、Rust、Ruby、PHP、Swift、Dart、Elixir/Erlang、Lua 堆栈解析
+- Unity SymbolMap、ELF 和 dSYM 符号化
+- Android tombstone、iOS crash、Windows minidump、Unity log 解析
+- 用户角色、Session、CSRF、分级 API Key 和审计日志
 
 ## 快速开始
 
-### 前置要求
-
-- [Node.js](https://nodejs.org/) >= 18
-- npm >= 9
-
-### 本地开发
+要求 Node.js 24（Dockerfile 使用 Node 24）和 npm。
 
 ```bash
-# 1. 进入项目目录
-cd e:/Server
-
-# 2. 安装依赖
 npm install
 
-# 3. 启动开发服务器（tsx 热重载）
-npm run dev
+# 生产模式必须显式提供强管理员密码
+ADMIN_PASSWORD='replace-with-a-strong-password' npm run dev
 ```
 
-启动后输出：
+开发服务器默认监听 `http://localhost:8080`：
 
-```
-📁 Database: E:\Server\data\crash_reports.db
-🔑 Auth token: <随机生成的32位hex>
+- Web 后台：`/web/`
+- HTML API 文档：`/web/api-doc`
+- API：`/api/v1`
+- 健康检查：`/health`
 
-  🚀 Crash Report Server is running!
-  📡 API:  http://localhost:8080/api/v1/
-  🌐 Web:  http://localhost:8080/web/
-  ❤️  Health: http://localhost:8080/health
-
-  Unity client usage:
-    POST http://your-server:8080/api/v1/crash-report
-```
-
-### Docker 部署
+构建与运行：
 
 ```bash
-# 构建并启动
-docker-compose build
-docker-compose up -d
-
-# 查看日志
-docker-compose logs -f
-
-# 停止
-docker-compose down
+npm run build
+ADMIN_PASSWORD='replace-with-a-strong-password' npm start
 ```
 
-数据通过 Docker volume `crash_data` 持久化，重启不会丢失。
+Docker Compose：
 
----
-
-## 架构设计
-
-```
-Unity Game Client ──HTTP POST──▶  Express Server (port 8080)
-                                      │
-                          ┌───────────┼───────────┐
-                          ▼                       ▼
-                    /api/v1/*  REST API      /web/*  管理后台
-                          │                 (内嵌 HTML 模板)
-                          ▼
-                     SQLite (WAL 模式)
-                   crash_reports.db
-                          │
-                    ┌─────┴──────┐
-                    ▼            ▼
-              crash_reports   symbols/
-              crash_groups    attachments/
+```bash
+# 在 .env 中设置 ADMIN_PASSWORD
+ADMIN_PASSWORD='replace-with-a-strong-password' docker compose up -d --build
 ```
 
-- **后端**: Express 5 + TypeScript，编译为 ES Module
-- **数据库**: SQLite（WAL 模式，支持并发读），零配置，单文件存储
-- **前端**: 服务端渲染 HTML 模板 + Alpine.js + Chart.js + Tailwind CSS CDN
-- **部署**: 多阶段 Docker 构建，最终镜像约 200MB
+运行数据默认保存在 `data/`；SQLite 自动迁移，不需要单独运行 migration 命令。
 
----
+## 鉴权和权限
 
-## 去重策略
+### 上报 API Key
 
-服务器使用 **SHA256 前 16 位 hex** 作为崩溃分组的 hash，计算逻辑如下：
+默认 `API_REQUIRE_KEY=true`。以下端点需要 operator 或 admin API Key：
 
+- `POST /api/v1/crash-report`
+- `POST /api/v1/unity/crash-report`
+- `POST /api/v1/player-feedback`
+- `POST /api/v1/project-sources`
+
+支持两种请求头：
+
+```http
+Authorization: Bearer <api-key>
 ```
-crash_hash = SHA256(exception_type + "|" + first_stack_frame + "|" + platform)[0:16]
+
+或：
+
+```http
+X-API-Key: <api-key>
 ```
 
-**提取第一帧堆栈**的规则（`service.ts`）：
+API Key 由登录用户通过账户页面或 `/api/v1/auth/api-keys` 创建，明文只在创建响应中返回一次。viewer key 不能写入；operator/admin key 可以调用上报端点。
 
-| 堆栈格式 | 提取结果 | 示例 |
-|----------|----------|------|
-| `at Class.Method () [0x…]` | `Class.Method` | Unity IL2CPP / Mono |
-| `#00 pc 0x… libunity.so (Class::Method)` | `Class::Method` | Android Native |
-| 无法匹配任何模式 | 堆栈第一行前 120 个字符 | 兜底策略 |
-| 空堆栈 | `no-stack` | 无堆栈信息 |
+### 管理 API Session
 
-相同 hash 的崩溃会自动归入同一 `crash_group`，新报告到达时：
-- 该 group 的 `last_seen` 更新为当前时间
-- `total_count` 自增 1
-- 设备型号、内存大小等差异字段不影响分组
+查询、分析、下载、符号和管理 API 使用登录 Session Cookie。登录：
 
----
+```bash
+curl -c cookies.txt \
+  -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"..."}' \
+  http://localhost:8080/api/v1/auth/login
+```
+
+Cookie 认证的 `POST`、`PUT`、`PATCH`、`DELETE` 请求还需要 CSRF。登录响应已经设置 `csrf_token` Cookie，也可调用：
+
+```bash
+curl -b cookies.txt -c cookies.txt \
+  http://localhost:8080/api/v1/auth/csrf
+```
+
+写请求需发送 Cookie 值对应的请求头：
+
+```http
+X-CSRF-Token: <csrf_token>
+```
+
+主要权限：
+
+- `admin`：完整管理权限；可删除符号/反馈、管理用户、清空崩溃
+- `operator`：查看崩溃详情、更新状态、管理自己的 API Key、上传符号
+- `viewer`：受限只读页面与列表
+
+## 项目分类与分组规则
+
+当前分组 hash：
+
+```text
+SHA256(exception_type | first_stack_frame | runtime [| normalized_project_name])[0:16]
+```
+
+- 提供 `project_name` 时，项目名参与 hash；不同项目不会混组。
+- 不提供 `project_name` 时，继续使用旧版 hash 公式，兼容已有客户端和历史分组。
+- `project_name` 大小写不敏感，最大 100 字符。
 
 ## API 参考
 
-### 基础信息
+Base URL：`http://localhost:8080/api/v1`
 
-- **Base URL**: `http://<host>:8080/api/v1`
-- **Content-Type**: `application/json`（上传文件时使用 `multipart/form-data`）
-- **响应格式**: 所有成功响应为 JSON；错误响应格式为 `{ "error": "...", "message": "..." }`
+错误响应通常为：
 
-### 认证与权限（安全加固版）
-
-系统使用 SQLite 持久化用户、服务端会话和 API Key，不再使用配置文件中的固定 SHA256 密码或可伪造的自包含 Session：
-
-- 首次启动在 `users` 表创建管理员。部署时必须通过 `ADMIN_PASSWORD` 提供强密码；未提供时开发模式会生成一次性随机密码并输出到控制台。
-- 密码使用带随机 salt 的 `scrypt` 保存；修改密码、禁用账户或更改角色会撤销已有会话。
-- 角色分为 `admin`、`operator`、`viewer`：只有 `admin` 可创建账户、分配角色、重置其他账户密码、创建/撤销 API Key 和清空全部数据。
-- 管理后台使用 `HttpOnly`、`SameSite=Strict` Session Cookie；所有 Cookie 认证的写请求还需 `X-CSRF-Token`。
-- 客户端上报默认要求管理员创建的 API Key，可使用 `X-API-Key: crs_...` 或 `Authorization: Bearer crs_...`。
-- 登录和 API 均有速率限制；默认同源 CORS、隐藏框架标识、启用常用安全响应头；生产环境应启用 TLS 并设置 `COOKIE_SECURE=true`。
-
-管理入口：登录后管理员访问 `/web/accounts`。API Key 明文只在创建响应中显示一次。
-
-**公开且无需会话 Cookie的端点**：
-- `POST /api/v1/crash-report`（默认仍需 API Key）
-- `POST /api/v1/unity/crash-report`（默认仍需 API Key）
-- `POST /api/v1/player-feedback`（默认仍需 API Key）
-- `POST /web/login` / `GET /web/login`
-- `GET /health`
-
-**受保护端点**：所有查询、下载和管理 API 均需有效 Session 或 API Key，并根据角色限制写操作。
-
----
-
-### 1. 提交崩溃报告
-
-```
-POST /api/v1/crash-report
+```json
+{ "error": "Bad Request", "message": "..." }
 ```
 
-接收 Unity 客户端上报的崩溃/异常报告。支持三种提交方式。
+### 1. 提交崩溃
 
-#### 方式一：纯 JSON（推荐）
+```http
+POST /crash-report
+```
+
+支持 `application/json`，也支持 `multipart/form-data`。multipart 可以使用普通字段，或将完整 JSON 放在 `report` 字段；附件字段名为 `attachments`，最多 10 个，单文件默认最大 20 MiB。
+
+只有 `exception_type` 必填。常用字段：
+
+| 字段 | 类型 | 说明 |
+|---|---|---|
+| `exception_type` | string | 必填，异常类型 |
+| `project_name` | string | 可选，项目名称；未传时为 Unassigned |
+| `exception_message` | string | 异常消息 |
+| `stack_trace` | string | 堆栈；超过 `MAX_LOG_SIZE` 时截断 |
+| `log_text` | string | 日志；超过 `MAX_LOG_SIZE` 时截断 |
+| `runtime` | string | 如 `node`、`typescript`、`python`、`go`、`unity` |
+| `runtime_version` | string | 运行时版本 |
+| `framework` | string | 框架/引擎 |
+| `environment` | string | `production`、`staging`、`development` 等 |
+| `server_name` | string | 服务或应用实例名 |
+| `release` | string | 发布版本、构建版本或 Git commit；用于匹配源码快照 |
+| `error_severity` | string | `warning`、`error`、`fatal`、`crash` |
+| `platform` | string | 操作系统或运行平台 |
+| `app_version` | string | 应用版本 |
+| `build_guid` | string | Unity 符号匹配标识 |
+| `custom_data` | object/string | 自定义上下文 |
+| `client_timestamp` | string | ISO 8601 客户端时间 |
+
+JSON 示例：
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/crash-report \
+  -H "X-API-Key: <key>" \
   -H "Content-Type: application/json" \
   -d '{
-    "exception_type": "NullReferenceException",
-    "exception_message": "Object reference not set to an instance of an object",
-    "stack_trace": "at PlayerController.Update () [0x00000] in <game>:0\n  at UnityEngine.MonoBehaviour.Update () [0x00000]",
-    "log_text": "Unity Player.log full content here...",
-    "unity_version": "2022.3.10f1",
-    "platform": "Android",
-    "device_model": "Samsung Galaxy S23",
-    "os_version": "Android 14",
-    "gpu_name": "Adreno 740",
-    "cpu_name": "Snapdragon 8 Gen 2",
-    "memory_mb": 8192,
-    "app_version": "1.2.3",
-    "bundle_id": "com.example.game",
-    "scene_name": "Level_01",
-    "custom_data": {"user_id": "abc123", "session_id": "sess-001"},
-    "client_timestamp": "2026-07-27T12:00:00Z"
+    "project_name": "api-gateway",
+    "exception_type": "TypeError",
+    "exception_message": "Cannot read properties of undefined",
+    "stack_trace": "at loadUser (/app/src/service.ts:42:15)",
+    "runtime": "typescript",
+    "runtime_version": "5.9",
+    "framework": "express",
+    "environment": "production",
+    "release": "abc1234",
+    "error_severity": "error"
   }'
 ```
 
-#### 方式二：Multipart 表单字段
-
-适用于不需要上传附件的表单提交：
+multipart 示例：
 
 ```bash
 curl -X POST http://localhost:8080/api/v1/crash-report \
+  -H "X-API-Key: <key>" \
+  -F "project_name=my-game" \
   -F "exception_type=NullReferenceException" \
-  -F "exception_message=Something went wrong" \
-  -F "stack_trace=at EnemyAI.Update () [0x00000]" \
-  -F "platform=Windows" \
-  -F "app_version=1.0.0"
+  -F "runtime=unity" \
+  -F "release=build-1024" \
+  -F "stack_trace=at Player.Update () in Assets/Scripts/Player.cs:42" \
+  -F "attachments=@crash.dmp"
 ```
 
-#### 方式三：Multipart + JSON + 附件
+成功响应：
 
-适用于需要附带截图、日志文件等附件的场景：
+```json
+{ "id": 42, "group_id": 7, "is_new_group": true }
+```
+
+### 2. 上传项目源码快照
+
+```http
+POST /project-sources
+```
+
+multipart 字段：
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `project_name` | 是 | 1–100 字符，与崩溃上报使用相同名称 |
+| `release` | 否 | 最多 200 字符；建议与崩溃报告完全一致 |
+| `files` | 二选一 | 可重复提交的散装源码文件，单次最多 100 个 |
+| `archive` | 二选一 | 一个 `.tar.gz` 或 `.tgz` 项目包 |
+
+散装文件与压缩包可以同时上传。每次成功请求创建一个不可变快照。默认限制：
+
+- 单源码文件最大 2 MiB
+- 上传/解包后总量最大 64 MiB
+- 快照最多 5000 个受支持文本源码文件
+- 拒绝绝对路径、`..` 路径、NUL 和二进制内容
+- 只读取源码文本，不执行或编译上传代码
+
+压缩包示例：
 
 ```bash
-curl -X POST http://localhost:8080/api/v1/crash-report \
-  -F 'report={"exception_type":"NullReferenceException","stack_trace":"at Foo ()","platform":"Android"};type=application/json' \
-  -F 'attachments=@screenshot.png' \
-  -F 'attachments=@player.log'
+curl -X POST http://localhost:8080/api/v1/project-sources \
+  -H "X-API-Key: <key>" \
+  -F "project_name=api-gateway" \
+  -F "release=abc1234" \
+  -F "archive=@api-gateway.tar.gz"
 ```
 
-**表单字段说明**：`report` 为 JSON 字符串，`attachments` 为文件字段（可重复最多 10 个）。
+散装源码示例；使用 `filename=` 保留项目相对路径：
 
-#### 请求参数
+```bash
+curl -X POST http://localhost:8080/api/v1/project-sources \
+  -H "X-API-Key: <key>" \
+  -F "project_name=api-gateway" \
+  -F "release=abc1234" \
+  -F "files=@src/app.ts;filename=src/app.ts" \
+  -F "files=@src/service.ts;filename=src/service.ts"
+```
 
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `exception_type` | string | **是** | 异常类型，如 `NullReferenceException` |
-| `exception_message` | string | 否 | 异常消息 |
-| `stack_trace` | string | 否 | 完整堆栈跟踪（超过 10MB 自动截断） |
-| `log_text` | string | 否 | Unity Player.log 完整日志内容（超过 10MB 自动截断） |
-| `unity_version` | string | 否 | Unity 版本号，如 `2022.3.10f1` |
-| `platform` | string | 否 | 运行平台：`Android` / `iOS` / `Windows` / `Mac` / `WebGL` / `Linux` |
-| `device_model` | string | 否 | 设备型号，如 `Samsung Galaxy S23` |
-| `os_version` | string | 否 | 操作系统版本，如 `Android 14` |
-| `gpu_name` | string | 否 | GPU 名称 |
-| `cpu_name` | string | 否 | CPU 名称 |
-| `memory_mb` | number | 否 | 设备内存（MB） |
-| `app_version` | string | 否 | 应用版本号，如 `1.2.3` |
-| `bundle_id` | string | 否 | 包名，如 `com.example.game` |
-| `scene_name` | string | 否 | 发生崩溃的场景名称 |
-| `custom_data` | object/string | 否 | 自定义数据（JSON 对象或字符串） |
-| `client_timestamp` | string | 否 | 客户端崩溃时间（ISO 8601 格式） |
-
-#### 成功响应 — `201 Created`
+响应：
 
 ```json
 {
-  "id": 42,
-  "group_id": 7,
-  "is_new_group": true
-}
-```
-
-| 字段 | 说明 |
-|------|------|
-| `id` | 本条崩溃报告的 ID |
-| `group_id` | 所属崩溃分组的 ID |
-| `is_new_group` | `true` 表示新建了分组（首次出现），`false` 表示归入已有分组 |
-
-#### 错误响应
-
-```json
-// 400 — 缺少必填字段
-{ "error": "Bad Request", "message": "exception_type is required and must be a string" }
-
-// 400 — JSON 解析失败
-{ "error": "Bad Request", "message": "Invalid JSON in request body" }
-
-// 500 — 服务器内部错误
-{ "error": "Internal Server Error", "message": "..." }
-```
-
----
-
-### 2. Unity 专属崩溃上报
-
-```
-POST /api/v1/unity/crash-report
-```
-
-Unity 客户端专用端点，会对 `User-Agent`（含 "unity"）或 `X-Client-Type: unity` 请求头进行校验。请求参数与通用端点完全一致，但会自动设置 `runtime = 'unity'`、`framework = 'unity'`。
-
-> **注意**: 非 Unity 客户端调用此端点将返回 `403 Forbidden`。
-
-```bash
-# Unity 客户端调用（需要 unity User-Agent 或 x-client-type header）
-curl -X POST http://localhost:8080/api/v1/unity/crash-report \
-  -H "x-client-type: unity" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "exception_type": "UnityException",
-    "stack_trace": "(0xDEAD) at MyScript.Update() [0x00000]",
-    "unity_version": "6000.0.23f1",
-    "platform": "iOS"
-  }'
-```
-
-#### 成功响应 — `201 Created`
-
-```json
-{ "id": 42, "group_id": 7, "is_new_group": false, "runtime": "unity" }
-```
-
----
-
-### 3. 玩家主动反馈
-
-```
-POST /api/v1/player-feedback
-```
-
-玩家在游戏内手动填写的 Bug、建议或其他反馈。无需认证。
-
-**必填字段**: `title`（最大 200 字符）、`description`（最大 `MAX_LOG_SIZE` 字符）
-
-**可选字段**: `category`（`bug`/`suggestion`/`other`，默认 `bug`）、`severity`（`low`/`normal`/`high`/`critical`，默认 `normal`）、`player_id`、`player_name`、`contact`、`app_version`、`platform`、`device_model`、`scene_name`、`custom_data`、`client_timestamp`
-
-```bash
-curl -X POST http://localhost:8080/api/v1/player-feedback \
-  -H "Content-Type: application/json" \
-  -d '{
-    "title": "购买后无法装备新武器",
-    "description": "在商店购买武器后，点击装备按钮没有任何反应。",
-    "category": "bug",
-    "severity": "high",
-    "player_id": "player-123",
-    "app_version": "2.0.0",
-    "platform": "Android",
-    "scene_name": "Shop"
-  }'
-```
-
-#### 上传附件
-
-使用 `multipart/form-data`，将 JSON 放入 `feedback` 字段，并可重复附加 `attachments` 文件字段（最多 10 个）。
-
-#### 成功响应 — `201 Created`
-
-```json
-{
-  "id": 1,
-  "status": "new",
-  "attachments": [{ "id": 1, "filename": "screenshot.png", "file_size": 245760 }]
-}
-```
-
----
-
-### 4. 查询崩溃分组列表
-
-```
-GET /api/v1/crash-groups
-```
-
-分页查询所有崩溃分组，支持多条件筛选和排序。
-
-#### 查询参数
-
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `page` | number | 1 | 页码 |
-| `page_size` | number | 20（最大 100） | 每页条数 |
-| `status` | string | — | 筛选状态：`open` / `resolved` / `ignored` |
-| `search` | string | — | 搜索异常类型或异常消息（模糊匹配） |
-| `platform` | string | — | 筛选平台（通过 group 关联的 report 间接筛选） |
-| `app_version` | string | — | 筛选应用版本 |
-| `start_date` | string | — | 起始日期（`last_seen >=`），格式 `YYYY-MM-DD` |
-| `end_date` | string | — | 截止日期（`last_seen <=`），格式 `YYYY-MM-DD` |
-| `sort_by` | string | `last_seen` | 排序字段：`last_seen` / `first_seen` / `total_count` / `created_at` / `id` |
-| `sort_order` | string | `desc` | 排序方向：`asc` / `desc` |
-
-> **注意**: `platform` 和 `app_version` 参数当前作用于 group 级别筛选（通过 `crash_groups` 表直接查询），如需按报告的 platform/version 精确筛选，请使用 `/crash-reports` 接口。
-
-#### 示例
-
-```bash
-# 查询所有 open 状态的崩溃，按发生次数降序
-curl "http://localhost:8080/api/v1/crash-groups?status=open&sort_by=total_count&sort_order=desc&page=1&page_size=20"
-
-# 搜索包含 "Null" 的崩溃
-curl "http://localhost:8080/api/v1/crash-groups?search=Null"
-```
-
-#### 响应
-
-```json
-{
-  "items": [
-    {
-      "id": 1,
-      "crash_hash": "a8002ef4f65bcd40",
-      "exception_type": "NullReferenceException",
-      "exception_message": "Object reference not set to an instance of an object",
-      "first_seen": "2026-07-27T03:41:55.549Z",
-      "last_seen": "2026-07-27T03:42:11.180Z",
-      "total_count": 2,
-      "status": "open",
-      "resolved_version": "",
-      "created_at": "2026-07-27 03:41:55"
-    }
+  "project": { "id": 3, "name": "api-gateway" },
+  "release": "abc1234",
+  "snapshot_id": 9,
+  "accepted": [
+    { "path": "src/service.ts", "file_size": 2048, "language": "typescript" }
   ],
-  "total": 1,
-  "page": 1,
-  "page_size": 20,
-  "total_pages": 1
-}
-```
-
----
-
-### 5. 查询崩溃分组详情
-
-```
-GET /api/v1/crash-groups/:id
-```
-
-返回单个分组的完整信息，并附带最近 20 条报告。
-
-```bash
-curl http://localhost:8080/api/v1/crash-groups/1
-```
-
-#### 响应
-
-```json
-{
-  "id": 1,
-  "crash_hash": "a8002ef4f65bcd40",
-  "exception_type": "NullReferenceException",
-  "exception_message": "Object reference not set to an instance of an object",
-  "first_seen": "2026-07-27T03:41:55.549Z",
-  "last_seen": "2026-07-27T03:42:11.180Z",
-  "total_count": 2,
-  "status": "open",
-  "resolved_version": "",
-  "created_at": "2026-07-27 03:41:55",
-  "recent_reports": [
-    {
-      "id": 2,
-      "group_id": 1,
-      "exception_type": "NullReferenceException",
-      "exception_message": "Same crash",
-      "stack_trace": "at PlayerController.Update () [0x00000]",
-      "platform": "Android",
-      "device_model": "",
-      "app_version": "1.2.3",
-      "created_at": "2026-07-27T03:42:11.180Z"
-    }
+  "skipped": [
+    { "path": "assets/logo.png", "reason": "unsupported extension" }
   ]
 }
 ```
 
-#### 错误响应
+### 3. Unity 专属上报
+
+```http
+POST /unity/crash-report
+```
+
+请求字段与通用上报一致。服务自动设置 `runtime=unity`；没有 `runtime_version` 时使用 `unity_version`。请求头必须包含 Unity User-Agent，或：
+
+```http
+X-Client-Type: unity
+```
+
+同样支持 `project_name`、`release` 和 `attachments`。
+
+### 4. 玩家反馈上报
+
+```http
+POST /player-feedback
+```
+
+JSON 必填字段为 `title` 和 `description`。可选字段：`category`、`severity`、`player_id`、`player_name`、`contact`、`app_version`、`platform`、`device_model`、`scene_name`、`custom_data`、`client_timestamp`。
+
+- `category`：`bug`、`suggestion`、`other`
+- `severity`：`low`、`normal`、`high`、`critical`
+- multipart 时可将 JSON 放入 `feedback`，附件字段为 `attachments`，最多 10 个
+
+### 5. 崩溃分组
+
+```http
+GET /crash-groups
+GET /crash-groups/:id
+PUT /crash-groups/:id/status
+```
+
+`GET /crash-groups` 查询参数：
+
+| 参数 | 说明 |
+|---|---|
+| `page`、`page_size` | 默认 1/20；`page_size` 最大 100 |
+| `project_id` | 项目 ID；`0` 只查询 Unassigned |
+| `status` | `open`、`resolved`、`ignored` |
+| `platform`、`app_version`、`runtime`、`environment`、`error_severity` | 通过组内报告筛选 |
+| `search` | 模糊匹配异常类型或消息 |
+| `start_date`、`end_date` | 按 `last_seen` 筛选 |
+| `sort_by` | `last_seen`、`first_seen`、`total_count`、`created_at`、`id` |
+| `sort_order` | `asc` 或 `desc` |
+
+状态更新请求：
 
 ```json
-// 400
-{ "error": "Invalid ID" }
-
-// 404
-{ "error": "Not found" }
+{ "status": "resolved", "resolved_version": "1.2.5" }
 ```
 
----
+### 6. 崩溃报告和分析
 
-### 6. 更新崩溃分组状态
-
-```
-PUT /api/v1/crash-groups/:id/status
-```
-
-将崩溃标记为已解决、忽略或重新打开。
-
-```bash
-# 标记为已解决
-curl -X PUT http://localhost:8080/api/v1/crash-groups/1/status \
-  -H "Content-Type: application/json" \
-  -d '{"status": "resolved", "resolved_version": "1.2.4"}'
-
-# 标记为忽略
-curl -X PUT http://localhost:8080/api/v1/crash-groups/1/status \
-  -H "Content-Type: application/json" \
-  -d '{"status": "ignored"}'
-
-# 重新打开
-curl -X PUT http://localhost:8080/api/v1/crash-groups/1/status \
-  -H "Content-Type: application/json" \
-  -d '{"status": "open"}'
+```http
+GET /crash-reports
+GET /crash-reports/:id
+GET /crash-reports/:id/analysis
+GET /crash-reports/:id/symbolication
 ```
 
-#### 请求参数
+`GET /crash-reports` 支持 `page`、`page_size`、`group_id`、`project_id`（`0` 为 Unassigned）、`platform`、`app_version`、`start_date`、`end_date`。
 
-| 参数 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `status` | string | **是** | `open` / `resolved` / `ignored` |
-| `resolved_version` | string | 否 | 修复版本号（仅在 status=resolved 时有意义） |
+Crash Analysis 返回：
 
-#### 成功响应
+- `detected_language`
+- `file_tree`
+- `trigger_point`
+- `stack_chain`
+- `summary`
+- 有匹配源码时的 `source_analysis`
 
-```json
-{ "success": true }
-```
-
-#### 错误响应
-
-```json
-// 400
-{ "error": "Invalid status", "message": "Status must be one of: open, resolved, ignored" }
-
-// 404
-{ "error": "Group not found" }
-```
-
----
-
-### 7. 查询单条报告列表
-
-```
-GET /api/v1/crash-reports
-```
-
-查询所有单独的崩溃报告（不分组），支持筛选。
-
-#### 查询参数
-
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `page` | number | 1 | 页码 |
-| `page_size` | number | 20（最大 100） | 每页条数 |
-| `group_id` | number | — | 筛选指定分组的报告 |
-| `platform` | string | — | 筛选平台 |
-| `app_version` | string | — | 筛选应用版本 |
-| `start_date` | string | — | 起始日期（`created_at >=`） |
-| `end_date` | string | — | 截止日期（`created_at <=`） |
-
-```bash
-# 查某分组的全部报告
-curl "http://localhost:8080/api/v1/crash-reports?group_id=1"
-
-# 查 iOS 平台的报告
-curl "http://localhost:8080/api/v1/crash-reports?platform=iOS&page_size=50"
-```
-
-#### 响应格式
-
-与 [查询崩溃分组列表](#2-查询崩溃分组列表) 相同的分页结构，`items` 为 `CrashReport` 对象数组。
-
----
-
-### 8. 查询单条报告详情
-
-```
-GET /api/v1/crash-reports/:id
-```
-
-返回完整的报告信息，包含附件列表。
-
-```bash
-curl http://localhost:8080/api/v1/crash-reports/1
-```
-
-#### 响应
+`source_analysis` 包含：
 
 ```json
 {
-  "id": 1,
-  "group_id": 1,
-  "exception_type": "NullReferenceException",
-  "exception_message": "Object reference not set...",
-  "stack_trace": "at PlayerController.Update () [0x00000]...",
-  "log_text": "Unity Player.log content...",
-  "unity_version": "2022.3.10f1",
-  "platform": "Android",
-  "device_model": "Samsung Galaxy S23",
-  "os_version": "Android 14",
-  "gpu_name": "Adreno 740",
-  "cpu_name": "Snapdragon 8 Gen 2",
-  "memory_mb": 8192,
-  "app_version": "1.2.3",
-  "bundle_id": "com.example.game",
-  "scene_name": "Level_01",
-  "custom_data": "{\"user_id\":\"abc123\"}",
-  "client_ip": "::1",
-  "client_timestamp": "2026-07-27T12:00:00Z",
-  "created_at": "2026-07-27T03:41:55.549Z",
-  "attachments": [
-    {
-      "id": 1,
-      "crash_report_id": 1,
-      "filename": "screenshot.png",
-      "content_type": "image/png",
-      "file_size": 245760,
-      "file_path": "/app/data/attachments/a1b2c3d4e5f6.png",
-      "created_at": "2026-07-27 03:41:55"
-    }
-  ]
+  "project_name": "api-gateway",
+  "requested_release": "abc1234",
+  "snapshot_release": "abc1234",
+  "snapshot_id": 9,
+  "match_type": "exact",
+  "crash_source": {
+    "file_path": "src/service.ts",
+    "line_number": 42,
+    "function_name": "loadUser",
+    "snippet": "   42 | ..."
+  },
+  "function_definition": {},
+  "references": [],
+  "warnings": []
 }
 ```
 
-> **注意**: 附件仅返回元数据，不返回文件内容。附件文件存储在服务器的 `data/attachments/` 目录中。
+`match_type=latest` 表示没有与报告 `release` 精确匹配的快照，分析使用了该项目最新源码。函数定义和引用是启发式文本匹配结果，最多返回 20 个引用。
 
----
+### 7. 项目和统计
 
-### 9. 符号化信息查询
-
-```
-GET /api/v1/crash-reports/:id/symbolication
-```
-
-查询指定报告的符号化（地址→函数名翻译）结果。
-
-```bash
-curl http://localhost:8080/api/v1/crash-reports/1/symbolication
+```http
+GET /projects
+GET /platforms
+GET /versions
+GET /stats/dashboard
 ```
 
-#### 响应
+`GET /projects` 返回项目和每个项目的崩溃报告数：
 
 ```json
-{
-  "report_id": 1,
-  "runtime": "unity",
-  "build_guid": "a1b2c3d4e5f6a7b8",
-  "symbolication_status": "symbolicated",
-  "symbolicated_stack": "PlayerController.Update() (Assets/Scripts/Player.cs:42)\n...",
-  "symbolication_info": {},
-  "symbol_id": 1
-}
+[
+  {
+    "id": 3,
+    "name": "api-gateway",
+    "crash_count": 42,
+    "created_at": "2026-07-31 10:00:00",
+    "updated_at": "2026-07-31 10:00:00"
+  }
+]
 ```
 
----
+Dashboard 统计包括总数、状态、今日/近七天计数、Top 崩溃、平台/版本/runtime/environment 分布和 30 天趋势。
 
-### 10. 崩溃分析
+### 8. 符号文件
 
-```
-GET /api/v1/crash-reports/:id/analysis
-```
-
-对指定报告进行 AI 辅助分析，返回崩溃原因分析和修复建议。
-
-```bash
-curl http://localhost:8080/api/v1/crash-reports/1/analysis
+```http
+POST   /symbols
+GET    /symbols
+GET    /symbols/:id/download
+DELETE /symbols/:id
 ```
 
-#### 响应
+上传字段：
+
+| 字段 | 必填 | 说明 |
+|---|---|---|
+| `file` | 是 | 最大 500 MiB |
+| `build_guid` | 是 | 与崩溃报告匹配 |
+| `platform` | 否 | 默认 `unknown` |
+| `symbol_type` | 否 | `symbol_map`、`elf`、`dsym`、`unknown`；默认按文件名识别 |
+| `module_name` | 否 | 模块名称 |
+| `architecture` | 否 | 如 `arm64`、`x86_64` |
+
+列表支持 `page`、`page_size`（最大 200）、`platform`、`build_guid`。
+
+### 9. 玩家反馈管理
+
+```http
+GET    /player-feedback
+GET    /player-feedback/:id
+PUT    /player-feedback/:id/status
+DELETE /player-feedback/:id
+```
+
+列表支持 `page`、`page_size`、`status`、`category`、`search`。删除仅限 admin。
+
+### 10. 下载、导出和导入
+
+```http
+GET  /download/report/:id
+GET  /download/group/:id
+GET  /download/dump/:reportId
+GET  /download/attachment/:id
+GET  /download/player-feedback/attachment/:id
+GET  /export/group/:id
+POST /import?confirm=false
+POST /import?confirm=true
+```
+
+`.crashpkg` 是 tar.gz，包含 manifest、报告 JSON 和附件。导入时先使用 `confirm=false` 检查冲突，再用 `confirm=true` 写入。新格式携带项目名；旧数据包仍可导入。
+
+### 11. 账户和 API Key
+
+前缀均为 `/api/v1/auth`：
+
+```http
+POST   /login
+POST   /logout
+GET    /me
+GET    /csrf
+POST   /forgot-password
+POST   /reset-password
+GET    /users
+POST   /users
+PATCH  /users/:id
+PUT    /users/:id/password
+POST   /admin-reset/:id
+GET    /api-keys
+POST   /api-keys
+DELETE /api-keys/:id
+PATCH  /api-keys/:id/tier
+```
+
+具体可用操作由 admin/operator/viewer 角色限制。API Key tier 为 `admin`、`operator`、`viewer`。
+
+### 12. 数据清理和健康检查
+
+```http
+POST /clear-crashes
+GET  /health
+```
+
+`POST /clear-crashes` 仅限 admin，会删除崩溃组、报告和崩溃附件，操作不可逆。
+
+健康响应：
 
 ```json
-{
-  "report_id": 1,
-  "analysis": "..."
-}
+{ "status": "ok" }
 ```
 
----
-
-### 11. 数据导出导入
-
-```
-GET  /api/v1/export/group/:id
-POST /api/v1/import
-```
-
-**导出崩溃分组** — 下载为 `.crashpkg`（tar.gz 格式），包含 `manifest.json`、所有报告 JSON、附件文件。
-
-```bash
-# 导出分组
-curl http://localhost:8080/api/v1/export/group/1 \
-  -o crash-group-1.crashpkg
-```
-
-**导入崩溃数据包**
-
-```bash
-# 试运行（不写入数据，仅检查冲突）
-curl -X POST http://localhost:8080/api/v1/import?confirm=false \
-  -F "package=@crash-group-1.crashpkg"
-
-# 正式导入
-curl -X POST "http://localhost:8080/api/v1/import?confirm=true" \
-  -F "package=@crash-group-1.crashpkg"
-```
-
-试运行响应返回冲突信息和预期数量：
-
-```json
-{
-  "dry_run": true,
-  "conflicts": [{ "crash_hash": "a8002ef4f65bcd40", "existing_group_id": 1 }],
-  "new_groups": 0,
-  "new_reports": 5,
-  "new_attachments": 2
-}
-```
-
-正式导入响应增加 `group_id` 字段：
-
-```json
-{ "dry_run": false, "conflicts": [], "new_groups": 1, "new_reports": 5, "new_attachments": 2, "group_id": 10 }
-```
-
----
-
-### 12. 文件下载
-
-```
-GET /api/v1/download/report/:id
-GET /api/v1/download/group/:id
-GET /api/v1/download/dump/:reportId
-GET /api/v1/download/attachment/:id
-GET /api/v1/download/player-feedback/attachment/:id
-```
-
-下载崩溃报告、分组、Dump 解析信息或附件的 JSON/文件。
-
-| 路径 | 说明 | 响应格式 |
-|------|------|----------|
-| `/download/report/:id` | 下载报告 JSON | `crash-report-{id}.json` |
-| `/download/group/:id` | 下载分组 + 所有报告 JSON | `crash-group-{id}.json` |
-| `/download/dump/:reportId` | 下载 Dump 解析信息 | `dump-info-{id}.json` |
-| `/download/attachment/:id` | 下载崩溃报告附件 | 原始文件流 |
-| `/download/player-feedback/attachment/:id` | 下载玩家反馈附件 | 原始文件流 |
-
-```bash
-curl http://localhost:8080/api/v1/download/report/1 -o report-1.json
-curl http://localhost:8080/api/v1/download/attachment/5 -o screenshot.png
-```
-
----
-
-### 13. 仪表盘统计
-
-```
-GET /api/v1/stats/dashboard
-```
-
-返回 Web 管理后台仪表盘所需的所有统计数据。
-
-```bash
-curl http://localhost:8080/api/v1/stats/dashboard
-```
-
-#### 响应
-
-```json
-{
-  "total_crashes": 156,
-  "total_groups": 23,
-  "open_groups": 18,
-  "resolved_groups": 5,
-  "crashes_today": 12,
-  "crashes_week": 89,
-  "top_crashes": [
-    {
-      "group_id": 3,
-      "exception_type": "NullReferenceException",
-      "exception_message": "Object reference not set...",
-      "count": 45,
-      "last_seen": "2026-07-27T10:30:00Z"
-    }
-  ],
-  "platform_distribution": [
-    { "platform": "Android", "count": 98 },
-    { "platform": "iOS", "count": 42 },
-    { "platform": "Windows", "count": 16 }
-  ],
-  "version_distribution": [
-    { "app_version": "1.2.3", "count": 120 },
-    { "app_version": "1.2.2", "count": 36 }
-  ],
-  "daily_trend": [
-    { "date": "2026-07-01", "count": 5 },
-    { "date": "2026-07-02", "count": 8 }
-  ]
-}
-```
-
-| 字段 | 说明 |
-|------|------|
-| `total_crashes` | 报告总数 |
-| `total_groups` | 崩溃分组总数 |
-| `open_groups` | 未解决的分组数 |
-| `resolved_groups` | 已解决的分组数 |
-| `crashes_today` | 今日报告数 |
-| `crashes_week` | 近 7 天报告数 |
-| `top_crashes` | Top 10 未解决崩溃（按发生次数降序） |
-| `platform_distribution` | 平台分布（按报告数降序） |
-| `version_distribution` | 版本分布 Top 20（按报告数降序） |
-| `daily_trend` | 近 30 天每日崩溃趋势 |
-
----
-
-### 14. 平台与版本列表
-
-```
-GET /api/v1/platforms
-```
-
-返回所有已上报的不同平台名称。
-
-```bash
-curl http://localhost:8080/api/v1/platforms
-```
-
-#### 响应
-
-```json
-["Android", "iOS", "WebGL", "Windows"]
-```
-
----
-
-GET /api/v1/versions
-```
-
-返回最近上报的 50 个不同应用版本号。
-
-```bash
-curl http://localhost:8080/api/v1/versions
-```
-
-#### 响应
-
-```json
-["1.2.3", "1.2.2", "1.2.1", "1.1.0"]
-```
-
----
-
-### 15. 玩家反馈管理
-
-```
-GET    /api/v1/player-feedback
-GET    /api/v1/player-feedback/:id
-PUT    /api/v1/player-feedback/:id/status
-```
-
-查询、管理玩家提交的反馈。所有接口需要认证。
-
-#### 查询参数（GET /api/v1/player-feedback）
-
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `page` | number | 1 | 页码 |
-| `page_size` | number | 20（最大 100） | 每页条数 |
-| `status` | string | — | 筛选状态：`new` / `in_progress` / `resolved` / `closed` |
-| `category` | string | — | 筛选分类：`bug` / `suggestion` / `other` |
-| `search` | string | — | 搜索 title/description/player_name |
-
-```bash
-# 查询所有 bug 反馈
-curl "http://localhost:8080/api/v1/player-feedback?category=bug&status=new"
-
-# 查看详情
-curl http://localhost:8080/api/v1/player-feedback/1
-
-# 更新状态
-curl -X PUT http://localhost:8080/api/v1/player-feedback/1/status \
-  -H "Content-Type: application/json" \
-  -d '{"status": "resolved"}'
-```
-
-#### 更新状态
-
-```json
-// Request
-{ "status": "new" | "in_progress" | "resolved" | "closed" }
-
-// Response
-{ "success": true }
-```
-
----
-
-### 16. 符号文件管理
-
-```
-POST   /api/v1/symbols
-GET    /api/v1/symbols
-GET    /api/v1/symbols/:id/download
-DELETE /api/v1/symbols/:id
-```
-
-管理用于堆栈符号化的调试符号文件。所有接口需要认证。
-
-#### 上传符号文件
-
-```
-POST /api/v1/symbols
-```
-
-上传 Unity 符号文件（如 Android 的 `libil2cpp.so.sym` 或 iOS 的 dSYM），用于后续崩溃堆栈符号化。
-
-```bash
-curl -X POST http://localhost:8080/api/v1/symbols \
-  -F "file=@libil2cpp.so.sym" \
-  -F "platform=Android" \
-  -F "build_guid=a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
-```
-
-**请求参数（multipart/form-data）**
-
-| 字段 | 类型 | 必填 | 说明 |
-|------|------|------|------|
-| `file` | file | **是** | 符号文件（最大 500MB） |
-| `platform` | string | 否（默认 `unknown`） | 平台：`Android` / `iOS` / `Windows` / `Mac` / `WebGL` / `Linux` |
-| `build_guid` | string | **是** | Unity Build GUID（可在 `Player Settings` 或构建日志中找到） |
-| `symbol_type` | string | 否（自动检测） | 类型：`symbol_map` / `elf` / `dsym` |
-| `module_name` | string | 否 | 模块名称 |
-| `architecture` | string | 否 | 架构，如 `arm64` / `x86_64` |
-
-**符号类型自动检测**: 文件名包含 `symbolmap`/`.map`/`.txt` → `symbol_map`；以 `.dsym`/`.zip` 结尾 → `dsym`；以 `.so`/`.sym`/`.dbg` 结尾 → `elf`
-
-**成功响应 — `201 Created`**
-
-```json
-{
-  "id": 1,
-  "platform": "Android",
-  "build_guid": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
-  "filename": "libil2cpp.so.sym",
-  "file_size": 52428800,
-  "file_path": "/app/data/symbols/abc123def456.sym",
-  "symbol_type": "elf",
-  "module_name": "",
-  "architecture": "",
-  "uploaded_at": "2026-07-27 03:41:55"
-}
-```
-
-**错误响应**
-
-```json
-// 400
-{ "error": "Bad Request", "message": "No file uploaded. Use field name \"file\"." }
-{ "error": "Bad Request", "message": "build_guid is required" }
-```
-
-#### 查询符号文件列表
-
-```
-GET /api/v1/symbols
-```
-
-分页查询已上传的符号文件。
-
-**查询参数**
-
-| 参数 | 类型 | 默认值 | 说明 |
-|------|------|--------|------|
-| `page` | number | 1 | 页码 |
-| `page_size` | number | 50（最大 200） | 每页条数 |
-| `platform` | string | — | 筛选平台 |
-| `build_guid` | string | — | 筛选 Build GUID |
-
-```bash
-curl "http://localhost:8080/api/v1/symbols?platform=Android"
-```
-
-**响应**
-
-```json
-{
-  "items": [
-    {
-      "id": 1,
-      "platform": "Android",
-      "build_guid": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6",
-      "filename": "libil2cpp.so.sym",
-      "file_size": 52428800,
-      "file_path": "/app/data/symbols/abc123def456.sym",
-      "symbol_type": "elf",
-      "uploaded_at": "2026-07-27 03:41:55"
-    }
-  ],
-  "total": 1,
-  "page": 1,
-  "page_size": 50,
-  "total_pages": 1
-}
-```
-
-#### 下载符号文件
-
-```
-GET /api/v1/symbols/:id/download
-```
-
-下载上传的符号文件。
-
-```bash
-curl http://localhost:8080/api/v1/symbols/1/download \
-  -o libil2cpp.so.sym
-```
-
-**响应**: 文件流（`Content-Disposition: attachment`）
-
-**错误响应**
-
-```json
-// 400
-{ "error": "Invalid ID" }
-
-// 404
-{ "error": "Not found" }
-```
-
-#### 删除符号文件
-
-```
-DELETE /api/v1/symbols/:id
-```
-
-删除指定符号文件（同时删除磁盘上的文件和数据库记录）。
-
-```bash
-curl -X DELETE http://localhost:8080/api/v1/symbols/1
-```
-
-**成功响应**
-
-```json
-{ "success": true }
-```
-
-**错误响应**
-
-```json
-// 400
-{ "error": "Invalid ID" }
-
-// 404
-{ "error": "Not found" }
-```
-
----
-
-### 17. 数据清理
-
-```
-POST /api/v1/clear-crashes
-```
-
-删除所有崩溃数据（附件文件 + 数据库记录）。需要认证，**此操作不可逆**。
-
-```bash
-curl -X POST http://localhost:8080/api/v1/clear-crashes
-```
-
-**响应**
-
-```json
-{ "success": true, "message": "All crash data cleared" }
-```
-
----
-
-### 18. 健康检查
-
-```
-GET /health
-```
-
-用于 Docker healthcheck 或负载均衡器探活。无需认证。
-
-```bash
-curl http://localhost:8080/health
-```
-
-#### 响应
-
-```json
-{ "status": "ok", "uptime": 3600.123 }
-```
-
----
-
-## Unity 客户端集成
-
-### C# 代码示例
-
-以下是一个完整的 Unity `MonoBehaviour` 崩溃上报组件：
-
-```csharp
-using System;
-using System.Collections;
-using System.Text;
-using UnityEngine;
-using UnityEngine.Networking;
-
-/// <summary>
-/// 自动捕获未处理异常并上报到 Crash Report Server。
-/// 挂载到场景中的任意 GameObject 即可工作。
-/// </summary>
-public class CrashReporter : MonoBehaviour
-{
-    [Header("Server")]
-    [Tooltip("服务器地址，不含路径尾斜杠")]
-    public string serverUrl = "http://localhost:8080";
-
-    [Header("Behavior")]
-    [Tooltip("是否在启动时自动初始化")]
-    public bool initOnStart = true;
-
-    [Tooltip("是否同时将异常输出到 Unity 日志")]
-    public bool logToConsole = true;
-
-    private bool _initialized;
-
-    private void Start()
-    {
-        if (initOnStart) Initialize();
-    }
-
-    /// <summary>
-    /// 初始化崩溃上报。调用后会自动订阅 Application.logMessageReceived 和 AppDomain.UnhandledException。
-    /// </summary>
-    public void Initialize()
-    {
-        if (_initialized) return;
-        _initialized = true;
-
-        Application.logMessageReceived += OnLogMessageReceived;
-        AppDomain.CurrentDomain.UnhandledException += OnUnhandledException;
-
-        // 发送启动事件（可选）
-        StartCoroutine(SendEvent("session_start", new Dictionary<string, object>
-        {
-            ["unity_version"] = Application.unityVersion,
-            ["platform"] = Application.platform.ToString(),
-            ["device_model"] = SystemInfo.deviceModel,
-            ["os_version"] = SystemInfo.operatingSystem,
-            ["gpu_name"] = SystemInfo.graphicsDeviceName,
-            ["cpu_name"] = SystemInfo.processorType,
-            ["memory_mb"] = SystemInfo.systemMemorySize,
-            ["app_version"] = Application.version,
-            ["bundle_id"] = Application.identifier
-        }));
-    }
-
-    private void OnDestroy()
-    {
-        Application.logMessageReceived -= OnLogMessageReceived;
-        AppDomain.CurrentDomain.UnhandledException -= OnUnhandledException;
-    }
-
-    /// <summary>
-    /// 捕获 Unity 日志中的 Exception。
-    /// </summary>
-    private void OnLogMessageReceived(string condition, string stackTrace, LogType type)
-    {
-        if (type != LogType.Exception && type != LogType.Error) return;
-
-        var exceptionType = type == LogType.Exception
-            ? ExtractExceptionType(condition)
-            : "UnityError";
-
-        var payload = new CrashReportPayload
-        {
-            exception_type = exceptionType,
-            exception_message = condition,
-            stack_trace = stackTrace,
-            platform = Application.platform.ToString(),
-            unity_version = Application.unityVersion,
-            device_model = SystemInfo.deviceModel,
-            os_version = SystemInfo.operatingSystem,
-            gpu_name = SystemInfo.graphicsDeviceName,
-            cpu_name = SystemInfo.processorType,
-            memory_mb = SystemInfo.systemMemorySize,
-            app_version = Application.version,
-            bundle_id = Application.identifier
-        };
-
-        StartCoroutine(SendCrashReport(payload));
-    }
-
-    /// <summary>
-    /// 捕获 .NET 未处理异常。
-    /// </summary>
-    private void OnUnhandledException(object sender, UnhandledExceptionEventArgs e)
-    {
-        var ex = e.ExceptionObject as Exception;
-        if (ex == null) return;
-
-        var payload = new CrashReportPayload
-        {
-            exception_type = ex.GetType().Name,
-            exception_message = ex.Message,
-            stack_trace = ex.StackTrace ?? "",
-            platform = Application.platform.ToString(),
-            unity_version = Application.unityVersion,
-            device_model = SystemInfo.deviceModel,
-            os_version = SystemInfo.operatingSystem,
-            app_version = Application.version,
-            bundle_id = Application.identifier
-        };
-
-        StartCoroutine(SendCrashReport(payload, isFatal: true));
-    }
-
-    /// <summary>
-    /// 发送崩溃报告到服务器。
-    /// </summary>
-    private IEnumerator SendCrashReport(CrashReportPayload payload, bool isFatal = false)
-    {
-        if (logToConsole)
-        {
-            Debug.Log($"[CrashReporter] Sending crash report: {payload.exception_type} (fatal={isFatal})");
-        }
-
-        var json = JsonUtility.ToJson(payload);
-
-        using var request = new UnityWebRequest(
-            $"{serverUrl}/api/v1/crash-report", "POST");
-
-        var bodyRaw = Encoding.UTF8.GetBytes(json);
-        request.uploadHandler = new UploadHandlerRaw(bodyRaw);
-        request.downloadHandler = new DownloadHandlerBuffer();
-        request.SetRequestHeader("Content-Type", "application/json");
-
-        yield return request.SendWebRequest();
-
-        if (request.result == UnityWebRequest.Result.Success)
-        {
-            var response = JsonUtility.FromJson<CrashReportResponse>(
-                request.downloadHandler.text);
-            if (logToConsole)
-            {
-                Debug.Log($"[CrashReporter] Reported: id={response.id}, " +
-                          $"group_id={response.group_id}, " +
-                          $"new_group={response.is_new_group}");
-            }
-        }
-        else
-        {
-            Debug.LogError($"[CrashReporter] Failed to send crash report: " +
-                           request.error);
-        }
-    }
-
-    /// <summary>
-    /// 发送自定义事件（如 session_start、custom_event 等）。
-    /// </summary>
-    public IEnumerator SendEvent(string eventType,
-        Dictionary<string, object> data)
-    {
-        var payload = new CrashReportPayload
-        {
-            exception_type = eventType,
-            custom_data = JsonUtility.ToJson(
-                new CustomDataWrapper { data = data })
-        };
-
-        return SendCrashReport(payload);
-    }
-
-    /// <summary>
-    /// 从 condition 字符串中提取异常类型名。
-    /// 形如 "NullReferenceException: Object reference..." → "NullReferenceException"
-    /// </summary>
-    private static string ExtractExceptionType(string condition)
-    {
-        if (string.IsNullOrEmpty(condition)) return "Unknown";
-        var colonIndex = condition.IndexOf(':');
-        return colonIndex > 0
-            ? condition.Substring(0, colonIndex).Trim()
-            : condition;
-    }
-
-    // ----- 内部数据结构 -----
-
-    [Serializable]
-    private class CrashReportPayload
-    {
-        public string exception_type;
-        public string exception_message;
-        public string stack_trace;
-        public string log_text;
-        public string unity_version;
-        public string platform;
-        public string device_model;
-        public string os_version;
-        public string gpu_name;
-        public string cpu_name;
-        public int memory_mb;
-        public string app_version;
-        public string bundle_id;
-        public string scene_name;
-        public string custom_data;
-        public string client_timestamp;
-    }
-
-    [Serializable]
-    private class CrashReportResponse
-    {
-        public int id;
-        public int group_id;
-        public bool is_new_group;
-    }
-
-    [Serializable]
-    private class CustomDataWrapper
-    {
-        public Dictionary<string, object> data;
-    }
-}
-```
-
-### 使用方法
-
-1. 将上述 `CrashReporter.cs` 放入项目的 `Assets/Scripts/` 目录。
-2. 在场景中创建一个空 GameObject，挂载 `CrashReporter` 组件。
-3. 在 Inspector 中设置 `Server URL` 为你的服务器地址。
-4. 运行游戏 — 任何未捕获异常都会自动上报。
-
-### 手动上报
-
-你也可以在任何代码位置手动发送崩溃报告：
-
-```csharp
-using System.Collections;
-using UnityEngine;
-using UnityEngine.Networking;
-
-public IEnumerator ReportManualCrash(string exceptionType, string message,
-    string stackTrace)
-{
-    var json = $@"{{
-        ""exception_type"": ""{EscapeJson(exceptionType)}"",
-        ""exception_message"": ""{EscapeJson(message)}"",
-        ""stack_trace"": ""{EscapeJson(stackTrace)}"",
-        ""platform"": ""{Application.platform}"",
-        ""app_version"": ""{Application.version}"",
-        ""unity_version"": ""{Application.unityVersion}""
-    }}";
-
-    using var request = new UnityWebRequest(
-        "http://your-server:8080/api/v1/crash-report", "POST");
-    var body = System.Text.Encoding.UTF8.GetBytes(json);
-    request.uploadHandler = new UploadHandlerRaw(body);
-    request.downloadHandler = new DownloadHandlerBuffer();
-    request.SetRequestHeader("Content-Type", "application/json");
-
-    yield return request.SendWebRequest();
-
-    if (request.result == UnityWebRequest.Result.Success)
-    {
-        Debug.Log("Crash reported: " + request.downloadHandler.text);
-    }
-}
-
-private string EscapeJson(string s) => s?.Replace("\\", "\\\\")
-    .Replace("\"", "\\\"")
-    .Replace("\n", "\\n")
-    .Replace("\r", "\\r")
-    .Replace("\t", "\\t");
-```
-
-> **推荐**: 在生产环境中使用 `JsonUtility.ToJson()` 或 Newtonsoft.Json 来序列化，避免手动拼接 JSON。
-
-### 附带自定义数据
-
-`custom_data` 字段可以传入任意 JSON 对象：
-
-```csharp
-var customData = new Dictionary<string, object>
-{
-    ["user_id"] = PlayerPrefs.GetString("user_id"),
-    ["session_id"] = currentSessionId,
-    ["level"] = currentLevel,
-    ["game_time_seconds"] = Time.time
-};
-// 序列化后放入 custom_data 字段
-```
-
----
-
----
-
-## Web 管理后台
-
-服务器内嵌了一个完整的 Web 管理后台，支持深色主题和移动端响应式布局。
-
-### 访问地址
-
-```
-http://<host>:8080/web/
-```
-
-### 功能页面
-
-| 页面 | 路径 | 功能 |
-|------|------|------|
-| **仪表盘** | `/web/` | 崩溃趋势折线图、平台分布饼图、版本分布柱状图、Top 崩溃列表、实时统计卡片 |
-| **崩溃列表** | `/web/crashes` | 分页列表、搜索（异常类型/消息模糊匹配）、按状态/平台/版本筛选、多种排序 |
-| **崩溃详情** | `/web/crashes/:id` | 完整堆栈、Player.log 日志、设备信息、历史发生记录表、状态变更操作（标记已解决/忽略/重新打开） |
-| **玩家反馈** | `/web/feedback` | 玩家主动提交的 Bug、建议和其他反馈；可搜索、筛选、查看附件及更新处理状态 |
-| **符号管理** | `/web/symbols` | 符号文件列表、上传、删除 |
-| **API 文档** | `/web/api-doc` | 内置 API 参考文档页面 |
-
-### 技术栈
-
-- **Alpine.js** — 轻量响应式框架（约 15KB）
-- **Chart.js** — Canvas 图表库
-- **Tailwind CSS** — CDN 加载的工具类 CSS
-
----
-
-## 配置参考
-
-所有配置通过环境变量设置。
-
-| 变量 | 默认值 | 说明 |
-|------|--------|------|
-| `PORT` | `8080` | HTTP 监听端口 |
-| `DATA_DIR` | `<项目根>/data` | 数据存储根目录 |
-| `DB_PATH` | `<DATA_DIR>/crash_reports.db` | SQLite 数据库文件路径 |
-| `SYMBOLS_DIR` | `<DATA_DIR>/symbols` | 符号文件存储目录 |
-| `ATTACHMENTS_DIR` | `<DATA_DIR>/attachments` | 附件存储目录 |
-| `MAX_LOG_SIZE` | `10485760` (10MB) | stack_trace / log_text 字段最大字节数，超出自动截断 |
-| `MAX_ATTACHMENT_SIZE` | `20971520` (20MB) | 单个附件文件最大字节数 |
-| `MAX_JSON_BODY_SIZE` | `12582912` (12MB) | JSON 请求体最大字节数 |
-| `CORS_ORIGINS` | `空` | 允许的浏览器来源，留空表示仅同源 |
-| `ADMIN_USERNAME` | `admin` | 首次启动时创建的管理员用户名 |
-| `ADMIN_PASSWORD` | `<随机生成>` | 仅首次建库使用；生产环境必须显式设置强密码 |
-| `COOKIE_SECURE` | 生产环境为 `true` | 是否只通过 HTTPS 发送认证 Cookie |
-| `SESSION_HOURS` | `12` | 登录会话有效期（小时） |
+## 源码支持类型
+
+源码快照接受以下文本扩展名：
+
+- C#：`.cs`
+- C/C++：`.c`、`.h`、`.cpp`、`.cc`、`.cxx`、`.hpp`、`.hh`
+- Go：`.go`
+- Python：`.py`
+- JavaScript/TypeScript：`.js`、`.mjs`、`.cjs`、`.jsx`、`.ts`、`.tsx`
+- Java/Kotlin：`.java`、`.kt`
+- Rust：`.rs`
+- Ruby：`.rb`
+- PHP：`.php`
+- Swift：`.swift`
+- Dart：`.dart`
+- Elixir/Erlang：`.ex`、`.exs`、`.erl`
+- Lua：`.lua`
+
+## 配置
+
+| 环境变量 | 默认值 | 说明 |
+|---|---:|---|
+| `PORT` | `8080` | HTTP 端口 |
+| `DATA_DIR` | `<repo>/data` | 数据根目录 |
+| `DB_PATH` | `<DATA_DIR>/crash_reports.db` | SQLite 文件 |
+| `SYMBOLS_DIR` | `<DATA_DIR>/symbols` | 符号文件目录 |
+| `ATTACHMENTS_DIR` | `<DATA_DIR>/attachments` | 崩溃/反馈附件目录 |
+| `SOURCES_DIR` | `<DATA_DIR>/sources` | 源码快照文件目录 |
+| `MAX_LOG_SIZE` | `10485760` | stack/log 最大字符数，超出截断 |
+| `MAX_ATTACHMENT_SIZE` | `20971520` | 单附件最大字节数 |
+| `MAX_SOURCE_FILE_SIZE` | `2097152` | 单源码文件最大字节数 |
+| `MAX_SOURCE_ARCHIVE_SIZE` | `67108864` | 源码上传及解包总上限 |
+| `MAX_SOURCE_FILES` | `5000` | 单快照最大源码文件数 |
+| `MAX_JSON_BODY_SIZE` | `12582912` | JSON body 最大字节数 |
+| `ADMIN_USERNAME` | `admin` | 首次建库管理员名称 |
+| `ADMIN_PASSWORD` | 开发模式随机生成 | 生产环境必填，仅首次建库使用 |
+| `COOKIE_SECURE` | 生产环境 `true` | 认证 Cookie 是否仅 HTTPS |
+| `SESSION_HOURS` | `12` | Session 有效期 |
 | `API_REQUIRE_KEY` | `true` | 上报端点是否要求 API Key |
-| `TRUST_PROXY` | `false` | Express 可信代理设置；反向代理部署时按拓扑配置 |
-| `LOGIN_RATE_LIMIT` | `5` | 每 15 分钟、每 IP+用户名最大登录尝试数 |
-| `INGEST_RATE_LIMIT` | `120` | 每 IP 每分钟最大上报请求数 |
-| `API_RATE_LIMIT` | `600` | 每 IP 每分钟最大管理 API 请求数 |
-| `WEBHOOK_URL` | `空` | 新崩溃的 Webhook 通知地址 |
-| `WEBHOOK_TIMEOUT_MS` | `5000` | Webhook 请求超时（毫秒） |
-| `ALERT_ON_NEW_GROUP` | `true` | 是否在新崩溃分组出现时发送告警 |
-| `ALERT_THRESHOLD_COUNT` | `10` | 崩溃次数达到此阈值时发送告警 |
-| `SMTP_HOST` / `SMTP_PORT` / `SMTP_SECURE` / `SMTP_USER` / `SMTP_PASSWORD` | `空` | 邮件告警 SMTP 配置 |
-| `ALERT_EMAIL_FROM` / `ALERT_EMAIL_TO` | `空` | 邮件告警的发件/收件地址 |
-| `ADDR2LINE_PATH` | `llvm-addr2line` | ELF 符号解析工具路径 |
+| `CORS_ORIGINS` | 空 | 允许的浏览器 Origin，逗号分隔 |
+| `TRUST_PROXY` | `false` | Express trust proxy |
+| `LOGIN_RATE_LIMIT` | `5` | 每 15 分钟、每 IP+用户名登录尝试数 |
+| `INGEST_RATE_LIMIT` | `120` | 每 IP 每分钟上报请求数 |
+| `API_RATE_LIMIT` | `600` | 每 IP 每分钟管理 API 请求数 |
+| `WEBHOOK_URL` | 空 | Webhook 告警地址 |
+| `WEBHOOK_TIMEOUT_MS` | `5000` | Webhook 超时毫秒数 |
+| `ALERT_ON_NEW_GROUP` | `true` | 新分组时告警 |
+| `ALERT_THRESHOLD_COUNT` | `10` | 次数阈值告警 |
+| `SMTP_HOST` 等 | 空 | SMTP 和邮件告警配置 |
 
-### Docker Compose 示例
+## 数据目录
 
-```yaml
-services:
-  crash-report-server:
-    build: .
-    ports:
-      - "8080:8080"
-    environment:
-      - PORT=8080
-      - DATA_DIR=/app/data
-      - ADMIN_USERNAME=admin
-      - ADMIN_PASSWORD=${ADMIN_PASSWORD:?set a strong password}
-      - API_REQUIRE_KEY=true
-      - COOKIE_SECURE=true
-      - TRUST_PROXY=1
-      - CORS_ORIGINS=https://my-dashboard.example.com
-      - MAX_LOG_SIZE=52428800     # 50MB
-    volumes:
-      - ./server_data:/app/data   # 挂载到宿主机目录
-    restart: unless-stopped
+```text
+data/
+├── crash_reports.db
+├── attachments/
+├── symbols/
+└── sources/
 ```
 
----
+数据库保存用户、Session、API Key、审计日志、项目、源码快照元数据、崩溃、反馈和符号记录；上传的二进制/源码文件保存在对应目录。备份时应同时备份整个 `DATA_DIR`。
 
-## 部署指南
+## Web 页面
 
-### 开发环境
-
-```bash
-git clone <repo>
-cd Server
-npm install
-npm run dev
-```
-
-### 生产环境（Docker）
-
-```bash
-# 构建镜像
-docker build -t crash-report-server .
-
-# 运行容器
-docker run -d \
-  --name crash-report-server \
-  -p 8080:8080 \
-  -v $(pwd)/server_data:/app/data \
-  -e ADMIN_USERNAME=admin \
-  -e ADMIN_PASSWORD='use-a-unique-password-manager-value' \
-  -e API_REQUIRE_KEY=true \
-  -e COOKIE_SECURE=true \
-  -e TRUST_PROXY=1 \
-  crash-report-server
-```
-
-### 生产环境（Docker Compose）
-
-```bash
-docker-compose up -d
-```
-
-### 反向代理（Nginx 示例）
-
-```nginx
-server {
-    listen 80;
-    server_name crash.example.com;
-
-    client_max_body_size 500M;  # 符号文件可能很大
-
-    location / {
-        proxy_pass http://127.0.0.1:8080;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-}
-```
-
----
-
-## 数据持久化
-
-- **SQLite 数据库**: 所有崩溃报告、分组、附件元数据、符号文件记录均存储在 `data/crash_reports.db` 中
-- **附件文件**: 存储在 `data/attachments/` 目录
-- **符号文件**: 存储在 `data/symbols/` 目录
-
-Docker 部署时，通过挂载 volume 或 bind mount 到 `/app/data` 实现持久化：
-
-```bash
-# Volume（推荐）
-docker run -v crash_data:/app/data ...
-
-# Bind mount
-docker run -v /host/path/data:/app/data ...
-```
-
-### 备份
-
-```bash
-# 备份整个数据目录
-tar -czf backup-$(date +%Y%m%d).tar.gz data/
-
-# 仅备份数据库
-cp data/crash_reports.db data/crash_reports.db.bak
-```
-
----
-
-## 项目结构
-
-```
-e:/Server/
-├── src/
-│   ├── main.ts                  # 入口文件：Express 应用初始化、路由注册、服务启动
-│   ├── config.ts                # 配置加载：环境变量读取、默认值、目录初始化
-│   ├── database.ts              # 数据库：SQLite 连接、WAL 模式、Schema 自动迁移
-│   ├── model.ts                 # 类型定义：所有数据模型和接口的 TypeScript 类型
-│   ├── store.ts                 # 数据访问层：所有数据库 CRUD 操作
-│   ├── service.ts               # 业务逻辑层：崩溃 hash 计算、去重分组、报告注入、告警
-│   ├── middleware.ts             # 中间件：Session 认证、请求日志、全局错误处理
-│   ├── analysis/
-│   │   └── analyzer.ts          # AI 辅助崩溃分析
-│   ├── symbolication/
-│   │   ├── types.ts             # 符号化类型定义
-│   │   ├── service.ts           # 符号化调度服务（按类型选择解析器）
-│   │   ├── symbol_map.ts        # IL2CPP 文本符号表解析（二分查找）
-│   │   ├── elf.ts               # ELF/SO 符号解析（llvm-addr2line）
-│   │   └── dsym.ts              # Apple dSYM 符号解析（atos）
-│   └── handler/
-│       ├── crash_report.ts      # 公共崩溃上报 API
-│       ├── feedback.ts          # 玩家反馈上报 API
-│       ├── unity.ts             # Unity 专属上报 API
-│       ├── symbol.ts            # 符号文件 API：上传、下载、列表、删除
-│       ├── query.ts             # 数据查询管理 API：分组、报告、统计、导出导入、下载
-│       └── web.ts               # Web 管理后台：模板渲染、登录、API 文档页面
-├── web/
-│   └── templates/
-│       ├── layout.html          # 基础布局模板（深色主题侧边栏 + 顶栏）
-│       ├── login.html           # 登录页面
-│       ├── dashboard.html       # 仪表盘页面（统计卡片 + Chart.js 图表）
-│       ├── crash_list.html      # 崩溃列表页面（搜索、筛选、分页表格）
-│       ├── crash_detail.html    # 崩溃详情页面（堆栈、日志、设备信息、操作面板）
-│       ├── symbol_list.html     # 符号管理页面（上传、列表、删除）
-│       └── feedback_list.html   # 玩家反馈管理页面
-├── data/                        # 运行时数据目录（Git 忽略）
-│   ├── crash_reports.db         # SQLite 数据库文件
-│   ├── symbols/                 # 上传的符号文件
-│   └── attachments/             # 上传的附件文件
-├── example.py                   # Python 集成示例代码
-├── test_api.py                  # API 自动化测试脚本
-├── Dockerfile                   # 多阶段构建：TypeScript 编译 → 精简运行时镜像
-├── docker-compose.yml           # Docker Compose 编排
-├── package.json                 # Node.js 项目配置
-├── tsconfig.json                # TypeScript 编译配置
-└── README.md                    # 本文件
-```
+| 页面 | 路径 |
+|---|---|
+| Dashboard | `/web/` |
+| Crashes（含项目筛选） | `/web/crashes` |
+| Crash Detail（含源码分析） | `/web/crashes/:groupId` |
+| Player Feedback | `/web/feedback` |
+| Symbols | `/web/symbols` |
+| Accounts/API Keys | `/web/accounts` |
+| HTML API 文档 | `/web/api-doc` |

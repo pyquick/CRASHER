@@ -2,7 +2,7 @@
   <div class="flex items-center justify-between mb-6">
     <h1 class="text-xl font-semibold">📦 Symbol Files</h1>
     <button @click="showUpload = !showUpload"
-            class="px-4 py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition-colors">
+            class="btn btn-blue">
       + Upload Symbol
     </button>
   </div>
@@ -14,7 +14,7 @@
       <div>
         <label class="block text-xs text-gray-500 mb-1">Platform</label>
         <select x-model="uploadForm.platform"
-                class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500">
+                class="fc w-full">
           <option value="Android">Android</option>
           <option value="iOS">iOS</option>
           <option value="Windows">Windows</option>
@@ -27,12 +27,12 @@
         <label class="block text-xs text-gray-500 mb-1">Build GUID *</label>
         <input type="text" x-model="uploadForm.build_guid" required
                placeholder="Unity build GUID..."
-               class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500">
+               class="fc w-full">
       </div>
       <div>
         <label class="block text-xs text-gray-500 mb-1">Symbol Type</label>
         <select x-model="uploadForm.symbol_type"
-                class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500">
+                class="fc w-full">
           <option value="symbol_map">Unity SymbolMap</option>
           <option value="elf">Android ELF / Debug Symbol</option>
           <option value="dsym">iOS dSYM</option>
@@ -42,12 +42,12 @@
       <div>
         <label class="block text-xs text-gray-500 mb-1">Module Name (optional)</label>
         <input type="text" x-model="uploadForm.module_name" placeholder="libil2cpp.so"
-               class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500">
+               class="fc w-full">
       </div>
       <div>
         <label class="block text-xs text-gray-500 mb-1">Architecture (optional)</label>
         <input type="text" x-model="uploadForm.architecture" placeholder="arm64"
-               class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500">
+               class="fc w-full">
       </div>
       <div>
         <label class="block text-xs text-gray-500 mb-1">File *</label>
@@ -56,12 +56,12 @@
       </div>
       <div class="flex gap-3">
         <button type="submit" :disabled="uploading"
-                class="px-4 py-2 bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors">
+                class="btn btn-green">
           <span x-show="!uploading">Upload</span>
           <span x-show="uploading">Uploading...</span>
         </button>
         <button type="button" @click="showUpload = false"
-                class="px-4 py-2 bg-gray-700 hover:bg-gray-600 rounded-lg text-sm transition-colors">
+                class="btn btn-gray">
           Cancel
         </button>
       </div>
@@ -74,7 +74,7 @@
     <div>
       <label class="block text-xs text-gray-500 mb-1">Platform</label>
       <select x-model="filters.platform" @change="load()"
-              class="bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 focus:outline-none focus:border-blue-500">
+              class="fc">
         <option value="">All</option>
         <option value="Android">Android</option>
         <option value="iOS">iOS</option>
@@ -211,18 +211,6 @@
         }
       },
 
-      formatDate(d) {
-        if (!d) return '-';
-        return new Date(d).toLocaleDateString();
-      },
-
-      formatSize(bytes) {
-        if (!bytes) return '0 B';
-        const units = ['B', 'KB', 'MB', 'GB'];
-        let i = 0, size = bytes;
-        while (size >= 1024 && i < units.length - 1) { size /= 1024; i++; }
-        return size.toFixed(1) + ' ' + units[i];
-      }
     }));
   });
 </script>

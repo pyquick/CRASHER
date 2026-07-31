@@ -13,7 +13,8 @@ import { notifyAlert } from './notification/service.js';
  */
 export function computeCrashHash(input: CrashReportInput): string {
   const firstFrame = extractFirstFrame(input.stack_trace ?? '', input.runtime);
-  const content = `${input.exception_type}|${firstFrame}|${input.runtime ?? 'generic'}`;
+  const projectPart = input.project_name ? `|${input.project_name.trim().toLocaleLowerCase()}` : '';
+  const content = `${input.exception_type}|${firstFrame}|${input.runtime ?? 'generic'}${projectPart}`;
   return createHash('sha256').update(content).digest('hex').substring(0, 16);
 }
 
@@ -100,6 +101,9 @@ export async function ingestCrash(
 
   // Use client timestamp if provided, otherwise server time
   const effectiveTime = input.client_timestamp ?? now;
+  const projectName = input.project_name?.trim() || '';
+  const project = projectName ? store.getOrCreateProject(projectName, now) : undefined;
+  if (project) input.project_name = project.name;
 
   const symbolication = await symbolicateUnityCrash(input);
   const groupingInput = symbolication.method
@@ -119,12 +123,13 @@ export async function ingestCrash(
       hash,
       input.exception_type,
       input.exception_message ?? '',
-      effectiveTime
+      effectiveTime,
+      project?.id ?? null
     );
     isNewGroup = true;
   }
 
-  const report = store.createReport(input, group.id, clientIp, now, dumpInfo);
+  const report = store.createReport(input, group.id, clientIp, now, dumpInfo, project?.id ?? null);
   if (input.runtime === 'unity') {
     store.updateReportSymbolication(report.id, symbolication);
   }

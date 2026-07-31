@@ -12,7 +12,86 @@ import type {
   PlayerFeedback,
   PlayerFeedbackInput,
   FeedbackAttachment,
+  Project,
+  SourceSnapshot,
+  SourceFile,
 } from './model.js';
+
+// ----- Projects and source snapshots -----
+
+export function findProjectByName(name: string): Project | undefined {
+  return getDb().prepare('SELECT * FROM projects WHERE name = ? COLLATE NOCASE').get(name) as Project | undefined;
+}
+
+export function getOrCreateProject(name: string, now: string): Project {
+  const existing = findProjectByName(name);
+  if (existing) return existing;
+  getDb().prepare(`
+    INSERT INTO projects (name, created_at, updated_at) VALUES (?, ?, ?)
+    ON CONFLICT(name) DO UPDATE SET updated_at = excluded.updated_at
+  `).run(name, now, now);
+  return findProjectByName(name)!;
+}
+
+export function listProjects(): Array<Project & { crash_count: number }> {
+  return getDb().prepare(`
+    SELECT p.*, COUNT(cr.id) AS crash_count
+    FROM projects p
+    LEFT JOIN crash_reports cr ON cr.project_id = p.id
+    GROUP BY p.id
+    ORDER BY p.name COLLATE NOCASE
+  `).all() as Array<Project & { crash_count: number }>;
+}
+
+export function createSourceSnapshot(projectId: number, release: string, now: string): SourceSnapshot {
+  const result = getDb().prepare(
+    'INSERT INTO source_snapshots (project_id, release, created_at) VALUES (?, ?, ?)'
+  ).run(projectId, release, now);
+  return getDb().prepare('SELECT * FROM source_snapshots WHERE id = ?')
+    .get(Number(result.lastInsertRowid)) as SourceSnapshot;
+}
+
+export function deleteSourceSnapshot(id: number): void {
+  getDb().prepare('DELETE FROM source_snapshots WHERE id = ?').run(id);
+}
+
+export function createSourceFile(
+  snapshotId: number,
+  relativePath: string,
+  storagePath: string,
+  fileSize: number,
+  language: string
+): SourceFile {
+  const result = getDb().prepare(`
+    INSERT INTO source_files (snapshot_id, relative_path, storage_path, file_size, language)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(snapshotId, relativePath, storagePath, fileSize, language);
+  return getDb().prepare('SELECT * FROM source_files WHERE id = ?')
+    .get(Number(result.lastInsertRowid)) as SourceFile;
+}
+
+export function findSourceSnapshot(projectId: number, release: string): (SourceSnapshot & { match_type: 'exact' | 'latest' }) | undefined {
+  if (release) {
+    const exact = getDb().prepare(`
+      SELECT * FROM source_snapshots
+      WHERE project_id = ? AND release = ?
+      ORDER BY created_at DESC, id DESC LIMIT 1
+    `).get(projectId, release) as SourceSnapshot | undefined;
+    if (exact) return { ...exact, match_type: 'exact' };
+  }
+  const latest = getDb().prepare(`
+    SELECT * FROM source_snapshots
+    WHERE project_id = ?
+    ORDER BY created_at DESC, id DESC LIMIT 1
+  `).get(projectId) as SourceSnapshot | undefined;
+  return latest ? { ...latest, match_type: 'latest' } : undefined;
+}
+
+export function getSourceFilesForSnapshot(snapshotId: number): SourceFile[] {
+  return getDb().prepare(
+    'SELECT * FROM source_files WHERE snapshot_id = ? ORDER BY relative_path'
+  ).all(snapshotId) as SourceFile[];
+}
 
 // ----- Crash Groups -----
 
@@ -26,15 +105,17 @@ export function createGroup(
   hash: string,
   exceptionType: string,
   exceptionMessage: string,
-  now: string
+  now: string,
+  projectId: number | null = null
 ): CrashGroup {
   const stmt = getDb().prepare(`
-    INSERT INTO crash_groups (crash_hash, exception_type, exception_message, first_seen, last_seen)
-    VALUES (?, ?, ?, ?, ?)
+    INSERT INTO crash_groups (project_id, crash_hash, exception_type, exception_message, first_seen, last_seen)
+    VALUES (?, ?, ?, ?, ?, ?)
   `);
-  const result = stmt.run(hash, exceptionType, exceptionMessage, now, now);
+  const result = stmt.run(projectId, hash, exceptionType, exceptionMessage, now, now);
   return {
     id: Number(result.lastInsertRowid),
+    project_id: projectId,
     crash_hash: hash,
     exception_type: exceptionType,
     exception_message: exceptionMessage,
@@ -56,9 +137,12 @@ export function updateGroupOnNewReport(groupId: number, now: string): void {
 }
 
 export function getGroupById(id: number): CrashGroup | undefined {
-  return getDb().prepare('SELECT * FROM crash_groups WHERE id = ?').get(id) as
-    | CrashGroup
-    | undefined;
+  return getDb().prepare(`
+    SELECT cg.*, p.name AS project_name
+    FROM crash_groups cg
+    LEFT JOIN projects p ON p.id = cg.project_id
+    WHERE cg.id = ?
+  `).get(id) as CrashGroup | undefined;
 }
 
 export function listGroups(query: CrashGroupQuery): PaginatedResult<CrashGroup> {
@@ -67,41 +151,49 @@ export function listGroups(query: CrashGroupQuery): PaginatedResult<CrashGroup> 
   const conditions: string[] = [];
   const params: unknown[] = [];
 
+  if (query.project_id !== undefined) {
+    if (query.project_id === 0) {
+      conditions.push('cg.project_id IS NULL');
+    } else {
+      conditions.push('cg.project_id = ?');
+      params.push(query.project_id);
+    }
+  }
   if (query.status) {
-    conditions.push('status = ?');
+    conditions.push('cg.status = ?');
     params.push(query.status);
   }
   if (query.search) {
-    conditions.push('(exception_type LIKE ? OR exception_message LIKE ?)');
+    conditions.push('(cg.exception_type LIKE ? OR cg.exception_message LIKE ?)');
     const s = `%${query.search}%`;
     params.push(s, s);
   }
   if (query.start_date) {
-    conditions.push('last_seen >= ?');
+    conditions.push('cg.last_seen >= ?');
     params.push(query.start_date);
   }
   if (query.end_date) {
-    conditions.push('last_seen <= ?');
+    conditions.push('cg.last_seen <= ?');
     params.push(query.end_date);
   }
   if (query.error_severity) {
-    conditions.push("id IN (SELECT DISTINCT cr.group_id FROM crash_reports cr WHERE cr.error_severity = ?)");
+    conditions.push("cg.id IN (SELECT DISTINCT cr.group_id FROM crash_reports cr WHERE cr.error_severity = ?)");
     params.push(query.error_severity);
   }
   if (query.platform) {
-    conditions.push("id IN (SELECT DISTINCT cr.group_id FROM crash_reports cr WHERE cr.platform = ?)");
+    conditions.push("cg.id IN (SELECT DISTINCT cr.group_id FROM crash_reports cr WHERE cr.platform = ?)");
     params.push(query.platform);
   }
   if (query.app_version) {
-    conditions.push("id IN (SELECT DISTINCT cr.group_id FROM crash_reports cr WHERE cr.app_version = ?)");
+    conditions.push("cg.id IN (SELECT DISTINCT cr.group_id FROM crash_reports cr WHERE cr.app_version = ?)");
     params.push(query.app_version);
   }
   if (query.runtime) {
-    conditions.push("id IN (SELECT DISTINCT cr.group_id FROM crash_reports cr WHERE cr.runtime = ?)");
+    conditions.push("cg.id IN (SELECT DISTINCT cr.group_id FROM crash_reports cr WHERE cr.runtime = ?)");
     params.push(query.runtime);
   }
   if (query.environment) {
-    conditions.push("id IN (SELECT DISTINCT cr.group_id FROM crash_reports cr WHERE cr.environment = ?)");
+    conditions.push("cg.id IN (SELECT DISTINCT cr.group_id FROM crash_reports cr WHERE cr.environment = ?)");
     params.push(query.environment);
   }
 
@@ -114,16 +206,18 @@ export function listGroups(query: CrashGroupQuery): PaginatedResult<CrashGroup> 
   const order = sortOrder === 'asc' ? 'ASC' : 'DESC';
 
   const countRow = getDb()
-    .prepare(`SELECT COUNT(*) as total FROM crash_groups ${where}`)
+    .prepare(`SELECT COUNT(*) as total FROM crash_groups cg ${where}`)
     .get(...params) as { total: number };
   const total = countRow.total;
 
   const items = getDb()
     .prepare(
-      `SELECT cg.*,
+      `SELECT cg.*, p.name AS project_name,
               (SELECT cr.runtime FROM crash_reports cr WHERE cr.group_id = cg.id ORDER BY cr.created_at DESC LIMIT 1) as runtime,
               (SELECT cr.error_severity FROM crash_reports cr WHERE cr.group_id = cg.id ORDER BY cr.created_at DESC LIMIT 1) as error_severity
-       FROM crash_groups cg ${where} ORDER BY ${col} ${order} LIMIT ? OFFSET ?`
+       FROM crash_groups cg
+       LEFT JOIN projects p ON p.id = cg.project_id
+       ${where} ORDER BY cg.${col} ${order} LIMIT ? OFFSET ?`
     )
     .all(...params, pageSize, (page - 1) * pageSize) as CrashGroup[];
 
@@ -159,7 +253,8 @@ export function createReport(
   groupId: number | null,
   clientIp: string,
   now: string,
-  dumpInfo: string = ''
+  dumpInfo: string = '',
+  projectId: number | null = null
 ): CrashReport {
   const customData =
     typeof input.custom_data === 'object'
@@ -168,17 +263,18 @@ export function createReport(
 
   const stmt = getDb().prepare(`
     INSERT INTO crash_reports (
-      group_id, exception_type, exception_message, stack_trace, log_text,
+      group_id, project_id, exception_type, exception_message, stack_trace, log_text,
       runtime, runtime_version, framework, environment, server_name, release, error_severity,
       unity_version, platform, device_model, os_version, gpu_name, cpu_name,
       memory_mb, app_version, bundle_id, scene_name, custom_data,
       client_ip, client_timestamp, created_at, dump_info, build_guid,
       symbolicated_stack, symbolication_info, symbolication_status, symbol_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const result = stmt.run(
     groupId,
+    projectId,
     input.exception_type,
     input.exception_message ?? '',
     input.stack_trace ?? '',
@@ -216,13 +312,17 @@ export function createReport(
 }
 
 export function getReportById(id: number): CrashReport | undefined {
-  return getDb().prepare('SELECT * FROM crash_reports WHERE id = ?').get(id) as
-    | CrashReport
-    | undefined;
+  return getDb().prepare(`
+    SELECT cr.*, p.name AS project_name
+    FROM crash_reports cr
+    LEFT JOIN projects p ON p.id = cr.project_id
+    WHERE cr.id = ?
+  `).get(id) as CrashReport | undefined;
 }
 
 export function listReports(params: {
   group_id?: number;
+  project_id?: number;
   page?: number;
   page_size?: number;
   platform?: string;
@@ -235,36 +335,47 @@ export function listReports(params: {
   const conditions: string[] = [];
   const values: unknown[] = [];
 
+  if (params.project_id !== undefined) {
+    if (params.project_id === 0) {
+      conditions.push('cr.project_id IS NULL');
+    } else {
+      conditions.push('cr.project_id = ?');
+      values.push(params.project_id);
+    }
+  }
   if (params.group_id) {
-    conditions.push('group_id = ?');
+    conditions.push('cr.group_id = ?');
     values.push(params.group_id);
   }
   if (params.platform) {
-    conditions.push('platform = ?');
+    conditions.push('cr.platform = ?');
     values.push(params.platform);
   }
   if (params.app_version) {
-    conditions.push('app_version = ?');
+    conditions.push('cr.app_version = ?');
     values.push(params.app_version);
   }
   if (params.start_date) {
-    conditions.push('created_at >= ?');
+    conditions.push('cr.created_at >= ?');
     values.push(params.start_date);
   }
   if (params.end_date) {
-    conditions.push('created_at <= ?');
+    conditions.push('cr.created_at <= ?');
     values.push(params.end_date);
   }
 
   const where = conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '';
 
   const countRow = getDb()
-    .prepare(`SELECT COUNT(*) as total FROM crash_reports ${where}`)
+    .prepare(`SELECT COUNT(*) as total FROM crash_reports cr ${where}`)
     .get(...values) as { total: number };
 
   const items = getDb()
     .prepare(
-      `SELECT * FROM crash_reports ${where} ORDER BY created_at DESC LIMIT ? OFFSET ?`
+      `SELECT cr.*, p.name AS project_name
+       FROM crash_reports cr
+       LEFT JOIN projects p ON p.id = cr.project_id
+       ${where} ORDER BY cr.created_at DESC LIMIT ? OFFSET ?`
     )
     .all(...values, pageSize, (page - 1) * pageSize) as CrashReport[];
 
@@ -607,6 +718,15 @@ export function getDashboardStats(): DashboardStats {
     )
     .all() as DashboardStats['runtime_distribution'];
 
+  const environmentDistribution = db
+    .prepare(
+      `SELECT COALESCE(NULLIF(environment, ''), 'production') as environment, COUNT(*) as count
+       FROM crash_reports
+       GROUP BY environment
+       ORDER BY count DESC`
+    )
+    .all() as DashboardStats['environment_distribution'];
+
   return {
     total_crashes: totalCrashes,
     total_groups: totalGroups,
@@ -619,5 +739,6 @@ export function getDashboardStats(): DashboardStats {
     version_distribution: versionDistribution,
     runtime_distribution: runtimeDistribution,
     daily_trend: dailyTrend,
+    environment_distribution: environmentDistribution,
   };
 }

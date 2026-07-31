@@ -1,20 +1,20 @@
 <div x-data="accountSecurity" x-init="load()" class="space-y-8">
-  <section class="bg-surface-900 border border-gray-800 rounded-xl p-6">
+  <section class="bg-surface-900 border border-gray-800 rounded-xl p-5 admin-only" style="display:none">
     <div class="flex items-center justify-between mb-5">
       <div>
         <h2 class="text-lg font-semibold">Accounts</h2>
         <p class="text-sm text-gray-500">Only administrators can create accounts and assign roles.</p>
       </div>
-      <button @click="showCreate = !showCreate" class="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-sm">New account</button>
+      <button @click="showCreate = !showCreate" class="btn btn-blue">New account</button>
     </div>
 
     <form x-show="showCreate" @submit.prevent="createUser" class="grid md:grid-cols-4 gap-3 mb-5 p-4 bg-surface-950 rounded-lg border border-gray-800">
-      <input x-model="newUser.username" required placeholder="Username" autocomplete="off" class="bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
-      <input x-model="newUser.password" type="password" placeholder="Password (omit for viewer auto-generate)" autocomplete="new-password" class="bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
-      <select x-model="newUser.role" class="bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm">
+      <input x-model="newUser.username" required placeholder="Username" autocomplete="off" class="fc">
+      <input x-model="newUser.password" type="password" placeholder="Password (omit for viewer auto-generate)" autocomplete="new-password" class="fc">
+      <select x-model="newUser.role" class="fc">
         <option value="viewer">Viewer</option><option value="operator">Operator</option><option value="admin">Admin</option>
       </select>
-      <button class="bg-green-600 hover:bg-green-700 rounded-lg px-3 py-2 text-sm">Create</button>
+      <button class="btn btn-green">Create</button>
     </form>
 
     <p x-show="message" x-text="message" class="text-sm mb-4" :class="failed ? 'text-red-400' : 'text-green-400'"></p>
@@ -25,7 +25,7 @@
           <template x-for="user in users" :key="user.id">
             <tr class="border-b border-gray-800/60">
               <td class="py-3" x-text="user.username"></td>
-              <td><select x-model="user.role" @change="updateUser(user)" class="bg-surface-800 border border-gray-700 rounded px-2 py-1"><option value="viewer">viewer</option><option value="operator">operator</option><option value="admin">admin</option></select></td>
+              <td><select x-model="user.role" @change="updateUser(user)" class="fc fc-sm"><option value="viewer">viewer</option><option value="operator">operator</option><option value="admin">admin</option></select></td>
               <td><span x-text="user.is_active ? 'active' : 'disabled'" :class="user.is_active ? 'text-green-400' : 'text-red-400'"></span></td>
               <td class="text-gray-500" x-text="user.last_login_at || 'never'"></td>
               <td class="text-right space-x-2">
@@ -39,11 +39,20 @@
     </div>
   </section>
 
-  <section class="bg-surface-900 border border-gray-800 rounded-xl p-6">
+  <section class="bg-surface-900 border border-gray-800 rounded-xl p-5">
     <div class="flex items-center justify-between mb-5">
       <div><h2 class="text-lg font-semibold">Ingestion API keys</h2><p class="text-sm text-gray-500">Use X-API-Key or Authorization: Bearer for client submissions.</p></div>
-      <button @click="createKey" class="px-3 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 text-sm">Create key</button>
+      <button @click="showCreateKey = !showCreateKey" class="btn btn-blue">Create key</button>
     </div>
+    <form x-show="showCreateKey" @submit.prevent="createKeyFromForm" class="grid md:grid-cols-3 gap-3 mb-5 p-4 bg-surface-950 rounded-lg border border-gray-800">
+      <input x-model="newKey.name" required placeholder="Key name" autocomplete="off" class="fc">
+      <select x-model="newKey.tier" class="fc admin-only" style="display:none">
+        <option value="operator">operator</option>
+        <option value="viewer">viewer</option>
+        <option value="admin">admin</option>
+      </select>
+      <button type="submit" class="btn btn-green">Create key</button>
+    </form>
     <div x-show="createdKey" class="mb-4 p-4 border border-yellow-700/50 bg-yellow-900/20 rounded-lg">
       <p class="text-xs text-yellow-400 mb-1">Copy this key now. It will not be shown again.</p><code class="text-sm break-all" x-text="createdKey"></code>
     </div>
@@ -57,8 +66,8 @@
             <span x-show="key.revoked_at" class="text-xs text-red-400 ml-3">revoked</span>
           </div>
           <div class="flex items-center gap-2">
-            <select @change="updateTier(key, $event)" x-show="isAdmin" class="bg-surface-800 border border-gray-700 rounded px-2 py-1 text-xs" :disabled="key.revoked_at">
-              <option value="admin">admin</option><option value="operator">operator</option><option value="viewer">viewer</option>
+            <select @change="updateTier(key, $event)" class="fc fc-sm admin-only" style="display:none" :disabled="key.revoked_at">
+              <option value="admin" :selected="key.tier === 'admin'">admin</option><option value="operator" :selected="key.tier === 'operator'">operator</option><option value="viewer" :selected="key.tier === 'viewer'">viewer</option>
             </select>
             <button x-show="!key.revoked_at" @click="revokeKey(key)" class="text-xs text-red-400">Revoke</button>
           </div>
@@ -70,16 +79,15 @@
 
 <script>
   document.addEventListener('alpine:init', () => Alpine.data('accountSecurity', () => ({
-    users: [], keys: [], showCreate: false, createdKey: '', message: '', failed: false, isAdmin: false,
-    newUser: { username: '', password: '', role: 'viewer' },
+    users: [], keys: [], showCreate: false, showCreateKey: false, createdKey: '', message: '', failed: false, newKey: { name: '', tier: 'operator' }, newUser: { username: '', password: '', role: 'viewer' },
     async request(url, options = {}) { const response = await fetch(url, options); const data = await response.json(); if (!response.ok) throw new Error(data.message || 'Request failed'); return data; },
-    async load() { try { const me = await this.request('/api/v1/auth/me'); this.isAdmin = me.user.role === 'admin'; const users = await this.request('/api/v1/auth/users'); this.users = users.items; this.keys = []; try { const keys = await this.request('/api/v1/auth/api-keys'); this.keys = keys.items; } catch {} } catch (error) { this.notify(error.message, true); } },
+    async load() { this.users = []; try { const users = await this.request('/api/v1/auth/users'); this.users = users.items; } catch {} this.keys = []; try { const keys = await this.request('/api/v1/auth/api-keys'); this.keys = keys.items; } catch {} },
     notify(message, failed = false) { this.message = message; this.failed = failed; },
     async createUser() { try { const payload = { username: this.newUser.username, role: this.newUser.role }; if (this.newUser.password) payload.password = this.newUser.password; const result = await this.request('/api/v1/auth/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); this.newUser = { username: '', password: '', role: 'viewer' }; this.showCreate = false; const pw = result.initial_password; this.notify(pw ? 'Account created. One-time password (copy now): ' + pw : 'Account created'); await this.load(); } catch (error) { this.notify(error.message, true); } },
     async updateUser(user) { try { await this.request('/api/v1/auth/users/' + user.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: user.role }) }); this.notify('Account updated'); } catch (error) { this.notify(error.message, true); await this.load(); } },
     async toggleUser(user) { try { await this.request('/api/v1/auth/users/' + user.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_active: !Boolean(user.is_active) }) }); this.notify('Account updated'); await this.load(); } catch (error) { this.notify(error.message, true); } },
     async resetPassword(user) { const password = prompt('New strong password for ' + user.username); if (!password) return; try { await this.request('/api/v1/auth/users/' + user.id + '/password', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ new_password: password }) }); this.notify('Password reset; existing sessions were revoked'); } catch (error) { this.notify(error.message, true); } },
-    async createKey() { const name = prompt('API key name'); if (!name) return; try { const key = await this.request('/api/v1/auth/api-keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) }); this.createdKey = key.key; await this.load(); } catch (error) { this.notify(error.message, true); } },
+    async createKeyFromForm() { try { const key = await this.request('/api/v1/auth/api-keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: this.newKey.name, tier: this.newKey.tier }) }); this.createdKey = key.key; this.showCreateKey = false; this.newKey = { name: '', tier: 'operator' }; await this.load(); } catch (error) { this.notify(error.message, true); } },
     async revokeKey(key) { if (!confirm('Revoke this API key?')) return; try { await this.request('/api/v1/auth/api-keys/' + key.id, { method: 'DELETE' }); this.notify('API key revoked'); await this.load(); } catch (error) { this.notify(error.message, true); } },
     async updateTier(key, event) { const tier = event.target.value; if (!confirm('Change tier to ' + tier + '?')) { event.target.value = key.tier; return; } try { await this.request('/api/v1/auth/api-keys/' + key.id + '/tier', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tier }) }); key.tier = tier; this.notify('API key tier updated'); } catch (error) { event.target.value = key.tier; this.notify(error.message, true); } },
     tierClass(tier) { return { admin: 'bg-red-900/50 text-red-300', operator: 'bg-blue-900/50 text-blue-300', viewer: 'bg-gray-700 text-gray-300' }[tier] || 'bg-gray-700 text-gray-300'; }

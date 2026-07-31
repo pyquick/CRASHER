@@ -79,8 +79,34 @@ export interface FeedbackAttachment {
   created_at: string;
 }
 
+export interface Project {
+  id: number;
+  name: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SourceSnapshot {
+  id: number;
+  project_id: number;
+  release: string;
+  created_at: string;
+}
+
+export interface SourceFile {
+  id: number;
+  snapshot_id: number;
+  relative_path: string;
+  storage_path: string;
+  file_size: number;
+  language: string;
+  created_at: string;
+}
+
 export interface CrashGroup {
   id: number;
+  project_id: number | null;
+  project_name?: string;
   crash_hash: string;
   exception_type: string;
   exception_message: string;
@@ -95,6 +121,8 @@ export interface CrashGroup {
 export interface CrashReport {
   id: number;
   group_id: number | null;
+  project_id: number | null;
+  project_name?: string;
   exception_type: string;
   exception_message: string;
   stack_trace: string;
@@ -130,6 +158,7 @@ export interface CrashReport {
 
 export interface CrashReportInput {
   exception_type: string;
+  project_name?: string;
   exception_message?: string;
   stack_trace?: string;
   log_text?: string;
@@ -212,6 +241,10 @@ export interface DashboardStats {
     date: string;
     count: number;
   }>;
+  environment_distribution: Array<{
+    environment: string;
+    count: number;
+  }>;
 }
 
 export interface PaginatedResult<T> {
@@ -225,6 +258,7 @@ export interface PaginatedResult<T> {
 export interface CrashGroupQuery {
   page?: number;
   page_size?: number;
+  project_id?: number;
   status?: string;
   platform?: string;
   app_version?: string;

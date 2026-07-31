@@ -105,7 +105,7 @@
         </template>
         <!-- Download dump info JSON -->
         <div class="mt-3 text-right" x-show="latestReport">
-          <a :href="'/api/v1/download/dump/' + latestReport.id'"
+          <a :href="'/api/v1/download/dump/' + latestReport.id"
              class="text-xs text-blue-400 hover:text-blue-300 transition-colors">
             ⬇ Download Dump Info (JSON)
           </a>
@@ -158,6 +158,40 @@
                     x-text="analysis?.trigger_point?.raw_snippet"></code>
             </div>
           </div>
+        </div>
+
+        <!-- Uploaded source evidence -->
+        <div class="space-y-4 mb-4" x-show="analysis?.source_analysis">
+          <div class="flex flex-wrap items-center gap-2 text-xs text-gray-400">
+            <span class="pill" x-text="analysis?.source_analysis?.project_name"></span>
+            <span x-text="'Source: ' + (analysis?.source_analysis?.snapshot_release || 'latest unversioned')"></span>
+            <span class="text-yellow-400" x-show="analysis?.source_analysis?.match_type === 'latest' && analysis?.source_analysis?.requested_release">latest fallback</span>
+          </div>
+          <div x-show="analysis?.source_analysis?.crash_source">
+            <h3 class="text-sm font-semibold text-gray-400 mb-2">Crash Source Code</h3>
+            <p class="text-xs text-gray-500 mb-1" x-text="sourceLocationLabel(analysis?.source_analysis?.crash_source)"></p>
+            <pre class="stack-trace text-red-200 bg-surface-950 rounded-lg p-4 overflow-x-auto" x-text="analysis?.source_analysis?.crash_source?.snippet"></pre>
+          </div>
+          <div x-show="analysis?.source_analysis?.function_definition">
+            <h3 class="text-sm font-semibold text-gray-400 mb-2">Function Definition</h3>
+            <p class="text-xs text-gray-500 mb-1" x-text="sourceLocationLabel(analysis?.source_analysis?.function_definition)"></p>
+            <pre class="stack-trace text-blue-200 bg-surface-950 rounded-lg p-4 overflow-x-auto" x-text="analysis?.source_analysis?.function_definition?.snippet"></pre>
+          </div>
+          <div x-show="analysis?.source_analysis?.references?.length > 0">
+            <h3 class="text-sm font-semibold text-gray-400 mb-2">Likely References</h3>
+            <p class="text-xs text-gray-600 mb-2">Heuristic matches; review each call site.</p>
+            <div class="space-y-2 max-h-96 overflow-y-auto">
+              <template x-for="reference in analysis?.source_analysis?.references" :key="reference.file_path + ':' + reference.line_number">
+                <div class="bg-surface-950 rounded-lg p-3">
+                  <p class="text-xs text-gray-500 mb-1" x-text="sourceLocationLabel(reference)"></p>
+                  <pre class="stack-trace text-gray-300 overflow-x-auto" x-text="reference.snippet"></pre>
+                </div>
+              </template>
+            </div>
+          </div>
+          <template x-for="warning in (analysis?.source_analysis?.warnings || [])" :key="warning">
+            <p class="text-xs text-yellow-500" x-text="warning"></p>
+          </template>
         </div>
 
         <!-- File Tree Diagram -->
@@ -365,7 +399,7 @@
                 <span class="text-xs text-gray-700" x-show="a.content_type" x-text="a.content_type"></span>
               </div>
               <a :href="'/api/v1/download/attachment/' + a.id"
-                 class="shrink-0 px-3 py-1.5 text-xs bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors ml-3">
+                 class="btn btn-blue btn-sm ml-3">
                 ⬇ Download
               </a>
             </div>
@@ -390,7 +424,7 @@
             <tbody>
               <template x-for="r in reports" :key="r.id">
                 <tr class="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors cursor-pointer"
-                    @click="selectedReport = r; $nextTick(() => document.getElementById('report-detail-modal').classList.remove('hidden'))">
+                    @click="selectedReport = r; showReportModal = true">
                   <td class="px-3 py-2 text-gray-400" x-text="formatDate(r.created_at)"></td>
                   <td class="px-3 py-2 text-gray-400 hidden sm:table-cell" x-text="r.platform || '-'"></td>
                   <td class="px-3 py-2 text-gray-400 hidden md:table-cell" x-text="r.app_version || '-'"></td>
@@ -413,6 +447,10 @@
       <section class="bg-surface-900 rounded-xl p-5 border border-gray-800">
         <h2 class="text-sm font-semibold text-gray-300 mb-3">ℹ️ Info</h2>
         <dl class="space-y-2 text-sm">
+          <div class="flex justify-between">
+            <dt class="text-gray-500">Project</dt>
+            <dd class="text-gray-300" x-text="group?.project_name || 'Unassigned'"></dd>
+          </div>
           <div class="flex justify-between">
             <dt class="text-gray-500">First Seen</dt>
             <dd class="text-gray-300" x-text="group ? formatDate(group.first_seen) : '-'"></dd>
@@ -465,16 +503,16 @@
       <section class="bg-surface-900 rounded-xl p-5 border border-gray-800">
         <h2 class="text-sm font-semibold text-gray-300 mb-3">🔧 Actions</h2>
         <select x-model="newStatus"
-                class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 mb-3 focus:outline-none focus:border-blue-500">
+                class="fc w-full mb-3">
           <option value="open">Open</option>
           <option value="resolved">Resolved</option>
           <option value="ignored">Ignored</option>
         </select>
         <input type="text" x-model="resolvedVersion" placeholder="Resolved version (optional)"
-               class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-gray-200 mb-3 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+               class="fc w-full mb-3"
                x-show="newStatus === 'resolved'">
         <button @click="updateStatus()"
-                class="w-full py-2 bg-blue-600 hover:bg-blue-700 rounded-lg text-sm font-medium transition-colors">
+                class="btn btn-blue w-full">
           Update Status
         </button>
         <p x-show="statusMsg" class="text-xs mt-2 text-center" :class="statusErr ? 'text-red-400' : 'text-green-400'" x-text="statusMsg"></p>
@@ -486,7 +524,7 @@
                  @change="onImportFile($event)"
                  class="hidden">
           <button @click="document.getElementById('import-file').click()"
-                  class="w-full py-2 bg-green-700 hover:bg-green-600 rounded-lg text-sm font-medium transition-colors">
+                  class="btn btn-green w-full">
             Choose .crashpkg File...
           </button>
           <p x-show="importProgress" class="text-xs text-blue-400 mt-2 text-center" x-text="importProgress"></p>
@@ -536,11 +574,12 @@
   </div>
 
   <!-- Report Detail Modal -->
-  <div id="report-detail-modal" class="hidden fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4" @click.self="document.getElementById('report-detail-modal').classList.add('hidden')">
-    <div class="bg-surface-900 border border-gray-700 rounded-xl max-w-2xl w-full max-h-[80vh] overflow-y-auto" @click.stop>
+  <div x-show="showReportModal" x-cloak class="fixed inset-0 z-[60] flex items-center justify-center p-4" @keydown.escape.window="showReportModal = false">
+    <div class="absolute inset-0 bg-black/70" @click="showReportModal = false"></div>
+    <div class="relative w-full max-w-2xl max-h-[80vh] overflow-y-auto bg-surface-900 border border-gray-700 rounded-xl" x-show="showReportModal" x-transition @click.stop>
       <div class="p-5 border-b border-gray-800 flex items-center justify-between">
         <h3 class="font-semibold">Report Detail <span class="text-gray-500 text-sm ml-2" x-text="selectedReport ? '#' + selectedReport.id : ''"></span></h3>
-        <button @click="document.getElementById('report-detail-modal').classList.add('hidden')"
+        <button @click="showReportModal = false"
                 class="p-1 hover:bg-gray-800 rounded-lg transition-colors">
           <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M6 18L18 6M6 6l12 12" stroke-width="2" stroke-linecap="round"/></svg>
         </button>
@@ -583,7 +622,7 @@
         </template>
         <!-- Download dump info from modal -->
         <div x-show="selectedReport">
-          <a :href="'/api/v1/download/dump/' + selectedReport.id'"
+          <a :href="'/api/v1/download/dump/' + selectedReport.id"
              class="text-xs text-blue-400 hover:text-blue-300">
             ⬇ Download Dump Info (JSON)
           </a>
@@ -600,6 +639,7 @@
       reports: [],
       latestReport: null,
       selectedReport: null,
+      showReportModal: false,
       attachments: [],
       dumpParsed: [],
       analysis: null,
@@ -766,9 +806,9 @@
         event.target.value = '';
       },
 
-      formatDate(d) {
-        if (!d) return '-';
-        return new Date(d).toLocaleString();
+      sourceLocationLabel(location) {
+        if (!location) return '';
+        return location.file_path + ':' + location.line_number;
       },
 
       symbolicationWarnings(info) {
@@ -987,14 +1027,6 @@
         return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
       },
 
-      formatSize(bytes) {
-        if (!bytes) return '0 B';
-        const units = ['B', 'KB', 'MB', 'GB'];
-        let i = 0;
-        let size = bytes;
-        while (size >= 1024 && i < units.length - 1) { size /= 1024; i++; }
-        return size.toFixed(1) + ' ' + units[i];
-      }
     }));
   });
 </script>

@@ -10,8 +10,12 @@ export interface Config {
   dbPath: string;
   symbolsDir: string;
   attachmentsDir: string;
+  sourcesDir: string;
   maxLogSize: number;
   maxAttachmentSize: number;
+  maxSourceFileSize: number;
+  maxSourceArchiveSize: number;
+  maxSourceFiles: number;
   maxJsonBodySize: number;
   corsOrigins: string[];
   bootstrapAdminUsername: string;
@@ -62,8 +66,12 @@ function loadConfig(): Config {
   const dbPath = env('DB_PATH', resolve(dataDir, 'crash_reports.db'));
   const symbolsDir = env('SYMBOLS_DIR', resolve(dataDir, 'symbols'));
   const attachmentsDir = env('ATTACHMENTS_DIR', resolve(dataDir, 'attachments'));
+  const sourcesDir = env('SOURCES_DIR', resolve(dataDir, 'sources'));
   const maxLogSize = envInt('MAX_LOG_SIZE', 10 * 1024 * 1024);
   const maxAttachmentSize = envInt('MAX_ATTACHMENT_SIZE', 20 * 1024 * 1024);
+  const maxSourceFileSize = envInt('MAX_SOURCE_FILE_SIZE', 2 * 1024 * 1024);
+  const maxSourceArchiveSize = envInt('MAX_SOURCE_ARCHIVE_SIZE', 64 * 1024 * 1024);
+  const maxSourceFiles = Math.max(1, envInt('MAX_SOURCE_FILES', 5000));
   const maxJsonBodySize = envInt('MAX_JSON_BODY_SIZE', 12 * 1024 * 1024);
   const corsOrigins = env('CORS_ORIGINS', '').split(',').map(value => value.trim()).filter(Boolean);
   const configuredAdminPassword = process.env.ADMIN_PASSWORD;
@@ -82,8 +90,12 @@ function loadConfig(): Config {
     dbPath,
     symbolsDir,
     attachmentsDir,
+    sourcesDir,
     maxLogSize,
     maxAttachmentSize,
+    maxSourceFileSize,
+    maxSourceArchiveSize,
+    maxSourceFiles,
     maxJsonBodySize,
     corsOrigins,
     bootstrapAdminUsername: env('ADMIN_USERNAME', 'admin'),
@@ -93,7 +105,7 @@ function loadConfig(): Config {
     sessionHours: Math.max(1, envInt('SESSION_HOURS', 12)),
     apiRequireKey: envBool('API_REQUIRE_KEY', true),
     trustProxy,
-    loginRateLimit: Math.max(1, envInt('LOGIN_RATE_LIMIT', 50000000)),
+    loginRateLimit: Math.max(1, envInt('LOGIN_RATE_LIMIT', 5)),
     ingestRateLimit: Math.max(1, envInt('INGEST_RATE_LIMIT', 120)),
     apiRateLimit: Math.max(1, envInt('API_RATE_LIMIT', 600)),
     webhookUrl: env('WEBHOOK_URL', ''),

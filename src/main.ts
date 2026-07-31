@@ -23,6 +23,7 @@ import feedbackHandler from './handler/feedback.js';
 import symbolHandler from './handler/symbol.js';
 import unityHandler from './handler/unity.js';
 import queryHandler from './handler/query.js';
+import sourceHandler from './handler/source.js';
 import webHandler from './handler/web.js';
 
 initDb();
@@ -85,10 +86,12 @@ const ingestLimiter = rateLimit({ windowMs: 60 * 1000, limit: config.ingestRateL
 app.use('/api/v1/crash-report', (req, res, next) => req.method === 'POST' ? ingestLimiter(req, res, next) : next(), (req, res, next) => req.method === 'POST' ? requireApiKey(req, res, next) : next(), requireApiKeyWriteAccess);
 app.use('/api/v1/player-feedback', (req, res, next) => req.method === 'POST' && req.path === '/' ? ingestLimiter(req, res, next) : next(), (req, res, next) => req.method === 'POST' && req.path === '/' ? requireApiKey(req, res, next) : next(), requireApiKeyWriteAccess);
 app.use('/api/v1/unity/crash-report', (req, res, next) => req.method === 'POST' ? ingestLimiter(req, res, next) : next(), (req, res, next) => req.method === 'POST' ? requireApiKey(req, res, next) : next(), requireApiKeyWriteAccess);
+app.use('/api/v1/project-sources', (req, res, next) => req.method === 'POST' ? ingestLimiter(req, res, next) : next(), (req, res, next) => req.method === 'POST' ? requireApiKey(req, res, next) : next(), requireApiKeyWriteAccess);
 // Viewer API keys cannot access crash/feedback/symbol GET endpoints; admin+operator only
 app.use('/api/v1', crashReportHandler);
 app.use('/api/v1', feedbackHandler);
 app.use('/api/v1', unityHandler);
+app.use('/api/v1', sourceHandler);
 app.use('/api/v1', clearApiKeyIdentity);
 
 const apiLimiter = rateLimit({ windowMs: 60 * 1000, limit: config.apiRateLimit });

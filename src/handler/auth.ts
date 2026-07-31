@@ -127,10 +127,10 @@ router.get('/api-keys', requireApiAuth, requireRole('admin', 'operator'), (req: 
 
 router.post('/api-keys', requireApiAuth, requireRole('admin', 'operator'), requireCsrf, (req: Request, res: Response): void => {
   try {
-    const userId = req.authUser!.role === 'admin' ? Number(req.body?.user_id) : req.authUser!.id;
+    const userId = req.authUser!.role === 'admin' && req.body?.user_id ? Number(req.body.user_id) : req.authUser!.id;
     const tier = req.body?.tier ?? 'operator';
-    // Operator-created keys default to operator; admin can set any tier
-    const effectiveTier = req.authUser!.role === 'admin' ? tier : (tier === 'admin' ? 'operator' : tier);
+    // Operator-created keys are always operator tier; admin can set any tier
+    const effectiveTier = req.authUser!.role === 'admin' ? tier : 'operator';
     const key = auth.createApiKey(userId, String(req.body?.name ?? ''), effectiveTier, req.body?.expires_at);
     auth.writeAuditLog(req.authUser!.id, 'api_key.created', 'api_key', String(key.id), req.ip ?? '', { user_id: userId, name: key.name, tier: effectiveTier });
     res.status(201).json(key);

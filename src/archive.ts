@@ -132,8 +132,7 @@ export function extractTarGzFile(filePath: string): ExtractedEntry[] {
 /**
  * Extract a .tar.gz buffer and return the list of entries.
  */
-export function extractTarGz(buffer: Buffer): ExtractedEntry[] {
-  const maxArchiveSize = 256 * 1024 * 1024;
+export function extractTarGz(buffer: Buffer, maxArchiveSize: number = 256 * 1024 * 1024): ExtractedEntry[] {
   const decompressed = gunzipSync(buffer, { maxOutputLength: maxArchiveSize });
   return parseTar(decompressed);
 }
@@ -197,8 +196,9 @@ function parseTar(buffer: Buffer): ExtractedEntry[] {
         const dataOffset = offset + 512;
         const data = buffer.subarray(dataOffset, dataOffset + size);
 
-        // Normalize name (strip leading ./ if any)
-        const cleanName = name.replace(/^\.?\//, '').replace(/\/+/g, '/');
+        // Strip only an explicit relative ./ prefix. Callers that accept
+        // user archives must still be able to detect absolute paths.
+        const cleanName = name.replace(/^\.\//, '').replace(/\/{2,}/g, '/');
         entries.push({ name: cleanName, data: Buffer.from(data) });
       }
     }

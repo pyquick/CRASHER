@@ -2,8 +2,24 @@
 // Builds the complete crash analysis: file tree, trigger point, and color-coded stack chain.
 // Supports C#, C++/C, Go, and Python stack traces.
 
-import type { CrashAnalysis, FileTreeNode, StackFrame } from './types.js';
+import type { CrashAnalysis, FileTreeNode, SourceAnalysis, SourceLocation, StackFrame } from './types.js';
 import { parseStackFrames, detectLanguage } from './parser.js';
+import { pathsMatch } from '../source.js';
+
+export interface AnalysisSourceFile {
+  relative_path: string;
+  language: string;
+  content: string;
+}
+
+export interface AnalysisSourceSnapshot {
+  project_name: string;
+  requested_release: string;
+  snapshot_release: string;
+  snapshot_id: number;
+  match_type: 'exact' | 'latest';
+  files: AnalysisSourceFile[];
+}
 
 /**
  * Analyze a crash report's stack trace to produce a structured analysis.
@@ -24,7 +40,7 @@ export function analyzeCrash(report: {
   runtime: string;
   runtime_version: string;
   symbolicated_stack?: string;
-}): CrashAnalysis | null {
+}, sourceSnapshot?: AnalysisSourceSnapshot): CrashAnalysis | null {
   const { id, exception_type, exception_message, stack_trace, log_text, runtime, runtime_version, symbolicated_stack } = report;
 
   // Determine which stack trace to use (prefer symbolicated for Unity)
@@ -63,7 +79,7 @@ export function analyzeCrash(report: {
   // Generate summary
   const summary = buildSummary(frames, exception_type, exception_message, lang);
 
-  return {
+  const analysis: CrashAnalysis = {
     report_id: id,
     exception_type,
     exception_message,
@@ -75,6 +91,8 @@ export function analyzeCrash(report: {
     runtime,
     runtime_version,
   };
+  if (sourceSnapshot) analysis.source_analysis = analyzeSourceCode(sourceSnapshot, frames, triggerPoint);
+  return analysis;
 }
 
 // ── File Tree Builder ──
@@ -279,6 +297,116 @@ function buildSummary(
   }
 
   return summary;
+}
+
+// ── Uploaded Source Analysis ──
+
+function analyzeSourceCode(
+  snapshot: AnalysisSourceSnapshot,
+  frames: StackFrame[],
+  triggerPoint: CrashAnalysis['trigger_point']
+): SourceAnalysis {
+  const warnings: string[] = [];
+  const sourceAnalysis: SourceAnalysis = {
+    project_name: snapshot.project_name,
+    requested_release: snapshot.requested_release,
+    snapshot_release: snapshot.snapshot_release,
+    snapshot_id: snapshot.snapshot_id,
+    match_type: snapshot.match_type,
+    crash_source: null,
+    function_definition: null,
+    references: [],
+    warnings,
+  };
+
+  const triggerFrame = frames.find(frame => frame.file_path && frame.line_number) ?? frames[0];
+  if (triggerFrame?.file_path) {
+    const matches = snapshot.files.filter(file => pathsMatch(triggerFrame.file_path, file.relative_path));
+    const sourceFile = matches.sort((a, b) => pathMatchScore(triggerFrame.file_path, b.relative_path) - pathMatchScore(triggerFrame.file_path, a.relative_path))[0];
+    if (sourceFile && triggerFrame.line_number && triggerFrame.line_number <= sourceFile.content.split(/\r?\n/).length) {
+      sourceAnalysis.crash_source = sourceLocation(sourceFile, triggerFrame.line_number, triggerFrame.function_name, 3);
+    } else if (!sourceFile) {
+      warnings.push(`No uploaded source file matched ${triggerFrame.file_path}`);
+    } else {
+      warnings.push(`Crash line ${triggerFrame.line_number} is outside ${sourceFile.relative_path}`);
+    }
+  }
+
+  const functionName = cleanFunctionName(triggerPoint.function_name || triggerFrame?.function_name || '');
+  if (!functionName) {
+    warnings.push('No searchable crash function name was found');
+    return sourceAnalysis;
+  }
+
+  const definitionPattern = definitionRegex(functionName, triggerFrame?.language || '');
+  const callPattern = new RegExp(`\\b${escapeRegExp(functionName)}\\s*\\(`);
+  for (const file of snapshot.files) {
+    const lines = file.content.split(/\r?\n/);
+    for (let index = 0; index < lines.length; index++) {
+      const line = lines[index];
+      if (!sourceAnalysis.function_definition && definitionPattern.test(line)) {
+        sourceAnalysis.function_definition = sourceLocation(file, index + 1, functionName, 2);
+        continue;
+      }
+      if (sourceAnalysis.references.length < 20 && callPattern.test(line)) {
+        sourceAnalysis.references.push(sourceLocation(file, index + 1, functionName, 1));
+      }
+    }
+  }
+
+  if (sourceAnalysis.function_definition) {
+    sourceAnalysis.references = sourceAnalysis.references.filter(reference =>
+      reference.file_path !== sourceAnalysis.function_definition!.file_path ||
+      reference.line_number !== sourceAnalysis.function_definition!.line_number
+    );
+  } else {
+    warnings.push(`No likely definition found for ${functionName}`);
+  }
+  return sourceAnalysis;
+}
+
+function sourceLocation(file: AnalysisSourceFile, lineNumber: number, functionName: string, context: number): SourceLocation {
+  const lines = file.content.split(/\r?\n/);
+  const start = Math.max(1, lineNumber - context);
+  const end = Math.min(lines.length, lineNumber + context);
+  const snippet: string[] = [];
+  for (let line = start; line <= end; line++) {
+    snippet.push(`${String(line).padStart(5, ' ')} | ${lines[line - 1]}`);
+  }
+  return { file_path: file.relative_path, line_number: lineNumber, function_name: functionName, snippet: snippet.join('\n') };
+}
+
+function definitionRegex(functionName: string, language: string): RegExp {
+  const name = escapeRegExp(functionName);
+  switch (language) {
+    case 'python': return new RegExp(`^\\s*(?:async\\s+)?def\\s+${name}\\s*\\(`);
+    case 'go': return new RegExp(`^\\s*func\\s+(?:\\([^)]*\\)\\s*)?${name}\\s*\\(`);
+    case 'rust': return new RegExp(`^\\s*(?:pub(?:\\([^)]*\\))?\\s+)?(?:async\\s+)?fn\\s+${name}\\s*\\(`);
+    case 'ruby': return new RegExp(`^\\s*def\\s+(?:self\\.)?${name}\\b`);
+    case 'php': return new RegExp(`^\\s*(?:(?:public|protected|private|static|final|abstract)\\s+)*function\\s+${name}\\s*\\(`, 'i');
+    case 'lua': return new RegExp(`^\\s*(?:local\\s+)?function\\s+(?:[\\w.:]+[.:])?${name}\\s*\\(`);
+    case 'elixir': return new RegExp(`^\\s*defp?\\s+${name}\\s*\\(`);
+    default: return new RegExp(`^\\s*(?:(?:public|protected|private|static|final|virtual|override|async|export|internal|extern|inline|constexpr|synchronized)\\s+)*(?:[\\w$<>\\[\\],.?*&:\\s]+\\s+)?${name}\\s*\\([^;]*\\)\\s*(?:\\{|=>|throws\\b)`);
+  }
+}
+
+function cleanFunctionName(value: string): string {
+  const withoutArgs = value.replace(/\(.*$/, '').trim();
+  const parts = withoutArgs.split(/\.|::|->/);
+  const name = parts[parts.length - 1]?.replace(/^<|>$/g, '') ?? '';
+  return /^[A-Za-z_$][\w$]*$/.test(name) ? name : '';
+}
+
+function pathMatchScore(stackPath: string, sourcePath: string): number {
+  const stack = stackPath.replace(/\\/g, '/').toLowerCase();
+  const source = sourcePath.replace(/\\/g, '/').toLowerCase();
+  if (stack === source) return 3;
+  if (stack.endsWith('/' + source)) return 2;
+  return 1;
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
 // ── Minimal Analysis (fallback when no stack trace) ──
