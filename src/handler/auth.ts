@@ -168,19 +168,16 @@ router.post('/forgot-password', rateLimit({
   const username = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
   if (!username || username.length > 64) {
     // Still respond "success" to avoid enumeration
-    res.json({ success: true, message: 'If the account exists, a reset token has been generated.' });
+    res.json({ success: true, message: 'If the account exists, a reset request has been created. Contact an administrator with your username to complete the reset.' });
     return;
   }
   const result = auth.createPasswordResetToken(username);
   auth.writeAuditLog(null, 'password_reset.requested', 'user', username.substring(0, 64), req.ip ?? '', { success: !!result });
   if (result) {
-    // In a production environment, you would send the token via email here.
-    // For now, the token is returned only to the admin who requested it,
-    // or displayed in the server console for self-service resets.
-    console.log(`[reset] Password reset token for ${result.username}: ${result.token.substring(0, 8)}... (valid ${15} minutes)`);
-    res.json({ success: true, message: 'A reset token has been generated. Contact an administrator to complete the reset.', reset_token: result.token });
+    console.log(`[reset] TOKEN for ${result.username}: ${result.token} (valid 15m)`);
+    res.json({ success: true, message: 'If the account exists, a reset request has been created. Contact an administrator with your username to complete the reset.' });
   } else {
-    res.json({ success: true, message: 'If the account exists, a reset token has been generated.' });
+    res.json({ success: true, message: 'If the account exists, a reset request has been created. Contact an administrator with your username to complete the reset.' });
   }
 });
 
@@ -224,13 +221,19 @@ router.post('/admin-reset/:id', requireApiAuth, requireRole('admin'), requireCsr
     res.status(400).json({ error: 'Bad Request', message: 'Invalid user ID' });
     return;
   }
+  const adminPassword = typeof req.body?.admin_password === 'string' ? req.body.admin_password : '';
+  if (!adminPassword || !auth.authenticateUser(req.authUser!.username, adminPassword)) {
+    res.status(403).json({ error: 'Forbidden', message: 'Admin password is required to generate a reset token' });
+    return;
+  }
   const result = auth.adminResetPassword(req.authUser!, id);
   if (!result) {
     res.status(404).json({ error: 'Not Found', message: 'User not found or inactive' });
     return;
   }
   auth.writeAuditLog(req.authUser!.id, 'password_reset.admin_initiated', 'user', String(id), req.ip ?? '', {});
-  res.json({ success: true, reset_token: result.token, username: result.username, expires_in_minutes: 15 });
+  console.log(`[reset] ADMIN-RESET token for ${result.username} (by ${req.authUser!.username}): ${result.token} (valid 15m)`);
+  res.json({ success: true, username: result.username, expires_in_minutes: 15 });
 });
 
 /**
