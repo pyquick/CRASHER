@@ -1,4 +1,5 @@
 export type UserRole = 'admin' | 'operator' | 'viewer';
+export type ApiKeyTier = 'admin' | 'operator' | 'viewer';
 
 export interface User {
   id: number;
@@ -24,6 +25,7 @@ export interface ApiKeyRecord {
   name: string;
   key_prefix: string;
   key_hash: string;
+  tier: ApiKeyTier;
   expires_at: string | null;
   revoked_at: string | null;
   last_used_at: string | null;

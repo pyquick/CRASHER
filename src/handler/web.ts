@@ -54,6 +54,20 @@ router.get('/login', (_req: Request, res: Response): void => {
   res.type('html').send(html);
 });
 
+/**
+ * GET /web/forgot-password
+ * Forgot password page — public.
+ */
+router.get('/forgot-password', (_req: Request, res: Response): void => {
+  const user = getAuthenticatedUser(_req);
+  if (user) {
+    res.redirect('/web/');
+    return;
+  }
+  const html = readFileSync(resolve(templatesDir, 'forgot_password.html'), 'utf-8');
+  res.type('html').send(html);
+});
+
 // Login and logout requests are handled by handler/auth.ts before this router.
 
 // ---------- Protected page routes (require login) ----------

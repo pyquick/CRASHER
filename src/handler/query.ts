@@ -530,6 +530,13 @@ router.put('/player-feedback/:id/status', requireRole('admin', 'operator'), (req
   res.json({ success: true });
 });
 
+router.delete('/player-feedback/:id', requireRole('admin'), (req, res) => {
+  const id = parseInt(String(req.params.id), 10);
+  if (isNaN(id)) { res.status(400).json({ error: 'Invalid ID' }); return; }
+  if (!store.deleteFeedback(id)) { res.status(404).json({ error: 'Feedback not found' }); return; }
+  res.json({ success: true });
+});
+
 router.get('/download/player-feedback/attachment/:id', requireRole('admin', 'operator'), (req, res) => {
   const id = parseInt(String(req.params.id), 10);
   if (isNaN(id)) { res.status(400).json({ error: 'Invalid ID' }); return; }

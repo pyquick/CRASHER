@@ -12,6 +12,7 @@ declare global {
     interface Request {
       authUser?: AuthenticatedUser;
       authType?: 'session' | 'api_key';
+      apiKeyTier?: import('./model.js').ApiKeyTier;
     }
   }
 }
@@ -92,6 +93,7 @@ function authenticateApiKey(req: Request): AuthenticatedUser | null {
   auth.touchApiKey(apiKey.id);
   req.authType = 'api_key';
   req.authUser = apiKey.user;
+  req.apiKeyTier = apiKey.tier;
   return apiKey.user;
 }
 
@@ -139,6 +141,50 @@ export function clearApiKeyIdentity(req: Request, _res: Response, next: NextFunc
   if (req.authType === 'api_key') {
     delete req.authType;
     delete req.authUser;
+    delete req.apiKeyTier;
+  }
+  next();
+}
+
+/**
+ * Restrict API key by tier. Viewer keys can only GET, operator keys cannot DELETE.
+ * Session-authenticated users (login cookie) are not restricted.
+ */
+export function requireApiKeyTier(...tiers: string[]) {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (req.authType !== 'api_key') { next(); return; }
+    const tier = req.apiKeyTier || 'operator';
+    if (!tiers.includes(tier)) {
+      res.status(403).json({ error: 'Forbidden', message: `API key tier '${tier}' cannot perform this action` });
+      return;
+    }
+    next();
+  };
+}
+
+/**
+ * Block viewer-tier API keys from using any POST/PUT/PATCH/DELETE method.
+ */
+export function requireApiKeyWriteAccess(req: Request, res: Response, next: NextFunction): void {
+  if (req.authType !== 'api_key') { next(); return; }
+  const tier = req.apiKeyTier || 'operator';
+  if (tier === 'viewer' && ['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) {
+    res.status(403).json({ error: 'Forbidden', message: 'Viewer-tier API keys cannot perform write operations' });
+    return;
+  }
+  next();
+}
+
+/**
+ * Block viewer and operator-tier API keys from DELETE operations.
+ * Admin-tier keys and session auth pass through.
+ */
+export function requireApiKeyDeleteAccess(req: Request, res: Response, next: NextFunction): void {
+  if (req.authType !== 'api_key') { next(); return; }
+  const tier = req.apiKeyTier || 'operator';
+  if (req.method === 'DELETE' && tier !== 'admin') {
+    res.status(403).json({ error: 'Forbidden', message: 'Only admin-tier API keys can perform delete operations' });
+    return;
   }
   next();
 }

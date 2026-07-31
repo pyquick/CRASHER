@@ -111,7 +111,7 @@
             <td class="px-4 py-3 text-gray-400 hidden md:table-cell" x-text="formatDate(item.uploaded_at)"></td>
             <td class="px-4 py-3">
               <button @click="deleteSymbol(item.id)"
-                      class="text-red-400 hover:text-red-300 text-xs transition-colors">Delete</button>
+                      class="text-red-400 hover:text-red-300 text-xs transition-colors admin-only" style="display:none">Delete</button>
             </td>
           </tr>
         </template>

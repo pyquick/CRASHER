@@ -3,7 +3,7 @@ import cors from 'cors';
 import compression from 'compression';
 import { config } from './config.js';
 import { initDb, closeDb } from './database.js';
-import { purgeExpiredSessions } from './auth.js';
+import { purgeExpiredSessions, purgeExpiredResetTokens } from './auth.js';
 import {
   authenticateSession,
   clearApiKeyIdentity,
@@ -13,6 +13,8 @@ import {
   requestLogger,
   requireApiAuth,
   requireApiKey,
+  requireApiKeyDeleteAccess,
+  requireApiKeyWriteAccess,
   requireCsrf,
 } from './middleware.js';
 import authHandler from './handler/auth.js';
@@ -25,6 +27,7 @@ import webHandler from './handler/web.js';
 
 initDb();
 purgeExpiredSessions();
+purgeExpiredResetTokens();
 
 const app = express();
 app.disable('x-powered-by');
@@ -78,17 +81,20 @@ app.use('/web', authHandler);
 app.use('/api/v1/auth', authHandler);
 
 const ingestLimiter = rateLimit({ windowMs: 60 * 1000, limit: config.ingestRateLimit });
-app.use('/api/v1/crash-report', (req, res, next) => req.method === 'POST' ? ingestLimiter(req, res, next) : next(), (req, res, next) => req.method === 'POST' ? requireApiKey(req, res, next) : next());
-app.use('/api/v1/player-feedback', (req, res, next) => req.method === 'POST' && req.path === '/' ? ingestLimiter(req, res, next) : next(), (req, res, next) => req.method === 'POST' && req.path === '/' ? requireApiKey(req, res, next) : next());
-app.use('/api/v1/unity/crash-report', (req, res, next) => req.method === 'POST' ? ingestLimiter(req, res, next) : next(), (req, res, next) => req.method === 'POST' ? requireApiKey(req, res, next) : next());
+// Ingest routes: API key required for POST, viewer-tier keys cannot write
+app.use('/api/v1/crash-report', (req, res, next) => req.method === 'POST' ? ingestLimiter(req, res, next) : next(), (req, res, next) => req.method === 'POST' ? requireApiKey(req, res, next) : next(), requireApiKeyWriteAccess);
+app.use('/api/v1/player-feedback', (req, res, next) => req.method === 'POST' && req.path === '/' ? ingestLimiter(req, res, next) : next(), (req, res, next) => req.method === 'POST' && req.path === '/' ? requireApiKey(req, res, next) : next(), requireApiKeyWriteAccess);
+app.use('/api/v1/unity/crash-report', (req, res, next) => req.method === 'POST' ? ingestLimiter(req, res, next) : next(), (req, res, next) => req.method === 'POST' ? requireApiKey(req, res, next) : next(), requireApiKeyWriteAccess);
+// Viewer API keys cannot access crash/feedback/symbol GET endpoints; admin+operator only
 app.use('/api/v1', crashReportHandler);
 app.use('/api/v1', feedbackHandler);
 app.use('/api/v1', unityHandler);
 app.use('/api/v1', clearApiKeyIdentity);
 
 const apiLimiter = rateLimit({ windowMs: 60 * 1000, limit: config.apiRateLimit });
-app.use('/api/v1', apiLimiter, requireApiAuth, requireCsrf, queryHandler);
-app.use('/api/v1', apiLimiter, requireApiAuth, requireCsrf, symbolHandler);
+// Protected API routes: session-auth required, CSRF required, API key delete restrictions
+app.use('/api/v1', apiLimiter, requireApiAuth, requireCsrf, requireApiKeyDeleteAccess, queryHandler);
+app.use('/api/v1', apiLimiter, requireApiAuth, requireCsrf, requireApiKeyDeleteAccess, symbolHandler);
 
 app.use('/web', webHandler);
 

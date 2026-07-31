@@ -196,6 +196,7 @@
       el.textContent = data.user.username + ' · ' + data.user.role;
       if (data.user.role === 'admin') {
         document.getElementById('accounts-link').style.display = '';
+        document.querySelectorAll('.admin-only').forEach(n => { (n as HTMLElement).style.display = ''; });
       }
       if (data.user.role !== 'admin' && data.user.role !== 'operator') {
         document.querySelectorAll('.viewer-hide').forEach(n => n.remove());

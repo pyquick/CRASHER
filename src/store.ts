@@ -1,4 +1,5 @@
 import { getDb } from './database.js';
+import { existsSync, unlinkSync } from 'fs';
 import type {
   CrashGroup,
   CrashReport,
@@ -408,6 +409,16 @@ export function updateFeedbackStatus(id: number, status: string): boolean {
     "UPDATE player_feedback SET status = ?, updated_at = datetime('now') WHERE id = ?"
   ).run(status, id);
   return result.changes > 0;
+}
+
+export function deleteFeedback(id: number): boolean {
+  const db = getDb();
+  const attachments = getFeedbackAttachments(id);
+  for (const a of attachments) {
+    try { if (existsSync(a.file_path)) unlinkSync(a.file_path); } catch {}
+  }
+  db.prepare('DELETE FROM feedback_attachments WHERE feedback_id = ?').run(id);
+  return db.prepare('DELETE FROM player_feedback WHERE id = ?').run(id).changes > 0;
 }
 
 export function createFeedbackAttachment(

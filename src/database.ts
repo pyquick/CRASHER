@@ -81,6 +81,7 @@ function runMigrations(db: Database.Database): void {
       name TEXT NOT NULL,
       key_prefix TEXT NOT NULL,
       key_hash TEXT NOT NULL UNIQUE,
+      tier TEXT NOT NULL DEFAULT 'operator' CHECK(tier IN ('admin','operator','viewer')),
       expires_at TEXT,
       revoked_at TEXT,
       last_used_at TEXT,
@@ -95,6 +96,15 @@ function runMigrations(db: Database.Database): void {
       target_id TEXT NOT NULL DEFAULT '',
       ip_address TEXT NOT NULL DEFAULT '',
       details TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS password_reset_tokens (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at TEXT NOT NULL,
+      used_at TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
@@ -236,6 +246,9 @@ function runMigrations(db: Database.Database): void {
   addColumnIfNotExists(db, 'symbols', 'architecture', "TEXT DEFAULT ''");
   addColumnIfNotExists(db, 'symbols', 'index_status', "TEXT DEFAULT 'ready'");
   addColumnIfNotExists(db, 'symbols', 'index_error', "TEXT DEFAULT ''");
+
+  // v5 migration: API key tier
+  addColumnIfNotExists(db, 'api_keys', 'tier', "TEXT NOT NULL DEFAULT 'operator'");
 
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_crash_reports_build_guid ON crash_reports(build_guid);
