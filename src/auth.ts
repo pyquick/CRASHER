@@ -10,7 +10,6 @@ const PBKDF2_ITERATIONS = 310_000;
 // PBKDF2 minimum iterations (OWASP 2023 recommendation for SHA-256: 600,000)
 // We use 310k for server performance; adjust higher if needed
 const RESET_TOKEN_LENGTH = 32;
-const RESET_TOKEN_EXPIRY_MINUTES = 15;
 const USERNAME_PATTERN = /^[A-Za-z0-9_.-]{3,64}$/;
 
 function hashLookupToken(token: string): string {
@@ -285,94 +284,13 @@ export function writeAuditLog(actorUserId: number | null, action: string, target
   `).run(actorUserId, action, targetType, targetId, ipAddress, JSON.stringify(details));
 }
 
-// ── Password Reset (forgot-password flow) ──
+// ── Password Reset Requests (admin-approval flow) ──
 
-/**
- * Generate a password reset token for a user, stored as SHA-256 hash.
- * Returns the raw token to be sent to the user (e.g., via admin / email).
- */
-export function createPasswordResetToken(username: string): { token: string; username: string } | null {
-  const user = getDb().prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').get(username.trim()) as User | undefined;
-  if (!user || user.is_active !== 1) return null;
-  // Expire any existing unused tokens for this user
-  getDb().prepare("UPDATE password_reset_tokens SET expires_at = datetime('now') WHERE user_id = ? AND expires_at > datetime('now') AND used_at IS NULL")
-    .run(user.id);
-  const rawToken = randomBytes(RESET_TOKEN_LENGTH).toString('base64url');
-  const tokenHash = createHash('sha256').update(rawToken).digest('hex');
-  const expiresAtSql = nowSqlDateTimePlus(RESET_TOKEN_EXPIRY_MINUTES);
-  getDb().prepare(`
-    INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)
-  `).run(user.id, tokenHash, expiresAtSql);
-  return { token: rawToken, username: user.username };
-}
+const RESET_REQUEST_EXPIRY_HOURS = 24;
 
-/**
- * Verify a reset token and return the user if valid.
- */
-export function consumeResetToken(rawToken: string): AuthenticatedUser | null {
-  const tokenHash = createHash('sha256').update(rawToken).digest('hex');
-  const row = getDb().prepare(`
-    SELECT u.id, u.username, u.role, u.totp_enabled
-    FROM password_reset_tokens t
-    JOIN users u ON u.id = t.user_id
-    WHERE t.token_hash = ? AND t.expires_at > datetime('now') AND t.used_at IS NULL AND u.is_active = 1
-  `).get(tokenHash) as AuthenticatedUser | undefined;
-  if (!row) return null;
-  getDb().prepare("UPDATE password_reset_tokens SET used_at = datetime('now') WHERE token_hash = ?").run(tokenHash);
-  return row;
-}
-
-/**
- * Look up the user associated with a reset token WITHOUT consuming it.
- */
-export function lookupResetToken(rawToken: string): AuthenticatedUser | null {
-  const tokenHash = createHash('sha256').update(rawToken).digest('hex');
-  return getDb().prepare(`
-    SELECT u.id, u.username, u.role, u.totp_enabled
-    FROM password_reset_tokens t
-    JOIN users u ON u.id = t.user_id
-    WHERE t.token_hash = ? AND t.expires_at > datetime('now') AND t.used_at IS NULL AND u.is_active = 1
-  `).get(tokenHash) as AuthenticatedUser | undefined || null;
-}
-
-/**
- * Reset a user's password using a valid reset token.
- * Increments session_version to invalidate all existing sessions (including this reset).
- */
-export function resetPasswordWithToken(rawToken: string, newPassword: string): AuthenticatedUser | null {
-  const user = consumeResetToken(rawToken);
-  if (!user) return null;
-  const fullUser = getUserById(user.id);
-  if (!fullUser) return null;
-  const passwordError = validatePassword(newPassword, fullUser.username);
-  if (passwordError) throw new Error(passwordError);
-  if (verifyPassword(newPassword, fullUser.password_hash)) throw new Error('New password must be different from the current password');
-  getDb().prepare(`
-    UPDATE users SET password_hash = ?, session_version = session_version + 1,
-      updated_at = datetime('now') WHERE id = ?
-  `).run(hashPassword(newPassword), user.id);
-  getDb().prepare('DELETE FROM sessions WHERE user_id = ?').run(user.id);
-  return user;
-}
-
-/**
- * Admin-initiated password reset: generates a reset token for any user.
- * Only admins can call this.
- */
-export function adminResetPassword(actor: AuthenticatedUser, userId: number): { token: string; username: string } | null {
-  if (actor.role !== 'admin') throw new Error('Insufficient permissions');
-  const user = getUserById(userId);
-  if (!user || user.is_active !== 1) return null;
-  // Expire any existing unused tokens for this user
-  getDb().prepare("UPDATE password_reset_tokens SET expires_at = datetime('now') WHERE user_id = ? AND expires_at > datetime('now') AND used_at IS NULL")
-    .run(user.id);
-  const rawToken = randomBytes(RESET_TOKEN_LENGTH).toString('base64url');
-  const tokenHash = createHash('sha256').update(rawToken).digest('hex');
-  const expiresAtSql = nowSqlDateTimePlus(RESET_TOKEN_EXPIRY_MINUTES);
-  getDb().prepare(`
-    INSERT INTO password_reset_tokens (user_id, token_hash, expires_at) VALUES (?, ?, ?)
-  `).run(user.id, tokenHash, expiresAtSql);
-  return { token: rawToken, username: user.username };
+function nowSqlDateTimePlusHours(hours: number): string {
+  const d = new Date(Date.now() + hours * 60 * 60 * 1000);
+  return `${d.getUTCFullYear()}-${padNum(d.getUTCMonth() + 1)}-${padNum(d.getUTCDate())} ${padNum(d.getUTCHours())}:${padNum(d.getUTCMinutes())}:${padNum(d.getUTCSeconds())}`;
 }
 
 function nowSqlDateTimePlus(minutes: number): string {
@@ -380,8 +298,74 @@ function nowSqlDateTimePlus(minutes: number): string {
   return `${d.getUTCFullYear()}-${padNum(d.getUTCMonth() + 1)}-${padNum(d.getUTCDate())} ${padNum(d.getUTCHours())}:${padNum(d.getUTCMinutes())}:${padNum(d.getUTCSeconds())}`;
 }
 
+/**
+ * Create a password reset request for a user (operator/viewer).
+ * Admins must approve before the password is actually reset.
+ * Returns the approval token and list of admin emails to notify.
+ */
+export function createResetRequest(username: string): { token: string; username: string; adminEmails: string[] } | null {
+  const user = getDb().prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE AND role != \'admin\'').get(username.trim()) as User | undefined;
+  if (!user || user.is_active !== 1) return null;
+  const token = randomBytes(RESET_TOKEN_LENGTH).toString('base64url');
+  const expiresSql = nowSqlDateTimePlusHours(RESET_REQUEST_EXPIRY_HOURS);
+  getDb().prepare(`
+    INSERT INTO password_reset_requests (id, user_id, status, expires_at) VALUES (?, ?, 'pending', ?)
+  `).run(token, user.id, expiresSql);
+  // Get all admin emails for notification
+  const adminEmails = (getDb().prepare(`
+    SELECT ue.email FROM user_emails ue
+    JOIN users u ON u.id = ue.user_id AND u.role = 'admin' AND u.is_active = 1
+    WHERE ue.email_verified = 1
+  `).all() as { email: string }[]).map(r => r.email);
+  return { token, username: user.username, adminEmails };
+}
+
+export interface ResetRequest {
+  id: string;
+  user_id: number;
+  requester_username: string;
+  status: string;
+  expires_at: string;
+  created_at: string;
+}
+
+/**
+ * Get reset request info (for admin to review before approving).
+ */
+export function getResetRequest(token: string): ResetRequest | null {
+  return getDb().prepare(`
+    SELECT r.id, r.user_id, u.username AS requester_username, r.status, r.expires_at, r.created_at
+    FROM password_reset_requests r
+    JOIN users u ON u.id = r.user_id
+    WHERE r.id = ? AND r.status = 'pending' AND r.expires_at > datetime('now')
+  `).get(token) as ResetRequest | undefined || null;
+}
+
+/**
+ * Admin approves a reset request. Auto-generates a strong password and returns it.
+ */
+export function approveResetRequest(token: string, adminUserId: number): { username: string; newPassword: string } | null {
+  const req = getResetRequest(token);
+  if (!req) return null;
+  const admin = getUserById(adminUserId);
+  if (!admin || admin.role !== 'admin') throw new Error('Insufficient permissions');
+  const user = getUserById(req.user_id);
+  if (!user || user.is_active !== 1) return null;
+  if (user.role === 'admin') throw new Error('Cannot reset another admin account');
+
+  const newPassword = generateInitialPassword();
+  getDb().prepare(`
+    UPDATE password_reset_requests SET status = 'approved', approved_by = ?, new_password_hash = ? WHERE id = ?
+  `).run(adminUserId, hashPassword(newPassword), token);
+  getDb().prepare(`
+    UPDATE users SET password_hash = ?, session_version = session_version + 1, updated_at = datetime('now') WHERE id = ?
+  `).run(hashPassword(newPassword), user.id);
+  getDb().prepare('DELETE FROM sessions WHERE user_id = ?').run(user.id);
+  return { username: user.username, newPassword };
+}
+
 export function purgeExpiredResetTokens(): void {
-  getDb().prepare("DELETE FROM password_reset_tokens WHERE expires_at <= datetime('now')").run();
+  getDb().prepare("DELETE FROM password_reset_requests WHERE expires_at <= datetime('now') AND status = 'pending'").run();
 }
 
 // ── Admin Self-Reset Session (TOTP + email verification) ──
@@ -429,6 +413,17 @@ export function consumeAdminResetSession(tempToken: string, emailCode: string, n
   `).run(hashPassword(newPassword), user.id);
   getDb().prepare('DELETE FROM sessions WHERE user_id = ?').run(user.id);
   return publicUser(user);
+}
+
+/**
+ * Verify the email code for an admin reset session WITHOUT consuming it.
+ * Returns true if the code is correct and the session is still valid.
+ */
+export function verifyAdminResetEmailCode(tempToken: string, emailCode: string): boolean {
+  const session = adminResetSessions.get(tempToken);
+  if (!session || session.expires < Date.now()) return false;
+  const codeHash = createHash('sha256').update(emailCode.trim()).digest('hex');
+  return codeHash === session.emailCodeHash;
 }
 
 // ── Email Management ──

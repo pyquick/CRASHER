@@ -124,7 +124,6 @@
               <td class="text-gray-500" x-text="user.last_login_at || 'never'"></td>
               <td class="text-right space-x-2">
                 <button @click="toggleUser(user)" class="text-xs text-yellow-400 hover:text-yellow-300" x-text="user.is_active ? 'Disable' : 'Enable'"></button>
-                <button x-show="user.role !== 'admin'" @click="resetPassword(user)" class="text-xs text-blue-400 hover:text-blue-300">Reset password</button>
               </td>
             </tr>
           </template>
@@ -228,7 +227,6 @@
     async createUser() { try { const p = { username: this.newUser.username, role: this.newUser.role }; if (this.newUser.password) p.password = this.newUser.password; const r = await this.request('/api/v1/auth/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) }); this.newUser = { username: '', password: '', role: 'viewer' }; this.showCreate = false; const pw = r.initial_password; this.notify(pw ? 'Account created. One-time password (copy now): ' + pw : 'Account created'); await this.load(); } catch (e) { this.notify(e.message, true); } },
     async updateUser(user) { try { await this.request('/api/v1/auth/users/' + user.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: user.role }) }); this.notify('Account updated'); } catch (e) { this.notify(e.message, true); await this.load(); } },
     async toggleUser(user) { try { await this.request('/api/v1/auth/users/' + user.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_active: !Boolean(user.is_active) }) }); this.notify('Account updated'); await this.load(); } catch (e) { this.notify(e.message, true); } },
-    async resetPassword(user) { const p = await Modal.prompt('Reset Password', 'New password for ' + user.username, 'password', 'Enter new strong password', 'Reset'); if (!p) return; try { await this.request('/api/v1/auth/users/' + user.id + '/password', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ new_password: p }) }); this.notify('Password reset'); } catch (e) { this.notify(e.message, true); } },
 
     // ── API Keys ──
     async createKeyFromForm() { try { const k = await this.request('/api/v1/auth/api-keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: this.newKey.name, tier: this.newKey.tier }) }); this.createdKey = k.key; this.showCreateKey = false; this.newKey = { name: '', tier: 'operator' }; await this.load(); } catch (e) { this.notify(e.message, true); } },

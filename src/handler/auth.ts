@@ -1,7 +1,7 @@
 import { Router, type Request, type Response } from 'express';
 import { config } from '../config.js';
 import * as auth from '../auth.js';
-import { sendVerificationEmail } from '../notification/service.js';
+import { sendResetApprovalEmail, sendVerificationEmail } from '../notification/service.js';
 import {
   rateLimit,
   readSession,
@@ -395,8 +395,8 @@ router.post('/me/totp/disable', requireApiAuth, requireCsrf, (req: Request, res:
 /**
  * POST /api/v1/auth/forgot-password
  * Initiate the forgot-password flow. Rate-limited to prevent enumeration.
- * Admin accounts with TOTP enabled get a self-service flow (TOTP + email verification).
- * Non-admin accounts get the existing token-based flow (contact admin).
+ * Admin accounts with TOTP get self-service flow (TOTP + email verification).
+ * Operator/viewer accounts create an admin-approval request.
  */
 router.post('/forgot-password', rateLimit({
   windowMs: 15 * 60 * 1000,
@@ -405,7 +405,7 @@ router.post('/forgot-password', rateLimit({
 }), (req: Request, res: Response): void => {
   const username = typeof req.body?.username === 'string' ? req.body.username.trim() : '';
   if (!username || username.length > 64) {
-    res.json({ success: true, message: 'If the account exists, a reset request has been created. Contact an administrator with your username to complete the reset.' });
+    res.json({ success: true, message: 'If the account exists, your request has been submitted.' });
     return;
   }
   const user = auth.lookupUserByUsername(username);
@@ -414,13 +414,17 @@ router.post('/forgot-password', rateLimit({
     res.json({ success: true, requires_totp: true, username: user.username });
     return;
   }
-  // Non-admin or admin without TOTP: existing token flow
-  const result = auth.createPasswordResetToken(username);
+  // Non-admin: create an approval request, notify admins
+  const result = auth.createResetRequest(username);
   auth.writeAuditLog(null, 'password_reset.requested', 'user', username.substring(0, 64), req.ip ?? '', { success: !!result });
   if (result) {
-    console.log(`[reset] TOKEN for ${result.username}: ${result.token} (valid 15m)`);
+    console.log(`[reset] APPROVAL-TOKEN for ${result.username}: ${result.token} (valid 24h)`);
+    // Notify admins via email
+    for (const adminEmail of result.adminEmails) {
+      sendResetApprovalEmail(adminEmail, result.token, result.username).catch(() => {});
+    }
   }
-  res.json({ success: true, message: 'If the account exists, a reset request has been created. Contact an administrator with your username to complete the reset.' });
+  res.json({ success: true, message: 'If the account exists, administrators have been notified and will review your request.' });
 });
 
 /**
@@ -460,51 +464,58 @@ router.post('/forgot-password/totp', rateLimit({
 });
 
 /**
- * POST /api/v1/auth/admin-reset/:id
- * Admin generates a password reset token for any user.
+ * POST /api/v1/auth/forgot-password/verify-email
+ * Verify the email code for an admin self-reset session (does NOT consume it).
  */
-router.post('/admin-reset/:id', requireApiAuth, requireRole('admin'), requireCsrf, async (req: Request, res: Response): Promise<void> => {
-  const id = parseInt(String(req.params.id), 10);
-  if (!Number.isInteger(id) || id <= 0) {
-    res.status(400).json({ error: 'Bad Request', message: 'Invalid user ID' });
+router.post('/forgot-password/verify-email', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  key: req => `forgot-verify-email:${req.ip}`,
+}), (req: Request, res: Response): void => {
+  const tempToken = typeof req.body?.temp_token === 'string' ? req.body.temp_token.trim() : '';
+  const emailCode = typeof req.body?.email_code === 'string' ? req.body.email_code.replace(/\s/g, '') : '';
+  if (!tempToken || !emailCode) {
+    res.status(400).json({ error: 'Bad Request', message: 'Temp token and email code are required' });
     return;
   }
-  if (id === req.authUser!.id) {
-    res.status(403).json({ error: 'Forbidden', message: 'Admins cannot reset their own password. Use the forgot-password flow.' });
+  if (auth.verifyAdminResetEmailCode(tempToken, emailCode)) {
+    res.json({ success: true, valid: true });
+  } else {
+    res.json({ success: true, valid: false, message: 'Invalid email code' });
+  }
+});
+
+/**
+ * GET /api/v1/auth/reset-request/:token
+ * Get reset request info (for admin to review before approving).
+ */
+router.get('/reset-request/:token', requireApiAuth, requireRole('admin'), (req: Request, res: Response): void => {
+  const info = auth.getResetRequest(String(req.params.token));
+  if (!info) {
+    res.status(404).json({ error: 'Not Found', message: 'Reset request not found, already handled, or expired.' });
     return;
   }
-  const targetUser = auth.getUserById(id);
-  if (!targetUser || !targetUser.is_active) {
-    res.status(404).json({ error: 'Not Found', message: 'User not found or inactive' });
-    return;
+  res.json({ request: info });
+});
+
+/**
+ * POST /api/v1/auth/reset-request/:token/approve
+ * Admin approves a reset request. Auto-generates a password and returns it.
+ */
+router.post('/reset-request/:token/approve', requireApiAuth, requireRole('admin'), requireCsrf, (req: Request, res: Response): void => {
+  const token = String(req.params.token);
+  try {
+    const result = auth.approveResetRequest(token, req.authUser!.id);
+    if (!result) {
+      res.status(400).json({ error: 'Bad Request', message: 'Reset request not found, already handled, or expired.' });
+      return;
+    }
+    auth.writeAuditLog(req.authUser!.id, 'password_reset.approved', 'user', result.username, req.ip ?? '', {});
+    console.log(`[reset] APPROVED by ${req.authUser!.username} for ${result.username}: ${result.newPassword}`);
+    res.json({ success: true, username: result.username, new_password: result.newPassword });
+  } catch (error: any) {
+    res.status(400).json({ error: 'Bad Request', message: error.message });
   }
-  if (targetUser.role === 'admin') {
-    res.status(403).json({ error: 'Forbidden', message: 'Cannot reset another admin account.' });
-    return;
-  }
-  const adminPassword = typeof req.body?.admin_password === 'string' ? req.body.admin_password : '';
-  if (!adminPassword || !auth.authenticateUser(req.authUser!.username, adminPassword)) {
-    res.status(403).json({ error: 'Forbidden', message: 'Admin password is required to generate a reset token' });
-    return;
-  }
-  const adminPrimaryEmail = auth.getPrimaryEmail(req.authUser!.id);
-  if (!adminPrimaryEmail) {
-    res.status(403).json({ error: 'Forbidden', message: 'You must verify a primary email address before resetting passwords. Visit Account Security to set up your email.' });
-    return;
-  }
-  const result = auth.adminResetPassword(req.authUser!, id);
-  if (!result) {
-    res.status(404).json({ error: 'Not Found', message: 'User not found or inactive' });
-    return;
-  }
-  auth.writeAuditLog(req.authUser!.id, 'password_reset.admin_initiated', 'user', String(id), req.ip ?? '', {});
-  console.log(`[reset] ADMIN-RESET token for ${result.username} (by ${req.authUser!.username}): ${result.token} (valid 15m)`);
-  // Send token to target user's primary email if they have one
-  const targetEmail = auth.getPrimaryEmail(id);
-  if (targetEmail) {
-    sendVerificationEmail(targetEmail, result.token).catch(() => {});
-  }
-  res.json({ success: true, username: result.username, expires_in_minutes: 15 });
 });
 
 /**

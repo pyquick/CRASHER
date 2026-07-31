@@ -71,80 +71,41 @@ router.get('/forgot-password', (_req: Request, res: Response): void => {
 
 /**
  * POST /web/reset-password
- * Complete a password reset using a valid reset token.
- * Only available through the web interface, not the API.
+ * Admin self-reset: complete password reset using TOTP + email verification.
  */
 router.post('/reset-password', rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 5,
   key: req => `web-reset:${req.ip}`,
 }), (req: Request, res: Response): void => {
-  const newPassword = typeof req.body?.new_password === 'string' ? req.body.new_password : '';
-
-  // ── Admin self-reset flow (TOTP + email verification) ──
   const adminToken = typeof req.body?.admin_token === 'string' ? req.body.admin_token.trim() : '';
   const emailCode = typeof req.body?.email_code === 'string' ? req.body.email_code.replace(/\s/g, '') : '';
-  if (adminToken) {
-    if (!emailCode || !newPassword) {
-      res.status(400).json({ error: 'Bad Request', message: 'Email code and new password are required' });
-      return;
-    }
-    try {
-      const user = auth.consumeAdminResetSession(adminToken, emailCode, newPassword);
-      if (!user) {
-        auth.writeAuditLog(null, 'password_reset.failed', 'user', '', req.ip ?? '', { reason: 'admin_self_reset' });
-        res.status(400).json({ error: 'Bad Request', message: 'Invalid or expired verification code' });
-        return;
-      }
-      auth.writeAuditLog(user.id, 'password_reset.completed', 'user', String(user.id), req.ip ?? '', { self_reset: true });
-      res.json({ success: true, message: 'Password has been reset successfully. Please log in with your new password.', username: user.username });
-    } catch (error: any) {
-      res.status(400).json({ error: 'Bad Request', message: error.message });
-    }
-    return;
-  }
-
-  // ── Token-based reset flow (non-admin or admin reset by another admin) ──
-  const token = typeof req.body?.reset_token === 'string' ? req.body.reset_token.trim() : '';
-  const totpCode = typeof req.body?.totp_code === 'string' ? req.body.totp_code.replace(/\s/g, '') : '';
-  if (!token || !newPassword) {
-    res.status(400).json({ error: 'Bad Request', message: 'Reset token and new password are required' });
+  const newPassword = typeof req.body?.new_password === 'string' ? req.body.new_password : '';
+  if (!adminToken || !emailCode || !newPassword) {
+    res.status(400).json({ error: 'Bad Request', message: 'Admin token, email code, and new password are required' });
     return;
   }
   try {
-    const peekUser = auth.lookupResetToken(token);
-    if (!peekUser) {
-      auth.writeAuditLog(null, 'password_reset.failed', 'user', '', req.ip ?? '', {});
-      res.status(400).json({ error: 'Bad Request', message: 'Invalid or expired reset token' });
-      return;
-    }
-    const fullUser = auth.getUserById(peekUser.id);
-    if (fullUser && fullUser.role === 'admin') {
-      if (!fullUser.totp_enabled) {
-        res.status(400).json({ error: 'Bad Request', message: 'Admin accounts must enable 2FA before resetting password. Contact another admin for help.' });
-        return;
-      }
-      if (!totpCode) {
-        res.json({ requires_totp: true, message: 'Admin reset requires 2FA verification.' });
-        return;
-      }
-      if (!auth.verifyTotp(peekUser.id, totpCode)) {
-        auth.writeAuditLog(peekUser.id, 'password_reset.totp_failed', 'user', String(peekUser.id), req.ip ?? '', {});
-        res.status(400).json({ error: 'Bad Request', message: 'Invalid 2FA code' });
-        return;
-      }
-    }
-    const user = auth.resetPasswordWithToken(token, newPassword);
+    const user = auth.consumeAdminResetSession(adminToken, emailCode, newPassword);
     if (!user) {
-      auth.writeAuditLog(null, 'password_reset.failed', 'user', '', req.ip ?? '', {});
-      res.status(400).json({ error: 'Bad Request', message: 'Invalid or expired reset token' });
+      auth.writeAuditLog(null, 'password_reset.failed', 'user', '', req.ip ?? '', { reason: 'admin_self_reset' });
+      res.status(400).json({ error: 'Bad Request', message: 'Invalid or expired verification code' });
       return;
     }
-    auth.writeAuditLog(user.id, 'password_reset.completed', 'user', String(user.id), req.ip ?? '', {});
+    auth.writeAuditLog(user.id, 'password_reset.completed', 'user', String(user.id), req.ip ?? '', { self_reset: true });
     res.json({ success: true, message: 'Password has been reset successfully. Please log in with your new password.', username: user.username });
   } catch (error: any) {
     res.status(400).json({ error: 'Bad Request', message: error.message });
   }
+});
+
+/**
+ * GET /web/approve-reset/:token
+ * Admin approval page for operator/viewer password reset requests.
+ */
+router.get('/approve-reset/:token', (_req: Request, res: Response): void => {
+  const html = readFileSync(resolve(templatesDir, 'approve_reset.html'), 'utf-8');
+  res.type('html').send(html);
 });
 
 // Login and logout requests are handled by handler/auth.ts before this router.

@@ -20,6 +20,46 @@ function getTransporter() {
  * Test SMTP connectivity by sending a verification email.
  * Called at server startup and via the test-smtp endpoint.
  */
+/**
+ * Send a reset approval link to an admin.
+ */
+export async function sendResetApprovalEmail(
+  adminEmail: string,
+  token: string,
+  requesterUsername: string,
+): Promise<SendResult> {
+  const transporter = getTransporter();
+  const approvalUrl = `${config.baseUrl || 'http://localhost:8080'}/web/approve-reset/${token}`;
+  if (!transporter || !config.alertEmailFrom) {
+    console.log(`[email] Reset approval for ${requesterUsername}: ${approvalUrl}`);
+    return { ok: false, method: 'console', error: 'SMTP not configured' };
+  }
+  try {
+    await transporter.sendMail({
+      from: config.alertEmailFrom,
+      to: adminEmail,
+      subject: `[Crash Reporter] Password Reset Request for ${requesterUsername}`,
+      text: [
+        `A password reset has been requested for user: ${requesterUsername}`,
+        ``,
+        `To approve this request, visit:`,
+        `${approvalUrl}`,
+        ``,
+        `This link expires in 24 hours.`,
+        ``,
+        `If you did not expect this request, please ignore this email.`,
+      ].join('\n'),
+    });
+    console.log(`[email] Reset approval link sent to ${adminEmail} for ${requesterUsername}`);
+    return { ok: true, method: 'smtp' };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`[email] Failed to send approval to ${adminEmail}:`, message);
+    console.log(`[email] Reset approval URL for ${requesterUsername}: ${approvalUrl}`);
+    return { ok: false, method: 'console', error: message };
+  }
+}
+
 export async function testSmtpConnection(): Promise<{ ok: boolean; error?: string }> {
   if (!config.smtpHost) {
     console.log('[smtp] Not configured — SMTP_HOST is empty. Emails will use console fallback.');

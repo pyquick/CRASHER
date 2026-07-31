@@ -40,6 +40,7 @@ export interface Config {
   alertEmailTo: string;
   alertOnNewGroup: boolean;
   alertThresholdCount: number;
+  baseUrl: string;
 }
 
 function env(key: string, fallback: string): string {
@@ -120,6 +121,7 @@ function loadConfig(): Config {
     alertEmailTo: env('ALERT_EMAIL_TO', ''),
     alertOnNewGroup: envBool('ALERT_ON_NEW_GROUP', true),
     alertThresholdCount: envInt('ALERT_THRESHOLD_COUNT', 10),
+    baseUrl: env('BASE_URL', `http://localhost:${port}`),
   };
 }
 

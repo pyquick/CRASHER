@@ -1163,7 +1163,7 @@ function classifySeverity(frames: StackFrame[], lang: string): void {
 function normalizePath(filePath: string): string {
   if (!filePath) return '';
 
-  let normalized = filePath;
+  let normalized = filePath.replace(/\\/g, '/');
 
   // Strip <angled brackets> from Unity paths like "<1234567890>"
   normalized = normalized.replace(/<[^>]+>/g, '').trim();

@@ -106,75 +106,92 @@
       line-height: 1.25rem;
     }
 
-    /* ── Crash File Tree Styles ── */
-    .tree-row {
-      display: flex;
-      align-items: center;
-      line-height: 1.75;
-      padding: 2px 4px;
-      border-radius: 4px;
-      transition: background 0.12s ease;
-      white-space: nowrap;
+    /* ── Crash File Tree ── */
+    .crash-file-tree {
+      font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+      font-size: 0.8125rem;
     }
-    .tree-row:hover {
-      background: rgba(255,255,255,0.04);
-    }
-    .tree-dir {
-      cursor: pointer;
-      user-select: none;
-    }
-    .tree-dir:hover {
-      background: rgba(255,255,255,0.06);
-    }
-    .tree-toggle-icon {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      width: 18px;
-      height: 18px;
-      font-size: 0.55rem;
-      color: #9ca3af;
-      transition: transform 0.15s ease;
-      flex-shrink: 0;
-    }
-    .tree-toggle-icon.expanded {
-      transform: rotate(0deg);
-    }
-    .tree-toggle-icon.collapsed {
-      transform: rotate(-90deg);
-    }
-    .tree-file {
-      cursor: default;
-    }
-    .tree-file:hover {
-      background: rgba(255,255,255,0.05);
-    }
-    .tree-subtree {
+    .tree-list {
       min-width: max-content;
+      margin: 0;
+      padding: 0;
+      list-style: none;
     }
-    .tree-subtree.collapsed {
-      display: none;
+    .tree-list .tree-list {
+      margin-left: 13px;
+      padding-left: 18px;
+      border-left: 1px solid #374151;
     }
-    .tree-crash-tag {
-      font-size: 0.7rem;
-      padding: 1px 6px;
+    .tree-list.collapsed { display: none; }
+    .tree-node { position: relative; }
+    .tree-list .tree-list > .tree-node::before {
+      content: '';
+      position: absolute;
+      top: 16px;
+      left: -18px;
+      width: 14px;
+      border-top: 1px solid #374151;
+    }
+    .tree-row {
+      display: grid;
+      grid-template-columns: 16px 34px minmax(8rem, auto) auto;
+      align-items: center;
+      gap: 6px;
+      width: 100%;
+      min-height: 32px;
+      padding: 4px 8px;
+      border-radius: 6px;
+      color: #d1d5db;
+      text-align: left;
+      white-space: nowrap;
+      transition: background-color 0.12s ease;
+    }
+    .tree-row:hover, .tree-row:focus-visible {
+      background: rgba(255,255,255,0.06);
+      outline: none;
+    }
+    .tree-dir { cursor: pointer; }
+    .tree-chevron {
+      width: 0;
+      height: 0;
+      border-top: 4px solid transparent;
+      border-bottom: 4px solid transparent;
+      border-left: 6px solid #9ca3af;
+      transition: transform 0.12s ease;
+    }
+    .tree-chevron.expanded { transform: rotate(90deg); }
+    .tree-file-spacer { width: 6px; }
+    .tree-kind {
+      display: inline-flex;
+      justify-content: center;
+      min-width: 34px;
+      padding: 1px 4px;
       border-radius: 4px;
-      margin-left: 6px;
-      background: rgba(220,38,38,0.2);
-      color: #f87171;
-      font-weight: 500;
+      background: #1f2937;
+      color: #9ca3af;
+      font-size: 0.625rem;
+      font-weight: 600;
+      text-transform: uppercase;
     }
-    .tree-line-num {
-      font-size: 0.7rem;
-      color: #6b7280;
-      margin-left: 4px;
+    .tree-kind-dir { background: rgba(37,99,235,0.16); color: #93c5fd; }
+    .tree-name { overflow: hidden; text-overflow: ellipsis; }
+    .tree-dir .tree-name { color: #e5e7eb; font-weight: 600; }
+    .tree-meta { margin-left: 8px; color: #6b7280; font-size: 0.6875rem; }
+    .tree-severity-red { color: #fca5a5; background: rgba(127,29,29,0.18); }
+    .tree-severity-orange { color: #fdba74; }
+    .tree-severity-yellow { color: #fde68a; }
+    .tree-severity-gray { color: #9ca3af; }
+    .tree-crash-tag {
+      margin-left: 8px;
+      padding: 1px 6px;
+      border: 1px solid rgba(248,113,113,0.35);
+      border-radius: 9999px;
+      background: rgba(127,29,29,0.25);
+      color: #fca5a5;
+      font-size: 0.6875rem;
+      font-weight: 600;
     }
-    .tree-connector {
-      color: #4b5563;
-      flex-shrink: 0;
-    }
-    .tree-icon-dir  { margin-right: 3px; }
-    .tree-icon-file { margin-right: 3px; }
+    .tree-line-num { margin-left: 6px; color: #6b7280; font-size: 0.6875rem; }
   </style>
 </head>
 <body class="bg-surface-950 text-gray-100 min-h-screen" x-data="{ sidebarOpen: false }">
@@ -237,7 +254,7 @@
   </div>
 
   <!-- Global Modal -->
-  <div id="global-modal" style="display:none" class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onclick="if(event.target===this) Modal._cancel()">
+  <div id="global-modal" style="display:none" class="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm" onclick="if(event.target===this) Modal._cancel()">
     <div class="bg-surface-900 border border-gray-700 rounded-xl p-6 w-full max-w-sm mx-4 shadow-2xl" onclick="event.stopPropagation()">
       <h3 id="modal-title" class="text-sm font-semibold mb-3"></h3>
       <p id="modal-message" class="text-sm text-gray-400 mb-4"></p>

@@ -61,15 +61,33 @@ export interface SourceLocation {
   snippet: string;
 }
 
+export type SourceRelationship = 'crash' | 'definition' | 'caller' | 'callee' | 'stack';
+
+export interface RelatedFunction extends SourceLocation {
+  relationship: Exclude<SourceRelationship, 'crash' | 'definition'>;
+  language: string;
+}
+
+export interface RelatedSourceFile {
+  file_path: string;
+  language: string;
+  relationships: SourceRelationship[];
+  functions: string[];
+  match_count: number;
+}
+
 export interface SourceAnalysis {
   project_name: string;
   requested_release: string;
   snapshot_release: string;
   snapshot_id: number;
   match_type: 'exact' | 'latest';
+  files_scanned: number;
   crash_source: SourceLocation | null;
   function_definition: SourceLocation | null;
   references: SourceLocation[];
+  related_functions: RelatedFunction[];
+  related_files: RelatedSourceFile[];
   warnings: string[];
 }
 

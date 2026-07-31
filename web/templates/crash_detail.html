@@ -112,31 +112,75 @@
         </div>
       </section>
 
-      <!-- 🔬 Crash Analysis -->
-      <section class="bg-surface-900 rounded-xl p-5 border border-gray-800" x-show="analysis">
-        <div class="flex items-center gap-2 mb-4">
-          <h2 class="text-sm font-semibold text-gray-300">🔬 Crash Analysis</h2>
-          <span class="text-xs px-2 py-0.5 rounded font-medium"
-                :class="{
-                  'bg-purple-900/50 text-purple-300': analysis?.detected_language === 'csharp',
-                  'bg-blue-900/50 text-blue-300': analysis?.detected_language === 'cpp' || analysis?.detected_language === 'c',
-                  'bg-cyan-900/50 text-cyan-300': analysis?.detected_language === 'go',
-                  'bg-green-900/50 text-green-300': analysis?.detected_language === 'python',
-                  'bg-gray-700 text-gray-300': analysis?.detected_language === 'unknown'
-                }"
-                x-text="languageLabel(analysis?.detected_language)"></span>
+      <!-- Crash Analysis -->
+      <section class="bg-surface-900 rounded-xl border border-gray-800 overflow-hidden" x-show="analysis" x-cloak>
+        <div class="p-5 border-b border-gray-800 bg-gradient-to-r from-surface-900 to-surface-950">
+          <div class="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+            <div>
+              <div class="flex flex-wrap items-center gap-2">
+                <h2 class="text-base font-semibold text-gray-100">Code Analysis</h2>
+                <span class="pill"
+                      :class="{
+                        'bg-purple-900/50 text-purple-300': analysis?.detected_language === 'csharp',
+                        'bg-blue-900/50 text-blue-300': analysis?.detected_language === 'cpp' || analysis?.detected_language === 'c',
+                        'bg-cyan-900/50 text-cyan-300': analysis?.detected_language === 'go',
+                        'bg-green-900/50 text-green-300': analysis?.detected_language === 'python',
+                        'bg-gray-700 text-gray-300': analysis?.detected_language === 'unknown'
+                      }"
+                      x-text="languageLabel(analysis?.detected_language)"></span>
+                <span class="pill bg-green-900/40 text-green-300" x-show="analysis?.source_analysis?.crash_source">Source matched</span>
+                <span class="pill bg-yellow-900/40 text-yellow-300" x-show="analysis?.source_analysis && !analysis?.source_analysis?.crash_source">Source snapshot unmatched</span>
+              </div>
+              <p class="mt-1 text-xs text-gray-500">Report <span x-text="'#' + analysis?.report_id"></span> · <span x-text="analysis?.runtime || 'Unknown runtime'"></span><span x-show="analysis?.runtime_version" x-text="' ' + analysis?.runtime_version"></span></p>
+            </div>
+            <div class="grid grid-cols-3 gap-2 text-center">
+              <div class="min-w-20 rounded-lg border border-gray-800 bg-surface-950 px-3 py-2">
+                <p class="text-lg font-semibold text-gray-100" x-text="analysis?.stack_chain?.length || 0"></p>
+                <p class="text-[10px] uppercase tracking-wide text-gray-600">Frames</p>
+              </div>
+              <div class="min-w-20 rounded-lg border border-gray-800 bg-surface-950 px-3 py-2">
+                <p class="text-lg font-semibold text-yellow-300" x-text="analysis?.source_analysis?.references?.length || 0"></p>
+                <p class="text-[10px] uppercase tracking-wide text-gray-600">References</p>
+              </div>
+              <div class="min-w-20 rounded-lg border border-gray-800 bg-surface-950 px-3 py-2">
+                <p class="text-lg font-semibold" :class="analysis?.trigger_point?.line_number ? 'text-red-300' : 'text-gray-500'" x-text="analysis?.trigger_point?.line_number || '—'"></p>
+                <p class="text-[10px] uppercase tracking-wide text-gray-600">Crash line</p>
+              </div>
+            </div>
+          </div>
         </div>
 
+        <div class="flex gap-1 overflow-x-auto border-b border-gray-800 bg-surface-950/50 px-5 pt-3" role="tablist" aria-label="Code analysis views">
+          <template x-for="tab in analysisTabs()" :key="tab.id">
+            <button type="button" @click="analysisTab = tab.id" role="tab"
+                    :aria-selected="analysisTab === tab.id" :tabindex="analysisTab === tab.id ? 0 : -1"
+                    class="whitespace-nowrap rounded-t-lg border-b-2 px-3 py-2 text-xs font-medium transition-colors"
+                    :class="analysisTab === tab.id ? 'border-blue-500 bg-surface-900 text-blue-300' : 'border-transparent text-gray-500 hover:text-gray-300'">
+              <span x-text="tab.label"></span>
+              <span class="ml-1 rounded bg-gray-800 px-1.5 py-0.5 text-[10px] text-gray-400" x-show="tab.count !== null" x-text="tab.count"></span>
+            </button>
+          </template>
+        </div>
+
+        <div class="p-5">
         <!-- Summary -->
-        <div class="bg-surface-950 rounded-lg p-4 mb-4 text-sm text-gray-400 leading-relaxed"
-             style="white-space: pre-wrap;"
-             x-text="analysis?.summary"></div>
+        <div x-show="analysisTab === 'overview'" class="mb-4 grid gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.7fr)]">
+          <div class="rounded-lg border border-gray-800 bg-surface-950 p-4">
+            <p class="mb-2 text-[10px] font-semibold uppercase tracking-widest text-gray-600">Exception</p>
+            <code class="block break-all text-sm font-semibold text-red-300" x-text="analysis?.exception_type || 'Unknown exception'"></code>
+            <p class="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-gray-400" x-text="analysis?.exception_message || 'No exception message was reported.'"></p>
+          </div>
+          <div class="rounded-lg border border-gray-800 bg-surface-950 p-4">
+            <p class="mb-2 text-[10px] font-semibold uppercase tracking-widest text-gray-600">Analysis summary</p>
+            <p class="whitespace-pre-wrap text-sm leading-relaxed text-gray-400" x-text="plainAnalysisSummary()"></p>
+          </div>
+        </div>
 
         <!-- Trigger Point -->
         <div class="bg-red-950/30 border border-red-900/50 rounded-lg p-4 mb-4"
-             x-show="analysis?.trigger_point">
+             x-show="analysisTab === 'overview' && analysis?.trigger_point">
           <div class="flex items-center gap-2 mb-2">
-            <span class="text-red-400 text-sm font-semibold">💥 Crash Trigger Point</span>
+            <span class="text-red-400 text-sm font-semibold">Crash trigger point</span>
           </div>
           <div class="space-y-1">
             <div class="flex items-start gap-2" x-show="analysis?.trigger_point?.file_path">
@@ -161,55 +205,130 @@
         </div>
 
         <!-- Uploaded source evidence -->
-        <div class="space-y-4 mb-4" x-show="analysis?.source_analysis">
-          <div class="flex flex-wrap items-center gap-2 text-xs text-gray-400">
-            <span class="pill" x-text="analysis?.source_analysis?.project_name"></span>
-            <span x-text="'Source: ' + (analysis?.source_analysis?.snapshot_release || 'latest unversioned')"></span>
-            <span class="text-yellow-400" x-show="analysis?.source_analysis?.match_type === 'latest' && analysis?.source_analysis?.requested_release">latest fallback</span>
-          </div>
-          <div x-show="analysis?.source_analysis?.crash_source">
-            <h3 class="text-sm font-semibold text-gray-400 mb-2">Crash Source Code</h3>
-            <p class="text-xs text-gray-500 mb-1" x-text="sourceLocationLabel(analysis?.source_analysis?.crash_source)"></p>
-            <pre class="stack-trace text-red-200 bg-surface-950 rounded-lg p-4 overflow-x-auto" x-text="analysis?.source_analysis?.crash_source?.snippet"></pre>
-          </div>
-          <div x-show="analysis?.source_analysis?.function_definition">
-            <h3 class="text-sm font-semibold text-gray-400 mb-2">Function Definition</h3>
-            <p class="text-xs text-gray-500 mb-1" x-text="sourceLocationLabel(analysis?.source_analysis?.function_definition)"></p>
-            <pre class="stack-trace text-blue-200 bg-surface-950 rounded-lg p-4 overflow-x-auto" x-text="analysis?.source_analysis?.function_definition?.snippet"></pre>
-          </div>
-          <div x-show="analysis?.source_analysis?.references?.length > 0">
-            <h3 class="text-sm font-semibold text-gray-400 mb-2">Likely References</h3>
-            <p class="text-xs text-gray-600 mb-2">Heuristic matches; review each call site.</p>
-            <div class="space-y-2 max-h-96 overflow-y-auto">
-              <template x-for="reference in analysis?.source_analysis?.references" :key="reference.file_path + ':' + reference.line_number">
-                <div class="bg-surface-950 rounded-lg p-3">
-                  <p class="text-xs text-gray-500 mb-1" x-text="sourceLocationLabel(reference)"></p>
-                  <pre class="stack-trace text-gray-300 overflow-x-auto" x-text="reference.snippet"></pre>
-                </div>
-              </template>
+        <div class="space-y-4 mb-4" x-show="analysisTab === 'source' && analysis?.source_analysis">
+          <div class="flex flex-col gap-3 rounded-lg border border-gray-800 bg-surface-950 p-4 sm:flex-row sm:items-center sm:justify-between">
+            <div class="flex flex-wrap items-center gap-2 text-xs text-gray-400">
+              <span class="pill" x-text="analysis?.source_analysis?.project_name"></span>
+              <span x-text="'Source: ' + (analysis?.source_analysis?.snapshot_release || 'latest unversioned')"></span>
+              <span class="text-yellow-400" x-show="analysis?.source_analysis?.match_type === 'latest' && analysis?.source_analysis?.requested_release">latest fallback</span>
+            </div>
+            <div class="flex flex-wrap gap-3 text-[11px] text-gray-500">
+              <span><strong class="text-gray-300" x-text="analysis?.source_analysis?.files_scanned || 0"></strong> files scanned</span>
+              <span><strong class="text-gray-300" x-text="analysis?.source_analysis?.related_files?.length || 0"></strong> related files</span>
+              <span><strong class="text-gray-300" x-text="analysis?.source_analysis?.related_functions?.length || 0"></strong> related functions</span>
             </div>
           </div>
+
+          <div class="grid gap-4 xl:grid-cols-[minmax(15rem,0.42fr)_minmax(0,1.58fr)]">
+            <aside class="space-y-3 xl:sticky xl:top-20 xl:self-start">
+              <div class="rounded-lg border border-gray-800 bg-surface-950 p-3">
+                <div class="mb-3 flex items-center justify-between gap-2">
+                  <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500">Related source</h3>
+                  <span class="text-[10px] text-gray-600" x-text="filteredSourceItems().length + ' items'"></span>
+                </div>
+                <div class="mb-3 flex flex-wrap gap-1">
+                  <template x-for="filter in sourceRelationFilters()" :key="filter.id">
+                    <button type="button" @click="sourceRelationFilter = filter.id"
+                            class="rounded-md border px-2 py-1 text-[10px] transition-colors"
+                            :class="sourceRelationFilter === filter.id ? 'border-blue-700 bg-blue-950/50 text-blue-300' : 'border-gray-800 text-gray-500 hover:text-gray-300'">
+                      <span x-text="filter.label"></span>
+                      <span class="ml-1" x-text="filter.count"></span>
+                    </button>
+                  </template>
+                </div>
+                <div class="max-h-[28rem] space-y-1 overflow-y-auto pr-1">
+                  <template x-for="item in filteredSourceItems()" :key="sourceItemKey(item)">
+                    <button type="button" @click="selectSourceItem(item)"
+                            class="w-full rounded-lg border p-3 text-left transition-colors"
+                            :class="isSelectedSourceItem(item) ? 'border-blue-700 bg-blue-950/30' : 'border-transparent bg-surface-900 hover:border-gray-700'">
+                      <div class="flex items-center justify-between gap-2">
+                        <span class="pill" :class="sourceRelationshipClass(item.relationship)" x-text="sourceRelationshipLabel(item.relationship)"></span>
+                        <span class="text-[10px] text-gray-600" x-text="item.language || ''"></span>
+                      </div>
+                      <p class="mt-2 truncate font-mono text-xs text-gray-300" x-text="item.function_name || '(source location)'"></p>
+                      <p class="mt-1 truncate text-[10px] text-gray-600" x-text="sourceLocationLabel(item)"></p>
+                    </button>
+                  </template>
+                  <p x-show="filteredSourceItems().length === 0" class="py-6 text-center text-xs text-gray-600">No matches for this relationship.</p>
+                </div>
+              </div>
+
+              <div class="rounded-lg border border-gray-800 bg-surface-950 p-3" x-show="analysis?.source_analysis?.related_files?.length">
+                <h3 class="mb-2 text-xs font-semibold uppercase tracking-wider text-gray-500">Files in context</h3>
+                <div class="space-y-2">
+                  <template x-for="file in analysis?.source_analysis?.related_files || []" :key="file.file_path">
+                    <button type="button" @click="selectSourceItem(sourceItemForFile(file))"
+                            class="block w-full rounded-md bg-surface-900 px-3 py-2 text-left transition-colors hover:bg-gray-800"
+                            :disabled="!sourceItemForFile(file)">
+                      <p class="truncate font-mono text-[11px] text-gray-300" :title="file.file_path" x-text="file.file_path"></p>
+                      <div class="mt-1 flex flex-wrap items-center gap-1">
+                        <template x-for="relationship in file.relationships" :key="relationship">
+                          <span class="pill" :class="sourceRelationshipClass(relationship)" x-text="sourceRelationshipLabel(relationship)"></span>
+                        </template>
+                        <span class="ml-auto text-[10px] text-gray-600" x-text="file.match_count + ' matches'"></span>
+                      </div>
+                    </button>
+                  </template>
+                </div>
+              </div>
+            </aside>
+
+            <div class="min-w-0 space-y-4">
+              <section class="overflow-hidden rounded-lg border border-gray-800 bg-surface-950" x-show="selectedSourceItem()">
+                <div class="flex flex-col gap-2 border-b border-gray-800 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div class="min-w-0">
+                    <div class="flex flex-wrap items-center gap-2">
+                      <span class="pill" :class="sourceRelationshipClass(selectedSourceItem()?.relationship)" x-text="sourceRelationshipLabel(selectedSourceItem()?.relationship)"></span>
+                      <code class="truncate text-sm font-semibold text-gray-200" x-text="selectedSourceItem()?.function_name || 'Source preview'"></code>
+                    </div>
+                    <p class="mt-1 truncate font-mono text-[11px] text-gray-500" x-text="sourceLocationLabel(selectedSourceItem())"></p>
+                  </div>
+                  <div class="flex shrink-0 items-center gap-2">
+                    <button type="button" @click="sourcePreviewExpanded = !sourcePreviewExpanded" class="btn btn-gray btn-sm" x-text="sourcePreviewExpanded ? 'Compact preview' : 'Expand preview'"></button>
+                  </div>
+                </div>
+                <pre class="stack-trace overflow-auto p-4 text-gray-300"
+                     :class="sourcePreviewExpanded ? 'max-h-[68vh]' : 'max-h-80'"
+                     x-text="selectedSourceItem()?.snippet"></pre>
+              </section>
+
+              <section class="grid gap-3 md:grid-cols-2" x-show="analysis?.source_analysis?.crash_source && analysis?.source_analysis?.function_definition">
+                <button type="button" @click="selectSourceItem(sourcePrimaryItems()[0])" class="rounded-lg border border-red-900/40 bg-red-950/20 p-4 text-left hover:border-red-700">
+                  <p class="text-[10px] font-semibold uppercase tracking-widest text-red-400">Crash line</p>
+                  <p class="mt-2 truncate font-mono text-xs text-red-200" x-text="sourceLocationLabel(analysis?.source_analysis?.crash_source)"></p>
+                  <p class="mt-2 text-xs text-gray-500">Open the wider source window around the reported line.</p>
+                </button>
+                <button type="button" @click="selectSourceItem(sourcePrimaryItems()[1])" class="rounded-lg border border-blue-900/40 bg-blue-950/20 p-4 text-left hover:border-blue-700">
+                  <p class="text-[10px] font-semibold uppercase tracking-widest text-blue-400">Function definition</p>
+                  <p class="mt-2 truncate font-mono text-xs text-blue-200" x-text="sourceLocationLabel(analysis?.source_analysis?.function_definition)"></p>
+                  <p class="mt-2 text-xs text-gray-500">Inspect the function declaration and nearby implementation.</p>
+                </button>
+              </section>
+            </div>
+          </div>
+
           <template x-for="warning in (analysis?.source_analysis?.warnings || [])" :key="warning">
-            <p class="text-xs text-yellow-500" x-text="warning"></p>
+            <p class="rounded-lg border border-yellow-900/40 bg-yellow-950/20 px-3 py-2 text-xs text-yellow-500" x-text="warning"></p>
           </template>
         </div>
 
         <!-- File Tree Diagram -->
-        <div class="mb-4" x-show="analysis?.file_tree?.length > 0">
+        <div class="mb-4" x-show="analysisTab === 'files' && analysis?.file_tree?.length > 0">
           <div class="flex items-center gap-2 mb-2">
-            <span class="text-gray-400 text-sm font-semibold">📁 Crash File Tree</span>
+            <span class="text-gray-400 text-sm font-semibold">Crash File Tree</span>
             <span class="text-xs text-gray-600">(click directories to expand/collapse)</span>
-            <button @click="expandAllTree = !expandAllTree; toggleAllTreeNodes()"
+            <button @click="toggleAllTreeNodes()"
                     class="text-xs px-2 py-0.5 bg-surface-800 hover:bg-gray-700 rounded transition-colors ml-auto">
-              <span x-show="!expandAllTree">📂 Expand All</span>
-              <span x-show="expandAllTree">📁 Collapse All</span>
+              <span x-show="!expandAllTree">Expand all</span>
+              <span x-show="expandAllTree">Collapse all</span>
             </button>
           </div>
-          <div class="bg-surface-950 rounded-lg p-4 font-mono text-sm overflow-x-auto"
+          <div class="crash-file-tree overflow-x-auto rounded-lg border border-gray-800 bg-surface-950 p-3"
                @click="onTreeClick($event)"
+               @keydown="onTreeKeydown($event)"
                x-html="treeHTML">
           </div>
-          <div class="flex items-center gap-4 mt-2 text-xs">
+          <div class="flex flex-wrap items-center gap-x-4 gap-y-1 mt-2 text-xs">
             <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm" style="background:#dc2626"></span> Crash Site</span>
             <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm" style="background:#ea580c"></span> Propagation</span>
             <span class="flex items-center gap-1"><span class="inline-block w-3 h-3 rounded-sm" style="background:#ca8a04"></span> Root Cause</span>
@@ -218,7 +337,7 @@
         </div>
 
         <!-- Color-Coded Stack Chain -->
-        <div x-show="analysis?.stack_chain?.length > 0">
+        <div x-show="analysisTab === 'stack' && analysis?.stack_chain?.length > 0">
           <div class="flex items-center gap-2 mb-2">
             <span class="text-gray-400 text-sm font-semibold">📋 Stack Chain</span>
             <span class="text-xs text-gray-600">(color-coded by severity)</span>
@@ -298,9 +417,15 @@
             </template>
           </div>
         </div>
+        <!-- Empty tab states -->
+        <div x-show="analysisTab === 'source' && !analysis?.source_analysis" class="rounded-lg border border-dashed border-gray-700 bg-surface-950 p-8 text-center">
+          <p class="text-sm font-medium text-gray-300">No matching source snapshot</p>
+          <p class="mt-1 text-xs text-gray-600">Upload a project source snapshot to see the crash line, function definition, and likely references.</p>
+        </div>
+        <div x-show="analysisTab === 'stack' && !analysis?.stack_chain?.length" class="rounded-lg border border-dashed border-gray-700 bg-surface-950 p-8 text-center text-sm text-gray-500">No stack frames were parsed for this report.</div>
+        <div x-show="analysisTab === 'files' && !analysis?.file_tree?.length" class="rounded-lg border border-dashed border-gray-700 bg-surface-950 p-8 text-center text-sm text-gray-500">No file paths were detected in the stack trace.</div>
+        </div>
       </section>
-
-      <!-- C# Symbolicated Stack -->
       <section class="bg-surface-900 rounded-xl p-5 border border-gray-800" x-show="latestReport?.symbolication_status && latestReport.symbolication_status !== 'not_applicable'">
         <div class="flex items-center justify-between mb-3">
           <h2 class="text-sm font-semibold text-gray-300">🔷 C# Symbolicated Stack</h2>
@@ -643,6 +768,10 @@
       attachments: [],
       dumpParsed: [],
       analysis: null,
+      analysisTab: 'overview',
+      sourceRelationFilter: 'all',
+      selectedSourceKey: '',
+      sourcePreviewExpanded: false,
       treeHTML: '',
       expandedNodes: {},
       expandAllTree: false,
@@ -806,9 +935,113 @@
         event.target.value = '';
       },
 
+      analysisTabs() {
+        return [
+          { id: 'overview', label: 'Overview', count: null },
+          { id: 'source', label: 'Source evidence', count: this.analysis?.source_analysis?.related_files?.length || 0 },
+          { id: 'stack', label: 'Stack chain', count: this.analysis?.stack_chain?.length || 0 },
+          { id: 'files', label: 'File tree', count: this.countAnalysisFiles(this.analysis?.file_tree) },
+        ];
+      },
+
+      countAnalysisFiles(nodes) {
+        if (!nodes) return 0;
+        return nodes.reduce((count, node) => count + (node.is_file ? 1 : this.countAnalysisFiles(node.children)), 0);
+      },
+
+      plainAnalysisSummary() {
+        const text = (this.analysis?.summary || '')
+          .replace(/^##\s+[^\n]+\n*/m, '')
+          .replace(/\*\*(.*?)\*\*/g, '$1')
+          .replace(/`/g, '');
+        return text
+          .split('\n')
+          .filter(line => !line.startsWith('Exception:') && !line.startsWith('Crash Site:'))
+          .join('\n')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
+      },
+
       sourceLocationLabel(location) {
         if (!location) return '';
         return location.file_path + ':' + location.line_number;
+      },
+
+      sourcePrimaryItems() {
+        const source = this.analysis?.source_analysis;
+        if (!source) return [];
+        return [
+          source.crash_source ? { ...source.crash_source, relationship: 'crash', language: this.analysis?.detected_language || '' } : null,
+          source.function_definition ? { ...source.function_definition, relationship: 'definition', language: this.analysis?.detected_language || '' } : null,
+        ].filter(Boolean);
+      },
+
+      sourceItems() {
+        const source = this.analysis?.source_analysis;
+        if (!source) return [];
+        const items = this.sourcePrimaryItems();
+        for (const related of source.related_functions || []) items.push(related);
+        for (const reference of source.references || []) {
+          const key = reference.file_path + ':' + reference.line_number;
+          if (items.some(item => item.file_path + ':' + item.line_number === key)) continue;
+          items.push({ ...reference, relationship: 'caller', language: '' });
+        }
+        return items;
+      },
+
+      sourceRelationFilters() {
+        const items = this.sourceItems();
+        const count = relationship => items.filter(item => item.relationship === relationship).length;
+        return [
+          { id: 'all', label: 'All', count: items.length },
+          { id: 'caller', label: 'Callers', count: count('caller') },
+          { id: 'callee', label: 'Callees', count: count('callee') },
+          { id: 'stack', label: 'Stack', count: count('stack') },
+        ];
+      },
+
+      filteredSourceItems() {
+        const items = this.sourceItems();
+        return this.sourceRelationFilter === 'all'
+          ? items
+          : items.filter(item => item.relationship === this.sourceRelationFilter);
+      },
+
+      sourceItemKey(item) {
+        return item ? item.relationship + ':' + item.file_path + ':' + item.line_number : '';
+      },
+
+      selectSourceItem(item) {
+        if (!item) return;
+        this.selectedSourceKey = this.sourceItemKey(item);
+      },
+
+      selectedSourceItem() {
+        const items = this.sourceItems();
+        return items.find(item => this.sourceItemKey(item) === this.selectedSourceKey) || items[0] || null;
+      },
+
+      isSelectedSourceItem(item) {
+        return this.sourceItemKey(item) === this.sourceItemKey(this.selectedSourceItem());
+      },
+
+      sourceItemForFile(file) {
+        if (!file) return null;
+        return this.sourceItems().find(item => item.file_path === file.file_path) || null;
+      },
+
+      sourceRelationshipLabel(relationship) {
+        return { crash: 'Crash', definition: 'Definition', caller: 'Caller', callee: 'Callee', stack: 'Stack' }[relationship] || 'Related';
+      },
+
+      sourceRelationshipClass(relationship) {
+        return {
+          crash: 'bg-red-900/50 text-red-300',
+          definition: 'bg-blue-900/50 text-blue-300',
+          caller: 'bg-orange-900/50 text-orange-300',
+          callee: 'bg-cyan-900/50 text-cyan-300',
+          stack: 'bg-purple-900/50 text-purple-300',
+        }[relationship] || 'bg-gray-800 text-gray-400';
       },
 
       symbolicationWarnings(info) {
@@ -826,6 +1059,9 @@
           const res = await fetch('/api/v1/crash-reports/' + this.latestReport.id + '/analysis');
           if (res.ok) {
             this.analysis = await res.json();
+            this.sourceRelationFilter = 'all';
+            this.selectedSourceKey = '';
+            this.sourcePreviewExpanded = false;
             // Initialize all directory nodes as expanded (show full tree initially)
             this.expandedNodes = {};
             this.expandAllTree = true;
@@ -837,9 +1073,11 @@
         }
       },
 
-      /**
-       * Pre-populate expandedNodes: all directories start expanded.
-       */
+      buildTreeHTML() {
+        const nodes = this.analysis?.file_tree;
+        this.treeHTML = nodes?.length ? this.renderTreeNodes(nodes, 1) : '';
+      },
+
       initExpandedNodes(nodes) {
         if (!nodes) return;
         nodes.forEach(node => {
@@ -850,45 +1088,16 @@
         });
       },
 
-      /**
-       * Build the full tree HTML string. Called whenever expandedNodes changes.
-       */
-      buildTreeHTML() {
-        if (!this.analysis?.file_tree) { this.treeHTML = ''; return; }
-        this.treeHTML = this.analysis.file_tree
-          .map((node, i) => this.renderTreeHTML(node, '', i === this.analysis.file_tree.length - 1))
-          .join('');
-      },
-
-      /**
-       * Toggle a directory node's expanded state.
-       */
-      toggleTreeNode(path) {
-        if (this.expandedNodes[path]) {
-          delete this.expandedNodes[path];
-        } else {
-          this.expandedNodes[path] = true;
-        }
-        this.expandedNodes = Object.assign({}, this.expandedNodes); // trigger reactivity
-        this.buildTreeHTML();
-      },
-
-      /**
-       * Expand or collapse all directory nodes.
-       */
       toggleAllTreeNodes() {
         if (this.expandAllTree) {
-          // Currently expanded → collapse all
           this.expandedNodes = {};
-          this.buildTreeHTML();
           this.expandAllTree = false;
         } else {
-          // Currently collapsed → expand all
           this.expandedNodes = {};
           this.initExpandedNodes(this.analysis?.file_tree);
-          this.buildTreeHTML();
           this.expandAllTree = true;
         }
+        this.buildTreeHTML();
       },
 
       languageLabel(lang) {
@@ -901,130 +1110,92 @@
         return labels[lang] || (lang ? lang.toUpperCase() : 'Unknown');
       },
 
-      /**
-       * Render a file tree node. Uses CSS border-left on subtree wrappers
-       * for visible vertical guide lines instead of fragile │ characters.
-       * Each depth level adds consistent padding and a subtle border.
-       */
-      renderTreeHTML(node, prefix, isLast) {
-        const colorMap = {
-          red: '#f87171',
-          orange: '#fb923c',
-          yellow: '#facc15',
-          gray: '#9ca3af',
-        };
-        const color = colorMap[node.severity] || '#9ca3af';
-
-        // prefix is already pure-space indentation (no │ chars)
-        const connector = prefix === '' ? '' : (isLast ? ' └─ ' : ' ├─ ');
-        const depth = Math.floor(prefix.length / 4);
-        const isExpanded = !!this.expandedNodes[node.path];
-        const hasChildren = node.children && node.children.length > 0;
-        const subtreeId = 'st-' + this.hashPath(node.path);
-        const esc = (s) => this.escapeHtml(s);
-
-        let html = '';
-
-        if (node.is_file) {
-          // ── File row ──
-          const fileIcon = this.fileIcon(node.name);
-          html += `<div class="tree-row tree-file" style="color:${color};padding-left:${depth * 20 + 8}px">`;
-          html += `<span class="tree-connector">${esc(connector)}</span>`;
-          html += `<span class="tree-icon-file">${fileIcon}</span>`;
-          html += `<span style="${node.is_crash_site ? 'font-weight:600' : ''}">${esc(node.name)}</span>`;
-          if (node.is_crash_site && node.line_number) {
-            html += `<span class="tree-crash-tag">crash line ${node.line_number}</span>`;
-          } else if (node.line_number) {
-            html += `<span class="tree-line-num">:${node.line_number}</span>`;
-          }
-          html += '</div>';
-        } else if (hasChildren) {
-          // ── Directory row ──
-          const toggleClass = isExpanded ? 'expanded' : 'collapsed';
-          const innerLevel = isExpanded ? '' : ' (collapsed)' ;
-          html += `<div class="tree-row tree-dir" data-tree-toggle="${esc(node.path)}" style="color:#e2e8f0;padding-left:${depth * 20 + 8}px">`;
-          html += `<span class="tree-connector">${esc(connector)}</span>`;
-          html += `<span class="tree-toggle-icon ${toggleClass}">▼</span>`;
-          html += `<span class="tree-icon-dir">📁</span>`;
-          html += `<span style="font-weight:500">${esc(node.name)}</span>`;
-          html += '</div>';
-
-          // Subtree wrapper — solid left border gives a visible guide line
-          // connecting this directory to all its descendants
-          const subtreeClasses = isExpanded
-            ? 'tree-subtree'
-            : 'tree-subtree collapsed';
-          html += `<div id="${subtreeId}" class="${subtreeClasses}" style="border-left:1px solid #374151;margin-left:${depth * 20 + 19}px;padding-left:0">`;
-          // Pass an empty prefix — padding-left on each row handles depth visually,
-          // and the border-left on this wrapper creates the continuous guide line
-          node.children.forEach((child, idx) => {
-            html += this.renderTreeHTML(child, prefix + '    ', idx === node.children.length - 1);
-          });
-          html += '</div>';
-        } else {
-          // ── Empty directory ──
-          html += `<div class="tree-row" style="color:#6b7280;padding-left:${depth * 20 + 8}px">`;
-          html += `<span class="tree-connector">${esc(connector)}</span>`;
-          html += `<span class="tree-icon-dir">📁</span>`;
-          html += `<span>${esc(node.name)}</span>`;
-          html += `<span style="font-size:0.65rem;color:#4b5563;margin-left:6px">(empty)</span>`;
-          html += '</div>';
-        }
-
-        return html;
+      renderTreeNodes(nodes, level) {
+        const role = level === 1 ? 'tree' : 'group';
+        return `<ul class="tree-list" role="${role}">${nodes.map(node => this.renderTreeNode(node, level)).join('')}</ul>`;
       },
 
-      /**
-       * Generate a short stable hash from a tree path for DOM IDs.
-       */
-      hashPath(s) {
-        let h = 0;
-        for (let i = 0; i < s.length; i++) {
-          h = ((h << 5) - h + s.charCodeAt(i)) | 0;
+      renderTreeNode(node, level) {
+        const name = this.escapeHtml(node.name);
+        const path = this.escapeAttribute(node.path);
+        const severity = ['red', 'orange', 'yellow', 'gray'].includes(node.severity) ? node.severity : 'gray';
+        const children = node.children || [];
+
+        if (!node.is_file) {
+          const expanded = !!this.expandedNodes[node.path];
+          const childTree = children.length
+            ? `<ul class="tree-list${expanded ? '' : ' collapsed'}" role="group">${children.map(child => this.renderTreeNode(child, level + 1)).join('')}</ul>`
+            : '';
+          return [
+            `<li class="tree-node" role="treeitem" aria-level="${level}" aria-expanded="${expanded}">`,
+            `<button type="button" class="tree-row tree-dir" data-tree-toggle="${path}" tabindex="0">`,
+            `<span class="tree-chevron${expanded ? ' expanded' : ''}" aria-hidden="true"></span>`,
+            `<span class="tree-kind tree-kind-dir">dir</span>`,
+            `<span class="tree-name" title="${path}">${name}</span>`,
+            `<span class="tree-meta">${children.length} item${children.length === 1 ? '' : 's'}</span>`,
+            `</button>`,
+            childTree,
+            `</li>`,
+          ].join('');
         }
-        return 'p' + (h & 0x7fffffff).toString(36);
+
+        const extension = this.escapeHtml(this.fileExtension(node.name));
+        const line = node.line_number ? `<span class="tree-line-num">line ${node.line_number}</span>` : '';
+        const crashTag = node.is_crash_site ? `<span class="tree-crash-tag">Crash site${node.line_number ? ` · line ${node.line_number}` : ''}</span>` : line;
+        return [
+          `<li class="tree-node" role="treeitem" aria-level="${level}">`,
+          `<div class="tree-row tree-file tree-severity-${severity}" title="${path}">`,
+          `<span class="tree-file-spacer" aria-hidden="true"></span>`,
+          `<span class="tree-kind">${extension}</span>`,
+          `<span class="tree-name">${name}</span>`,
+          `<span>${crashTag}</span>`,
+          `</div>`,
+          `</li>`,
+        ].join('');
       },
 
-      /**
-       * Event delegation handler: click on the tree container.
-       * If the click lands on a [data-tree-toggle] element, toggle that subtree.
-       */
-      onTreeClick(event) {
-        const dirRow = event.target.closest('[data-tree-toggle]');
-        if (!dirRow) return;
-
-        const dirPath = dirRow.getAttribute('data-tree-toggle');
-        if (!dirPath) return;
-
-        // Toggle Alpine state
-        if (this.expandedNodes[dirPath]) {
-          delete this.expandedNodes[dirPath];
-        } else {
-          this.expandedNodes[dirPath] = true;
-        }
-        // Full rebuild from clean Alpine state — no DOM classList toggling needed
+      toggleTreePath(path, expanded) {
+        if (expanded) this.expandedNodes[path] = true;
+        else delete this.expandedNodes[path];
+        this.expandAllTree = false;
         this.buildTreeHTML();
       },
 
-      /**
-       * Pick a file icon based on extension.
-       */
-      fileIcon(filename) {
-        const ext = (filename || '').split('.').pop()?.toLowerCase();
-        const icons = {
-          cs: '🎯', cpp: '🔧', c: '🔧', h: '📋', hpp: '📋',
-          go: '🔷', py: '🐍', js: '📜', ts: '📘',
-          json: '📦', xml: '📝', yaml: '📝', yml: '📝',
-          csproj: '⚙️', sln: '🔨',
-          dll: '🔌', so: '🔌', dylib: '🔌',
-          log: '📄', txt: '📄', md: '📖',
-        };
-        return icons[ext] || '📄';
+      onTreeClick(event) {
+        const row = event.target.closest('[data-tree-toggle]');
+        if (!row) return;
+        const path = row.getAttribute('data-tree-toggle');
+        if (path) this.toggleTreePath(path, !this.expandedNodes[path]);
       },
 
-      escapeHtml(str) {
-        if (!str) return '';
-        return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      onTreeKeydown(event) {
+        const row = event.target.closest('[data-tree-toggle]');
+        if (!row) return;
+        const path = row.getAttribute('data-tree-toggle');
+        if (!path) return;
+        if (event.key === 'Enter' || event.key === ' ') {
+          event.preventDefault();
+          this.toggleTreePath(path, !this.expandedNodes[path]);
+        } else if (event.key === 'ArrowRight' && !this.expandedNodes[path]) {
+          event.preventDefault();
+          this.toggleTreePath(path, true);
+        } else if (event.key === 'ArrowLeft' && this.expandedNodes[path]) {
+          event.preventDefault();
+          this.toggleTreePath(path, false);
+        }
+      },
+
+      fileExtension(filename) {
+        const dot = (filename || '').lastIndexOf('.');
+        return dot >= 0 && dot < filename.length - 1 ? filename.substring(dot + 1).toLowerCase() : 'file';
+      },
+
+      escapeHtml(value) {
+        return String(value || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+      },
+
+      escapeAttribute(value) {
+        return this.escapeHtml(value).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
       },
 
     }));

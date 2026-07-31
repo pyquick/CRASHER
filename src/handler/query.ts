@@ -132,9 +132,6 @@ router.get('/crash-reports/:id/analysis', requireRole('admin', 'operator'), (req
     : undefined;
   const sourceFiles = sourceSnapshot
     ? store.getSourceFilesForSnapshot(sourceSnapshot.id)
-      .filter(file => !report.runtime || file.language === report.runtime ||
-        (report.runtime === 'unity' && file.language === 'csharp') ||
-        (report.runtime === 'node' && ['javascript', 'typescript'].includes(file.language)))
       .flatMap(file => {
         try {
           return [{ relative_path: file.relative_path, language: file.language, content: readFileSync(file.storage_path, 'utf-8') }];
