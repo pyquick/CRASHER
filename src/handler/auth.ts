@@ -73,7 +73,7 @@ router.post('/login', rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: config.loginRateLimit,
   key: req => `${req.ip}:${String(req.body?.username ?? '').trim().toLowerCase()}`,
-}), (req: Request, res: Response): void => {
+}), async (req: Request, res: Response): Promise<void> => {
   const username = typeof req.body?.username === 'string' ? req.body.username : '';
   const password = typeof req.body?.password === 'string' ? req.body.password : '';
   const user = auth.authenticateUser(username, password);
@@ -88,6 +88,27 @@ router.post('/login', rateLimit({
     const tempToken = auth.createTotpTempToken(user.id);
     res.json({ success: true, requires_totp: true, temp_token: tempToken });
     return;
+  }
+
+  // First-login email verification for admins with an email address
+  if (full && full.role === 'admin' && auth.isFirstLogin(user.id)) {
+    const session = auth.createFirstLoginVerSession(user.id);
+    if (session) {
+      auth.writeAuditLog(user.id, 'login.first_login_verification', 'user', String(user.id), req.ip ?? '', {});
+      const sendResult = await sendVerificationEmail(session.email, session.emailCode);
+      console.log(`[login] FIRST-LOGIN code for ${full.username} (${session.email}): ${session.emailCode}`);
+      res.json({
+        success: true,
+        requires_email_verification: true,
+        temp_token: session.tempToken,
+        email_hint: maskEmail(session.email),
+        message: sendResult.ok
+          ? `A verification code has been sent to ${maskEmail(session.email)}.`
+          : `SMTP unavailable. Check console for the verification code.`,
+      });
+      return;
+    }
+    // No email address — fall through to normal login
   }
 
   const token = auth.createSession(user.id);
@@ -137,6 +158,59 @@ router.post('/login/totp', rateLimit({
   setCsrfCookie(res);
   auth.writeAuditLog(userId, 'login.succeeded', 'user', String(userId), req.ip ?? '', { totp: true });
   res.json({ success: true, user: { id: user.id, username: user.username, role: user.role, totp_enabled: user.totp_enabled } });
+});
+
+router.post('/login/verify-email', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  key: req => `first-login-verify:${req.ip}`,
+}), (req: Request, res: Response): void => {
+  const tempToken = typeof req.body?.temp_token === 'string' ? req.body.temp_token.trim() : '';
+  const code = typeof req.body?.code === 'string' ? req.body.code.replace(/\s/g, '') : '';
+  if (!tempToken || !code) {
+    res.status(400).json({ error: 'Bad Request', message: 'Temp token and verification code are required' });
+    return;
+  }
+  const sessionToken = auth.consumeFirstLoginVerSession(tempToken, code);
+  if (!sessionToken) {
+    res.status(400).json({ error: 'Bad Request', message: 'Invalid or expired verification code' });
+    return;
+  }
+  res.cookie('auth_token', sessionToken, {
+    httpOnly: true,
+    secure: config.cookieSecure,
+    sameSite: 'strict',
+    maxAge: config.sessionHours * 60 * 60 * 1000,
+    path: '/',
+  });
+  setCsrfCookie(res);
+  res.json({ success: true });
+});
+
+router.post('/login/resend-email', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 3,
+  key: req => `first-login-resend:${req.ip}`,
+}), async (req: Request, res: Response): Promise<void> => {
+  const tempToken = typeof req.body?.temp_token === 'string' ? req.body.temp_token.trim() : '';
+  if (!tempToken) {
+    res.status(400).json({ error: 'Bad Request', message: 'Temp token is required' });
+    return;
+  }
+  const result = auth.resendFirstLoginCode(tempToken);
+  if (!result) {
+    res.status(400).json({ error: 'Bad Request', message: 'Too many requests. Please wait 60 seconds before requesting a new code, or the verification session has expired.' });
+    return;
+  }
+  const sendResult = await sendVerificationEmail(result.email, result.emailCode);
+  console.log(`[login] FIRST-LOGIN code (resent) for ${result.email}: ${result.emailCode}`);
+  res.json({
+    success: true,
+    email_hint: maskEmail(result.email),
+    message: sendResult.ok
+      ? `A new verification code has been sent to ${maskEmail(result.email)}.`
+      : `SMTP unavailable. Check console for the new verification code.`,
+  });
 });
 
 router.post('/logout', requireApiAuth, (req: Request, res: Response): void => {

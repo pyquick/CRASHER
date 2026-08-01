@@ -78,7 +78,7 @@
       </form>
 
       <!-- Login Form (normal) -->
-      <form x-show="!checking && !needsSetup" @submit.prevent="login" class="space-y-4">
+      <form x-show="!checking && !needsSetup && !showEmailVerification" @submit.prevent="login" class="space-y-4">
         <div>
           <label class="block text-xs text-gray-500 mb-1">Username</label>
           <input type="text" x-model="username" required autocomplete="username"
@@ -123,7 +123,36 @@
         </button>
       </form>
 
-      <div x-show="!checking && !needsSetup && !showTotp" class="mt-4 text-center">
+      <!-- Email Verification Step (first login) -->
+      <div x-show="!checking && !needsSetup && showEmailVerification" class="space-y-4">
+        <p class="text-sm text-blue-400 text-center">Verify your email address to complete login.</p>
+        <p class="text-xs text-gray-500 text-center" x-text="'A verification code has been sent to ' + emailHint"></p>
+        <div>
+          <input type="text" x-model="emailCode" required autocomplete="one-time-code" inputmode="numeric" maxlength="6"
+                 class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2.5 text-center text-lg tracking-[0.3em] font-mono text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
+                 placeholder="000000">
+        </div>
+        <p x-show="errorMsg" class="text-sm text-red-400 text-center" x-text="errorMsg"></p>
+        <button type="button" @click="verifyEmail" :disabled="loading"
+                class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors">
+          <span x-show="!loading">Verify Email</span>
+          <span x-show="loading" class="inline-flex items-center justify-center gap-2">
+            <span class="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+            Verifying...
+          </span>
+        </button>
+        <button type="button" @click="resendEmail" :disabled="resendCooldown > 0"
+                class="w-full py-2 text-xs text-gray-400 hover:text-blue-400 disabled:text-gray-600 transition-colors">
+          <span x-show="resendCooldown === 0">Resend Code</span>
+          <span x-show="resendCooldown > 0" x-text="'Resend in ' + resendCooldown + 's'"></span>
+        </button>
+        <button type="button" @click="cancelEmailVerification"
+                class="w-full py-2 text-xs text-gray-500 hover:text-gray-400 transition-colors">
+          Back to Login
+        </button>
+      </div>
+
+      <div x-show="!checking && !needsSetup && !showTotp && !showEmailVerification" class="mt-4 text-center">
         <a href="/web/forgot-password" class="text-xs text-gray-500 hover:text-blue-400 transition-colors">Forgot Password?</a>
       </div>
     </div>
@@ -141,9 +170,14 @@
       checking: true,
       needsSetup: false,
       showTotp: false,
+      showEmailVerification: false,
       totpCode: '',
+      emailCode: '',
+      emailHint: '',
       tempToken: '',
       errorMsg: '',
+      resendCooldown: 0,
+      _resendTimer: null,
 
       async checkSetup() {
         try {
@@ -199,6 +233,11 @@
             if (data.requires_totp) {
               this.tempToken = data.temp_token;
               this.showTotp = true;
+            } else if (data.requires_email_verification) {
+              this.tempToken = data.temp_token;
+              this.emailHint = data.email_hint;
+              this.showEmailVerification = true;
+              this.startResendCooldown();
             } else {
               const params = new URLSearchParams(window.location.search);
               const requestedRedirect = params.get('redirect') || '/web/';
@@ -240,6 +279,72 @@
           this.errorMsg = 'Network error';
         }
         this.loading = false;
+      },
+
+      async verifyEmail() {
+        this.errorMsg = '';
+        if (!this.emailCode || this.emailCode.length !== 6) {
+          this.errorMsg = 'Please enter the 6-digit code';
+          return;
+        }
+        this.loading = true;
+        try {
+          const res = await fetch('/api/v1/auth/login/verify-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ temp_token: this.tempToken, code: this.emailCode }),
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            const params = new URLSearchParams(window.location.search);
+            const requestedRedirect = params.get('redirect') || '/web/';
+            const redirect = requestedRedirect.startsWith('/') && !requestedRedirect.startsWith('//')
+              ? requestedRedirect
+              : '/web/';
+            window.location.href = redirect;
+          } else {
+            this.errorMsg = data.message || 'Verification failed';
+          }
+        } catch (err) {
+          this.errorMsg = 'Network error';
+        }
+        this.loading = false;
+      },
+
+      async resendEmail() {
+        this.errorMsg = '';
+        try {
+          const res = await fetch('/api/v1/auth/login/resend-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ temp_token: this.tempToken }),
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            this.startResendCooldown();
+          } else {
+            this.errorMsg = data.message || 'Failed to resend code';
+          }
+        } catch (err) {
+          this.errorMsg = 'Network error';
+        }
+      },
+
+      cancelEmailVerification() {
+        this.showEmailVerification = false;
+        this.emailCode = '';
+        this.tempToken = '';
+        clearInterval(this._resendTimer);
+        this.resendCooldown = 0;
+      },
+
+      startResendCooldown() {
+        clearInterval(this._resendTimer);
+        this.resendCooldown = 60;
+        this._resendTimer = setInterval(() => {
+          this.resendCooldown = Math.max(0, this.resendCooldown - 1);
+          if (this.resendCooldown === 0) clearInterval(this._resendTimer);
+        }, 1000);
       }
     }));
   });

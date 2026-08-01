@@ -3,7 +3,8 @@
     "allow": [
       "Bash(go mod *)",
       "Bash(npm --version)",
-      "Bash(npm init *)"
+      "Bash(npm init *)",
+      "Bash(git -C /Users/ghltbm/Documents/unity_crash log --oneline -20)"
     ]
   }
 }

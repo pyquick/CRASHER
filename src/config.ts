@@ -1,5 +1,4 @@
 import 'dotenv/config';
-import { randomBytes } from 'crypto';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 
@@ -19,9 +18,6 @@ export interface Config {
   maxSourceFiles: number;
   maxJsonBodySize: number;
   corsOrigins: string[];
-  bootstrapAdminUsername: string;
-  bootstrapAdminPassword: string;
-  generatedBootstrapPassword: boolean;
   cookieSecure: boolean;
   sessionHours: number;
   apiRequireKey: boolean;
@@ -76,12 +72,7 @@ function loadConfig(): Config {
   const maxSourceFiles = Math.max(1, envInt('MAX_SOURCE_FILES', 5000));
   const maxJsonBodySize = envInt('MAX_JSON_BODY_SIZE', 12 * 1024 * 1024);
   const corsOrigins = env('CORS_ORIGINS', '').split(',').map(value => value.trim()).filter(Boolean);
-  const configuredAdminPassword = process.env.ADMIN_PASSWORD;
   const nodeEnv = env('NODE_ENV', 'development').toLowerCase();
-  if (!configuredAdminPassword && nodeEnv === 'production') {
-    throw new Error('ADMIN_PASSWORD is required when NODE_ENV=production');
-  }
-  const generatedAdminPassword = randomBytes(18).toString('base64url');
   const trustProxyValue = env('TRUST_PROXY', 'false');
   const numericTrustProxy = /^\d+$/.test(trustProxyValue) ? parseInt(trustProxyValue, 10) : null;
   const trustProxy = numericTrustProxy ?? (trustProxyValue === 'true' ? true : trustProxyValue === 'false' ? false : trustProxyValue);
@@ -100,9 +91,6 @@ function loadConfig(): Config {
     maxSourceFiles,
     maxJsonBodySize,
     corsOrigins,
-    bootstrapAdminUsername: env('ADMIN_USERNAME', 'admin'),
-    bootstrapAdminPassword: configuredAdminPassword || generatedAdminPassword,
-    generatedBootstrapPassword: !configuredAdminPassword,
     cookieSecure: envBool('COOKIE_SECURE', nodeEnv === 'production'),
     sessionHours: Math.max(1, envInt('SESSION_HOURS', 12)),
     apiRequireKey: envBool('API_REQUIRE_KEY', true),

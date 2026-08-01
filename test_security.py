@@ -7,8 +7,6 @@ import unittest
 TEST_DATA_DIR = tempfile.mkdtemp(prefix="crash-security-tests-")
 os.environ["DATA_DIR"] = TEST_DATA_DIR
 os.environ["DB_PATH"] = os.path.join(TEST_DATA_DIR, "test.db")
-os.environ["ADMIN_USERNAME"] = "admin"
-os.environ["ADMIN_PASSWORD"] = "Test-Root-Password!123"
 os.environ["API_REQUIRE_KEY"] = "true"
 os.environ["COOKIE_SECURE"] = "false"
 
@@ -20,6 +18,8 @@ os.environ["COOKIE_SECURE"] = "false"
 import requests
 
 BASE = os.environ.get("BASE_URL", "http://localhost:8080")
+ADMIN_USER = "admin"
+ADMIN_PASS = "Test-Root-Password!123"
 
 
 class SecurityIntegrationTests(unittest.TestCase):
@@ -29,7 +29,18 @@ class SecurityIntegrationTests(unittest.TestCase):
     def csrf(self):
         return self.session.cookies.get("csrf_token", "")
 
-    def login(self, username="admin", password="Test-Root-Password!123"):
+    def _setup_admin(self):
+        """Create the initial admin account via web setup if no users exist."""
+        r = self.session.get(f"{BASE}/api/v1/auth/setup-status", timeout=5)
+        if r.json().get("needs_setup"):
+            resp = self.session.post(f"{BASE}/api/v1/auth/setup", json={
+                "username": ADMIN_USER,
+                "password": ADMIN_PASS,
+            }, timeout=5)
+            self.assertEqual(resp.status_code, 200, resp.text)
+
+    def login(self, username=ADMIN_USER, password=ADMIN_PASS):
+        self._setup_admin()
         return self.session.post(f"{BASE}/web/login", json={"username": username, "password": password}, timeout=5)
 
     def test_unauthenticated_management_api_rejected(self):

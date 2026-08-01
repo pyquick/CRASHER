@@ -22,9 +22,11 @@
 ```bash
 npm install
 
-# 生产模式必须显式提供强管理员密码
-ADMIN_PASSWORD='replace-with-a-strong-password' npm run dev
+# 启动开发服务器
+npm run dev
 ```
+
+首次启动后，在浏览器中打开 `http://localhost:8080` 创建管理员账户。
 
 开发服务器默认监听 `http://localhost:8080`：
 
@@ -37,14 +39,13 @@ ADMIN_PASSWORD='replace-with-a-strong-password' npm run dev
 
 ```bash
 npm run build
-ADMIN_PASSWORD='replace-with-a-strong-password' npm start
+npm start
 ```
 
 Docker Compose：
 
 ```bash
-# 在 .env 中设置 ADMIN_PASSWORD
-ADMIN_PASSWORD='replace-with-a-strong-password' docker compose up -d --build
+docker compose up -d --build
 ```
 
 运行数据默认保存在 `data/`；SQLite 自动迁移，不需要单独运行 migration 命令。
@@ -497,8 +498,6 @@ GET  /health
 | `MAX_SOURCE_ARCHIVE_SIZE` | `67108864` | 源码上传及解包总上限 |
 | `MAX_SOURCE_FILES` | `5000` | 单快照最大源码文件数 |
 | `MAX_JSON_BODY_SIZE` | `12582912` | JSON body 最大字节数 |
-| `ADMIN_USERNAME` | `admin` | 首次建库管理员名称 |
-| `ADMIN_PASSWORD` | 开发模式随机生成 | 生产环境必填，仅首次建库使用 |
 | `COOKIE_SECURE` | 生产环境 `true` | 认证 Cookie 是否仅 HTTPS |
 | `SESSION_HOURS` | `12` | Session 有效期 |
 | `API_REQUIRE_KEY` | `true` | 上报端点是否要求 API Key |

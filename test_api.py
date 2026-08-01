@@ -27,7 +27,7 @@ API_KEY = os.environ.get("API_KEY", "")
 INGEST_HEADERS = {"X-API-Key": API_KEY} if API_KEY else {}
 
 if not CREDS["password"]:
-    raise SystemExit("Set ADMIN_PASSWORD to the bootstrap/admin password before running tests")
+    raise SystemExit("Set ADMIN_PASSWORD to the admin password before running tests")
 if not API_KEY:
     raise SystemExit("Set API_KEY to an admin-created ingestion API key before running tests")
 

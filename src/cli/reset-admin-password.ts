@@ -12,11 +12,9 @@
 import * as readline from 'readline';
 import { initDb, closeDb, getDb } from '../database.js';
 import * as auth from '../auth.js';
-import { config } from '../config.js';
 
 function parseArgs(): string {
   return process.argv.find(a => a.startsWith('--username='))?.split('=')[1]
-    || config.bootstrapAdminUsername
     || 'admin';
 }
 

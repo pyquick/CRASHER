@@ -83,16 +83,6 @@ export function hasUsers(): boolean {
   return (getDb().prepare('SELECT COUNT(*) AS count FROM users').get() as { count: number }).count > 0;
 }
 
-export function bootstrapAdmin(): void {
-  if (hasUsers()) return;
-  createUser(config.bootstrapAdminUsername, config.bootstrapAdminPassword, 'admin');
-  console.warn(`[security] Initial admin account created: ${config.bootstrapAdminUsername}`);
-  if (config.generatedBootstrapPassword) {
-    console.warn(`[security] One-time generated admin password: ${config.bootstrapAdminPassword}`);
-    console.warn('[security] Change this password immediately after the first login.');
-  }
-}
-
 export function generateInitialPassword(): string {
   return `V9!${randomBytes(24).toString('base64url')}`;
 }
@@ -116,7 +106,6 @@ export function authenticateUser(username: string, password: string): Authentica
   const fallback = 'pbkdf2-sha256$AAAAAAAAAAAAAAAAAAAAAA$' + Buffer.alloc(PBKDF2_KEY_LENGTH).toString('base64url');
   const valid = verifyPassword(password, user?.password_hash ?? fallback);
   if (!user || !valid || user.is_active !== 1) return null;
-  getDb().prepare("UPDATE users SET last_login_at = datetime('now') WHERE id = ?").run(user.id);
   // Auto-upgrade legacy scrypt hashes to SHA-256 on successful login
   if (!passwordIsCurrent(user.password_hash)) {
     getDb().prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(password), user.id);
@@ -196,6 +185,7 @@ export function createSession(userId: number): string {
   getDb().prepare(`
     INSERT INTO sessions (id_hash, user_id, session_version, expires_at) VALUES (?, ?, ?, ?)
   `).run(hashLookupToken(rawToken), user.id, user.session_version, expiresAtSql);
+  getDb().prepare("UPDATE users SET last_login_at = datetime('now') WHERE id = ?").run(userId);
   return rawToken;
 }
 
@@ -598,4 +588,104 @@ export function consumeTotpTempToken(token: string): number | null {
   if (!entry || entry.expires < Date.now()) { totpTempTokens.delete(token); return null; }
   totpTempTokens.delete(token);
   return entry.userId;
+}
+
+// ── First-login email verification (admin only) ──
+
+const FIRST_LOGIN_SESSION_TTL = 10 * 60 * 1000; // 10 minutes
+const FIRST_LOGIN_RESEND_COOLDOWN = 60_000;       // 60 seconds
+
+interface FirstLoginVerSession {
+  userId: number;
+  codeHash: string;
+  email: string;
+  expires: number;
+  lastResentAt: number;
+}
+
+const firstLoginSessions = new Map<string, FirstLoginVerSession>();
+
+/**
+ * Check if a user is logging in for the first time (last_login_at is null).
+ */
+export function isFirstLogin(userId: number): boolean {
+  const row = getDb().prepare('SELECT last_login_at FROM users WHERE id = ?').get(userId) as { last_login_at: string | null } | undefined;
+  return !!row && row.last_login_at === null;
+}
+
+/**
+ * Get any email address for a user (prefer primary verified, fall back to any email).
+ * Accepts unverified emails since the user hasn't had a chance to verify yet.
+ */
+function getAnyEmail(userId: number): string | null {
+  // Prefer primary verified
+  const primary = getPrimaryEmail(userId);
+  if (primary) return primary;
+  // Any verified email
+  const verified = getDb().prepare('SELECT email FROM user_emails WHERE user_id = ? AND email_verified = 1 LIMIT 1').get(userId) as { email: string } | undefined;
+  if (verified) return verified.email;
+  // Any email at all (unverified is ok for first login — we're verifying it now)
+  const any = getDb().prepare('SELECT email FROM user_emails WHERE user_id = ? LIMIT 1').get(userId) as { email: string } | undefined;
+  return any ? any.email : null;
+}
+
+/**
+ * Create a first-login email verification session for an admin.
+ * Generates a 6-digit code, stores in memory, and returns the code + token.
+ * Returns null if the user has no email address.
+ */
+export function createFirstLoginVerSession(userId: number): { tempToken: string; emailCode: string; email: string } | null {
+  const email = getAnyEmail(userId);
+  if (!email) return null;
+  const emailCode = String(Math.floor(100000 + Math.random() * 900000));
+  const tempToken = randomBytes(32).toString('base64url');
+  firstLoginSessions.set(tempToken, {
+    userId,
+    codeHash: createHash('sha256').update(emailCode).digest('hex'),
+    email,
+    expires: Date.now() + FIRST_LOGIN_SESSION_TTL,
+    lastResentAt: Date.now(),
+  });
+  return { tempToken, emailCode, email };
+}
+
+/**
+ * Verify the first-login email code.
+ * If valid, marks the email as verified, creates a real session, and removes the verification session.
+ * Returns the session token (cookie value) on success, null on failure.
+ */
+export function consumeFirstLoginVerSession(tempToken: string, code: string): string | null {
+  const session = firstLoginSessions.get(tempToken);
+  if (!session || session.expires < Date.now()) {
+    firstLoginSessions.delete(tempToken);
+    return null;
+  }
+  const codeHash = createHash('sha256').update(code.trim()).digest('hex');
+  if (codeHash !== session.codeHash) return null;
+  firstLoginSessions.delete(tempToken);
+  // Mark the email as verified
+  const emailRow = getDb().prepare('SELECT id FROM user_emails WHERE user_id = ? AND email = ?').get(session.userId, session.email) as { id: number } | undefined;
+  if (emailRow) {
+    getDb().prepare('UPDATE user_emails SET email_verified = 1, email_verify_token_hash = NULL, email_verify_expires_at = NULL WHERE id = ?').run(emailRow.id);
+  }
+  return createSession(session.userId);
+}
+
+/**
+ * Resend the first-login verification code.
+ * Returns null if the session is invalid/expired or within the 60s cooldown.
+ */
+export function resendFirstLoginCode(tempToken: string): { emailCode: string; email: string } | null {
+  const session = firstLoginSessions.get(tempToken);
+  if (!session || session.expires < Date.now()) {
+    firstLoginSessions.delete(tempToken);
+    return null;
+  }
+  if (Date.now() - session.lastResentAt < FIRST_LOGIN_RESEND_COOLDOWN) {
+    return null;
+  }
+  const emailCode = String(Math.floor(100000 + Math.random() * 900000));
+  session.codeHash = createHash('sha256').update(emailCode).digest('hex');
+  session.lastResentAt = Date.now();
+  return { emailCode, email: session.email };
 }
