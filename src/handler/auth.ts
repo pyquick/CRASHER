@@ -20,6 +20,34 @@ function maskEmail(email: string): string {
   return `${name[0]}***@${dn[0][0]}***.${dn.slice(1).join('.')}`;
 }
 
+async function beginAdminEmailVerification(
+  user: { id: number; username: string; role: string },
+  req: Request,
+  res: Response,
+): Promise<boolean> {
+  if (user.role !== 'admin') return false;
+
+  const emails = auth.listEmails(user.id);
+  if (emails.length === 0 || emails.some(email => email.email_verified === 1)) return false;
+
+  const session = auth.createFirstLoginVerSession(user.id);
+  if (!session) return false;
+
+  auth.writeAuditLog(user.id, 'login.email_verification_required', 'user', String(user.id), req.ip ?? '', {});
+  const sendResult = await sendVerificationEmail(session.email, session.emailCode);
+  console.log(`[login] EMAIL-VERIFICATION code for ${user.username} (${session.email}): ${session.emailCode}`);
+  res.json({
+    success: true,
+    requires_email_verification: true,
+    temp_token: session.tempToken,
+    email_hint: maskEmail(session.email),
+    message: sendResult.ok
+      ? `A verification code has been sent to ${maskEmail(session.email)}.`
+      : 'SMTP unavailable. Check console for the verification code.',
+  });
+  return true;
+}
+
 // ── Initial Setup (no users yet) ──
 
 /**
@@ -90,26 +118,8 @@ router.post('/login', rateLimit({
     return;
   }
 
-  // First-login email verification for admins with an email address
-  if (full && full.role === 'admin' && auth.isFirstLogin(user.id)) {
-    const session = auth.createFirstLoginVerSession(user.id);
-    if (session) {
-      auth.writeAuditLog(user.id, 'login.first_login_verification', 'user', String(user.id), req.ip ?? '', {});
-      const sendResult = await sendVerificationEmail(session.email, session.emailCode);
-      console.log(`[login] FIRST-LOGIN code for ${full.username} (${session.email}): ${session.emailCode}`);
-      res.json({
-        success: true,
-        requires_email_verification: true,
-        temp_token: session.tempToken,
-        email_hint: maskEmail(session.email),
-        message: sendResult.ok
-          ? `A verification code has been sent to ${maskEmail(session.email)}.`
-          : `SMTP unavailable. Check console for the verification code.`,
-      });
-      return;
-    }
-    // No email address — fall through to normal login
-  }
+  // Admins with email addresses must verify one before a session is created.
+  if (full && await beginAdminEmailVerification(full, req, res)) return;
 
   const token = auth.createSession(user.id);
   res.cookie('auth_token', token, {
@@ -128,7 +138,7 @@ router.post('/login/totp', rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 5,
   key: req => `totp:${req.ip}`,
-}), (req: Request, res: Response): void => {
+}), async (req: Request, res: Response): Promise<void> => {
   const tempToken = typeof req.body?.temp_token === 'string' ? req.body.temp_token : '';
   const totpCode = typeof req.body?.totp_code === 'string' ? req.body.totp_code.replace(/\s/g, '') : '';
   if (!tempToken || !totpCode) {
@@ -150,6 +160,8 @@ router.post('/login/totp', rateLimit({
     res.status(401).json({ success: false, message: 'Account is disabled' });
     return;
   }
+  if (await beginAdminEmailVerification(user, req, res)) return;
+
   const sessionToken = auth.createSession(userId);
   res.cookie('auth_token', sessionToken, {
     httpOnly: true, secure: config.cookieSecure, sameSite: 'strict',
@@ -163,7 +175,7 @@ router.post('/login/totp', rateLimit({
 router.post('/login/verify-email', rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 5,
-  key: req => `first-login-verify:${req.ip}`,
+  key: req => `login-email-verify:${req.ip}`,
 }), (req: Request, res: Response): void => {
   const tempToken = typeof req.body?.temp_token === 'string' ? req.body.temp_token.trim() : '';
   const code = typeof req.body?.code === 'string' ? req.body.code.replace(/\s/g, '') : '';
@@ -190,7 +202,7 @@ router.post('/login/verify-email', rateLimit({
 router.post('/login/resend-email', rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: 3,
-  key: req => `first-login-resend:${req.ip}`,
+  key: req => `login-email-resend:${req.ip}`,
 }), async (req: Request, res: Response): Promise<void> => {
   const tempToken = typeof req.body?.temp_token === 'string' ? req.body.temp_token.trim() : '';
   if (!tempToken) {
@@ -203,7 +215,7 @@ router.post('/login/resend-email', rateLimit({
     return;
   }
   const sendResult = await sendVerificationEmail(result.email, result.emailCode);
-  console.log(`[login] FIRST-LOGIN code (resent) for ${result.email}: ${result.emailCode}`);
+  console.log(`[login] EMAIL-VERIFICATION code (resent) for ${result.email}: ${result.emailCode}`);
   res.json({
     success: true,
     email_hint: maskEmail(result.email),
@@ -253,16 +265,21 @@ router.patch('/users/:id', requireApiAuth, requireRole('admin'), requireCsrf, (r
     res.status(400).json({ error: 'Bad Request', message: 'Invalid user ID' });
     return;
   }
-  if (id === req.authUser!.id && req.body?.is_active === false) {
-    res.status(400).json({ error: 'Bad Request', message: 'You cannot disable your own account' });
+  const requestedActive = req.body?.is_active;
+  if (requestedActive !== undefined && typeof requestedActive !== 'boolean') {
+    res.status(400).json({ error: 'Bad Request', message: 'is_active must be a boolean' });
+    return;
+  }
+  if (id === req.authUser!.id && requestedActive === false) {
+    res.status(403).json({ error: 'Forbidden', message: 'You cannot disable your own account' });
     return;
   }
   try {
-    if (!auth.updateUser(id, { role: req.body?.role, is_active: req.body?.is_active })) {
+    if (!auth.updateUser(id, { role: req.body?.role, is_active: requestedActive }, req.authUser!.id)) {
       res.status(404).json({ error: 'Not Found', message: 'User not found' });
       return;
     }
-    auth.writeAuditLog(req.authUser!.id, 'user.updated', 'user', String(id), req.ip ?? '', { role: req.body?.role, is_active: req.body?.is_active });
+    auth.writeAuditLog(req.authUser!.id, 'user.updated', 'user', String(id), req.ip ?? '', { role: req.body?.role, is_active: requestedActive });
     res.json({ success: true });
   } catch (error: any) {
     res.status(400).json({ error: 'Bad Request', message: error.message });

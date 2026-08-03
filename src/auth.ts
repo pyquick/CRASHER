@@ -128,9 +128,10 @@ export function lookupUserByUsername(username: string): User | null {
   return getDb().prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').get(username.trim()) as User | undefined || null;
 }
 
-export function updateUser(id: number, changes: { role?: UserRole; is_active?: boolean }): boolean {
+export function updateUser(id: number, changes: { role?: UserRole; is_active?: boolean }, actorId?: number): boolean {
   const user = getUserById(id);
   if (!user) return false;
+  if (actorId === id && changes.is_active === false) throw new Error('You cannot disable your own account');
   const role = changes.role ?? user.role;
   const active = changes.is_active === undefined ? user.is_active : changes.is_active ? 1 : 0;
   if (!['admin', 'operator', 'viewer'].includes(role)) throw new Error('Invalid role');
@@ -590,7 +591,7 @@ export function consumeTotpTempToken(token: string): number | null {
   return entry.userId;
 }
 
-// ── First-login email verification (admin only) ──
+// ── Admin email verification during login ──
 
 const FIRST_LOGIN_SESSION_TTL = 10 * 60 * 1000; // 10 minutes
 const FIRST_LOGIN_RESEND_COOLDOWN = 60_000;       // 60 seconds
@@ -606,16 +607,8 @@ interface FirstLoginVerSession {
 const firstLoginSessions = new Map<string, FirstLoginVerSession>();
 
 /**
- * Check if a user is logging in for the first time (last_login_at is null).
- */
-export function isFirstLogin(userId: number): boolean {
-  const row = getDb().prepare('SELECT last_login_at FROM users WHERE id = ?').get(userId) as { last_login_at: string | null } | undefined;
-  return !!row && row.last_login_at === null;
-}
-
-/**
  * Get any email address for a user (prefer primary verified, fall back to any email).
- * Accepts unverified emails since the user hasn't had a chance to verify yet.
+ * Accepts unverified emails so they can be verified during login.
  */
 function getAnyEmail(userId: number): string | null {
   // Prefer primary verified
@@ -624,13 +617,13 @@ function getAnyEmail(userId: number): string | null {
   // Any verified email
   const verified = getDb().prepare('SELECT email FROM user_emails WHERE user_id = ? AND email_verified = 1 LIMIT 1').get(userId) as { email: string } | undefined;
   if (verified) return verified.email;
-  // Any email at all (unverified is ok for first login — we're verifying it now)
+  // Any email at all (unverified is ok — this login step verifies it)
   const any = getDb().prepare('SELECT email FROM user_emails WHERE user_id = ? LIMIT 1').get(userId) as { email: string } | undefined;
   return any ? any.email : null;
 }
 
 /**
- * Create a first-login email verification session for an admin.
+ * Create an admin login email verification session.
  * Generates a 6-digit code, stores in memory, and returns the code + token.
  * Returns null if the user has no email address.
  */
@@ -650,7 +643,7 @@ export function createFirstLoginVerSession(userId: number): { tempToken: string;
 }
 
 /**
- * Verify the first-login email code.
+ * Verify the admin login email code.
  * If valid, marks the email as verified, creates a real session, and removes the verification session.
  * Returns the session token (cookie value) on success, null on failure.
  */
@@ -672,7 +665,7 @@ export function consumeFirstLoginVerSession(tempToken: string, code: string): st
 }
 
 /**
- * Resend the first-login verification code.
+ * Resend the admin login verification code.
  * Returns null if the session is invalid/expired or within the 60s cooldown.
  */
 export function resendFirstLoginCode(tempToken: string): { emailCode: string; email: string } | null {

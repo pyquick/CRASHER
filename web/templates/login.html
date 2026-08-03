@@ -78,7 +78,7 @@
       </form>
 
       <!-- Login Form (normal) -->
-      <form x-show="!checking && !needsSetup && !showEmailVerification" @submit.prevent="login" class="space-y-4">
+      <form x-show="!checking && !needsSetup && !showTotp && !showEmailVerification" @submit.prevent="login" class="space-y-4">
         <div>
           <label class="block text-xs text-gray-500 mb-1">Username</label>
           <input type="text" x-model="username" required autocomplete="username"
@@ -123,8 +123,8 @@
         </button>
       </form>
 
-      <!-- Email Verification Step (first login) -->
-      <div x-show="!checking && !needsSetup && showEmailVerification" class="space-y-4">
+      <!-- Email Verification Step -->
+      <form x-show="!checking && !needsSetup && showEmailVerification" @submit.prevent="verifyEmail" class="space-y-4">
         <p class="text-sm text-blue-400 text-center">Verify your email address to complete login.</p>
         <p class="text-xs text-gray-500 text-center" x-text="'A verification code has been sent to ' + emailHint"></p>
         <div>
@@ -133,7 +133,7 @@
                  placeholder="000000">
         </div>
         <p x-show="errorMsg" class="text-sm text-red-400 text-center" x-text="errorMsg"></p>
-        <button type="button" @click="verifyEmail" :disabled="loading"
+        <button type="submit" :disabled="loading"
                 class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors">
           <span x-show="!loading">Verify Email</span>
           <span x-show="loading" class="inline-flex items-center justify-center gap-2">
@@ -141,16 +141,16 @@
             Verifying...
           </span>
         </button>
-        <button type="button" @click="resendEmail" :disabled="resendCooldown > 0"
+        <button type="button" @click="resendEmail" :disabled="loading || resendCooldown > 0"
                 class="w-full py-2 text-xs text-gray-400 hover:text-blue-400 disabled:text-gray-600 transition-colors">
           <span x-show="resendCooldown === 0">Resend Code</span>
           <span x-show="resendCooldown > 0" x-text="'Resend in ' + resendCooldown + 's'"></span>
         </button>
-        <button type="button" @click="cancelEmailVerification"
-                class="w-full py-2 text-xs text-gray-500 hover:text-gray-400 transition-colors">
+        <button type="button" @click="cancelEmailVerification" :disabled="loading"
+                class="w-full py-2 text-xs text-gray-500 hover:text-gray-400 disabled:text-gray-700 transition-colors">
           Back to Login
         </button>
-      </div>
+      </form>
 
       <div x-show="!checking && !needsSetup && !showTotp && !showEmailVerification" class="mt-4 text-center">
         <a href="/web/forgot-password" class="text-xs text-gray-500 hover:text-blue-400 transition-colors">Forgot Password?</a>
@@ -234,17 +234,9 @@
               this.tempToken = data.temp_token;
               this.showTotp = true;
             } else if (data.requires_email_verification) {
-              this.tempToken = data.temp_token;
-              this.emailHint = data.email_hint;
-              this.showEmailVerification = true;
-              this.startResendCooldown();
+              this.openEmailVerification(data);
             } else {
-              const params = new URLSearchParams(window.location.search);
-              const requestedRedirect = params.get('redirect') || '/web/';
-              const redirect = requestedRedirect.startsWith('/') && !requestedRedirect.startsWith('//')
-                ? requestedRedirect
-                : '/web/';
-              window.location.href = redirect;
+              this.redirectAfterLogin();
             }
           } else {
             this.errorMsg = data.message || 'Login failed';
@@ -266,12 +258,13 @@
           });
           const data = await res.json();
           if (res.ok && data.success) {
-            const params = new URLSearchParams(window.location.search);
-            const requestedRedirect = params.get('redirect') || '/web/';
-            const redirect = requestedRedirect.startsWith('/') && !requestedRedirect.startsWith('//')
-              ? requestedRedirect
-              : '/web/';
-            window.location.href = redirect;
+            if (data.requires_email_verification) {
+              this.showTotp = false;
+              this.totpCode = '';
+              this.openEmailVerification(data);
+            } else {
+              this.redirectAfterLogin();
+            }
           } else {
             this.errorMsg = data.message || 'Verification failed';
           }
@@ -281,9 +274,19 @@
         this.loading = false;
       },
 
+      openEmailVerification(data) {
+        this.tempToken = data.temp_token;
+        this.emailHint = data.email_hint || '';
+        this.emailCode = '';
+        this.errorMsg = '';
+        this.showEmailVerification = true;
+        this.startResendCooldown();
+      },
+
       async verifyEmail() {
         this.errorMsg = '';
-        if (!this.emailCode || this.emailCode.length !== 6) {
+        const code = this.emailCode.replace(/\s/g, '');
+        if (code.length !== 6) {
           this.errorMsg = 'Please enter the 6-digit code';
           return;
         }
@@ -292,16 +295,12 @@
           const res = await fetch('/api/v1/auth/login/verify-email', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ temp_token: this.tempToken, code: this.emailCode }),
+            body: JSON.stringify({ temp_token: this.tempToken, code }),
           });
           const data = await res.json();
           if (res.ok && data.success) {
-            const params = new URLSearchParams(window.location.search);
-            const requestedRedirect = params.get('redirect') || '/web/';
-            const redirect = requestedRedirect.startsWith('/') && !requestedRedirect.startsWith('//')
-              ? requestedRedirect
-              : '/web/';
-            window.location.href = redirect;
+            clearInterval(this._resendTimer);
+            this.redirectAfterLogin();
           } else {
             this.errorMsg = data.message || 'Verification failed';
           }
@@ -313,6 +312,7 @@
 
       async resendEmail() {
         this.errorMsg = '';
+        this.loading = true;
         try {
           const res = await fetch('/api/v1/auth/login/resend-email', {
             method: 'POST',
@@ -321,6 +321,7 @@
           });
           const data = await res.json();
           if (res.ok && data.success) {
+            this.emailHint = data.email_hint || this.emailHint;
             this.startResendCooldown();
           } else {
             this.errorMsg = data.message || 'Failed to resend code';
@@ -328,12 +329,15 @@
         } catch (err) {
           this.errorMsg = 'Network error';
         }
+        this.loading = false;
       },
 
       cancelEmailVerification() {
         this.showEmailVerification = false;
         this.emailCode = '';
+        this.emailHint = '';
         this.tempToken = '';
+        this.errorMsg = '';
         clearInterval(this._resendTimer);
         this.resendCooldown = 0;
       },
@@ -345,7 +349,16 @@
           this.resendCooldown = Math.max(0, this.resendCooldown - 1);
           if (this.resendCooldown === 0) clearInterval(this._resendTimer);
         }, 1000);
-      }
+      },
+
+      redirectAfterLogin() {
+        const params = new URLSearchParams(window.location.search);
+        const requestedRedirect = params.get('redirect') || '/web/';
+        window.location.href = requestedRedirect.startsWith('/') && !requestedRedirect.startsWith('//')
+          ? requestedRedirect
+          : '/web/';
+      },
+
     }));
   });
 </script>

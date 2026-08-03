@@ -1,5 +1,9 @@
+# Docker Hub may be inaccessible on some networks. Override at build time if needed:
+# docker build --build-arg NODE_IMAGE=node:24-alpine .
+ARG NODE_IMAGE=public.ecr.aws/docker/library/node:24-alpine
+
 # ---- Build Stage ----
-FROM node:24-alpine AS builder
+FROM ${NODE_IMAGE} AS builder
 
 WORKDIR /app
 
@@ -16,7 +20,7 @@ COPY src/ ./src/
 RUN npm run build
 
 # ---- Runtime Stage ----
-FROM node:24-alpine
+FROM ${NODE_IMAGE}
 
 WORKDIR /app
 

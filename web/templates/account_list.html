@@ -123,7 +123,8 @@
               <td><span x-text="user.is_active ? 'active' : 'disabled'" :class="user.is_active ? 'text-green-400' : 'text-red-400'"></span></td>
               <td class="text-gray-500" x-text="user.last_login_at || 'never'"></td>
               <td class="text-right space-x-2">
-                <button @click="toggleUser(user)" class="text-xs text-yellow-400 hover:text-yellow-300" x-text="user.is_active ? 'Disable' : 'Enable'"></button>
+                <button x-show="user.id !== currentUserId" @click="toggleUser(user)" class="text-xs text-yellow-400 hover:text-yellow-300" x-text="user.is_active ? 'Disable' : 'Enable'"></button>
+                <span x-show="user.id === currentUserId" class="text-xs text-gray-600">Current account</span>
               </td>
             </tr>
           </template>
@@ -173,7 +174,7 @@
 
 <script>
   document.addEventListener('alpine:init', () => Alpine.data('accountSecurity', () => ({
-    users: [], keys: [], emails: [],
+    users: [], keys: [], emails: [], currentUserId: null,
     showCreate: false, showCreateKey: false, createdKey: '', message: '', failed: false,
     newKey: { name: '', tier: 'operator' }, newUser: { username: '', password: '', role: 'viewer' },
     // Email
@@ -185,7 +186,7 @@
     totpDisable: { show: false, loading: false, error: '' },
 
     async request(url, options = {}) { const r = await fetch(url, options); const d = await r.json(); if (!r.ok) throw new Error(d.message || 'Request failed'); return d; },
-    async load() { this.users = []; try { const u = await this.request('/api/v1/auth/users'); this.users = u.items; } catch {} this.keys = []; try { const k = await this.request('/api/v1/auth/api-keys'); this.keys = k.items; } catch {} this.emails = []; try { const e = await this.request('/api/v1/auth/me/emails'); this.emails = e.items; } catch {} try { const me = await this.request('/api/v1/auth/me'); this.totpEnabled = !!me.user.totp_enabled; } catch {} },
+    async load() { this.users = []; try { const u = await this.request('/api/v1/auth/users'); this.users = u.items; } catch {} this.keys = []; try { const k = await this.request('/api/v1/auth/api-keys'); this.keys = k.items; } catch {} this.emails = []; try { const e = await this.request('/api/v1/auth/me/emails'); this.emails = e.items; } catch {} try { const me = await this.request('/api/v1/auth/me'); this.currentUserId = me.user.id; this.totpEnabled = !!me.user.totp_enabled; } catch {} },
     notify(message, failed = false) { this.message = message; this.failed = failed; },
 
     // ── Email ──
@@ -214,7 +215,7 @@
     stopResendTimer() { if (this._resendTimer) { clearInterval(this._resendTimer); this._resendTimer = null; } this.resendCooldown = 0; },
     async doVerify() { this.verifyMsg = ''; this.verifyFailed = false; if (!this.verifyCode) return; this.verifying = true; try { await this.request('/api/v1/auth/me/emails/' + this.verifyEmailId + '/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ code: this.verifyCode }) }); this.verifyMsg = 'Verified!'; this.verifyEmailId = null; this.verifyCode = ''; await this.load(); } catch (e) { this.verifyMsg = e.message; this.verifyFailed = true; } this.verifying = false; },
     async setPrimary(e) { try { await this.request('/api/v1/auth/me/emails/' + e.id + '/primary', { method: 'POST' }); await this.load(); } catch (e) { this.notify(e.message, true); } },
-    async removeEmail(e) { if (!await Modal.confirm('Remove Email', 'Remove ' + e.email + '?', 'Remove')) return; try { await this.request('/api/v1/auth/me/emails/' + e.id, { method: 'DELETE' }); await this.load(); } catch (err) { this.notify(err.message, true); } },
+    async removeEmail(e) { if (!await Modal.confirm('Remove Email', 'Remove ' + e.email + '?', 'Remove')) return; this.emailMsg = ''; this.emailFailed = false; try { await this.request('/api/v1/auth/me/emails/' + e.id, { method: 'DELETE' }); await this.load(); } catch (err) { this.emailMsg = err.message; this.emailFailed = true; } },
 
     // ── 2FA ──
     async setupTotp() { this.totpSetup = { show: true, loading: true, secret: '', error: '' }; try { const r = await this.request('/api/v1/auth/me/totp/setup'); this.totpSetup.secret = r.secret; this.totpCode = ''; renderQr(r.qr_uri); } catch (e) { this.totpSetup.error = e.message; this.totpSetup.show = false; } this.totpSetup.loading = false; },
@@ -226,7 +227,7 @@
     // ── Accounts ──
     async createUser() { try { const p = { username: this.newUser.username, role: this.newUser.role }; if (this.newUser.password) p.password = this.newUser.password; const r = await this.request('/api/v1/auth/users', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(p) }); this.newUser = { username: '', password: '', role: 'viewer' }; this.showCreate = false; const pw = r.initial_password; this.notify(pw ? 'Account created. One-time password (copy now): ' + pw : 'Account created'); await this.load(); } catch (e) { this.notify(e.message, true); } },
     async updateUser(user) { try { await this.request('/api/v1/auth/users/' + user.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ role: user.role }) }); this.notify('Account updated'); } catch (e) { this.notify(e.message, true); await this.load(); } },
-    async toggleUser(user) { try { await this.request('/api/v1/auth/users/' + user.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_active: !Boolean(user.is_active) }) }); this.notify('Account updated'); await this.load(); } catch (e) { this.notify(e.message, true); } },
+    async toggleUser(user) { if (user.id === this.currentUserId) { this.notify('You cannot disable your own account', true); return; } try { await this.request('/api/v1/auth/users/' + user.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_active: !Boolean(user.is_active) }) }); this.notify('Account updated'); await this.load(); } catch (e) { this.notify(e.message, true); } },
 
     // ── API Keys ──
     async createKeyFromForm() { try { const k = await this.request('/api/v1/auth/api-keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: this.newKey.name, tier: this.newKey.tier }) }); this.createdKey = k.key; this.showCreateKey = false; this.newKey = { name: '', tier: 'operator' }; await this.load(); } catch (e) { this.notify(e.message, true); } },
