@@ -80,10 +80,20 @@ function runMigrations(db: Database.Database): void {
       key_prefix TEXT NOT NULL,
       key_hash TEXT NOT NULL UNIQUE,
       tier TEXT NOT NULL DEFAULT 'operator' CHECK(tier IN ('admin','operator','viewer')),
+      minute_limit INTEGER NOT NULL DEFAULT 0 CHECK(minute_limit >= 0),
+      daily_limit INTEGER NOT NULL DEFAULT 0 CHECK(daily_limit >= 0),
       expires_at TEXT,
       revoked_at TEXT,
       last_used_at TEXT,
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS api_key_usage (
+      api_key_id INTEGER NOT NULL REFERENCES api_keys(id) ON DELETE CASCADE,
+      period_start INTEGER NOT NULL,
+      period_seconds INTEGER NOT NULL,
+      request_count INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY (api_key_id, period_start, period_seconds)
     );
 
     CREATE TABLE IF NOT EXISTS audit_logs (
@@ -250,6 +260,7 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
     CREATE INDEX IF NOT EXISTS idx_api_keys_user_id ON api_keys(user_id);
+    CREATE INDEX IF NOT EXISTS idx_api_key_usage_period ON api_key_usage(period_start);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_actor ON audit_logs(actor_user_id);
     CREATE INDEX IF NOT EXISTS idx_audit_logs_created_at ON audit_logs(created_at);
     CREATE INDEX IF NOT EXISTS idx_crash_groups_hash ON crash_groups(crash_hash);
@@ -293,6 +304,10 @@ function runMigrations(db: Database.Database): void {
 
   // v5 migration: API key tier
   addColumnIfNotExists(db, 'api_keys', 'tier', "TEXT NOT NULL DEFAULT 'operator'");
+
+  // v8 migration: per-key request quotas; zero means unlimited
+  addColumnIfNotExists(db, 'api_keys', 'minute_limit', 'INTEGER NOT NULL DEFAULT 0');
+  addColumnIfNotExists(db, 'api_keys', 'daily_limit', 'INTEGER NOT NULL DEFAULT 0');
 
   // v6 migration: projects and source snapshots
   addColumnIfNotExists(db, 'crash_groups', 'project_id', 'INTEGER REFERENCES projects(id) ON DELETE SET NULL');

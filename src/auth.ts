@@ -209,7 +209,26 @@ export function purgeExpiredSessions(): void {
   getDb().prepare(`DELETE FROM sessions WHERE expires_at <= ?`).run(nowSqlDateTime());
 }
 
-export function createApiKey(userId: number, name: string, tier: ApiKeyTier = 'operator', expiresAt?: string): { id: number; name: string; key: string; key_prefix: string } {
+export interface ApiKeyLimits {
+  minute_limit: number;
+  daily_limit: number;
+}
+
+function normalizeApiKeyLimit(value: unknown, field: string): number {
+  if (value === undefined) return 0;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value < 0 || value > 1_000_000_000) {
+    throw new Error(`${field} must be an integer between 0 and 1000000000`);
+  }
+  return value;
+}
+
+export function createApiKey(
+  userId: number,
+  name: string,
+  tier: ApiKeyTier = 'operator',
+  expiresAt?: string,
+  limits: Partial<ApiKeyLimits> = {}
+): { id: number; name: string; key: string; key_prefix: string } {
   const user = getUserById(userId);
   if (!user || user.is_active !== 1) throw new Error('User is not active');
   if (!['admin', 'operator', 'viewer'].includes(tier)) throw new Error('Invalid API key tier');
@@ -219,12 +238,15 @@ export function createApiKey(userId: number, name: string, tier: ApiKeyTier = 'o
   if (!normalizedName || normalizedName.length > 100) throw new Error('API key name must be 1-100 characters');
   if (expiresAt && !Number.isFinite(Date.parse(expiresAt))) throw new Error('Invalid expiration date');
   const expiresAtSql = expiresAt ? new Date(expiresAt).toISOString().replace('T', ' ').replace('Z', '') : null;
+  const minuteLimit = normalizeApiKeyLimit(limits.minute_limit, 'minute_limit');
+  const dailyLimit = normalizeApiKeyLimit(limits.daily_limit, 'daily_limit');
 
   const key = `crs_${randomBytes(32).toString('base64url')}`;
   const prefix = key.substring(0, 12);
   const result = getDb().prepare(`
-    INSERT INTO api_keys (user_id, name, key_prefix, key_hash, tier, expires_at) VALUES (?, ?, ?, ?, ?, ?)
-  `).run(userId, normalizedName, prefix, hashLookupToken(key), tier, expiresAtSql);
+    INSERT INTO api_keys (user_id, name, key_prefix, key_hash, tier, minute_limit, daily_limit, expires_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(userId, normalizedName, prefix, hashLookupToken(key), tier, minuteLimit, dailyLimit, expiresAtSql);
   return { id: Number(result.lastInsertRowid), name: normalizedName, key, key_prefix: prefix };
 }
 
@@ -233,20 +255,33 @@ export function listApiKeysForUser(user: AuthenticatedUser): Array<Omit<ApiKeyRe
   const where = user.role === 'admin' ? '' : 'WHERE user_id = ?';
   const params = user.role === 'admin' ? [] : [user.id];
   return getDb().prepare(`
-    SELECT id, user_id, name, key_prefix, tier, expires_at, revoked_at, last_used_at, created_at
+    SELECT id, user_id, name, key_prefix, tier, minute_limit, daily_limit, expires_at, revoked_at, last_used_at, created_at
     FROM api_keys ${where} ORDER BY created_at DESC
   `).all(...params) as Array<Omit<ApiKeyRecord, 'key_hash'>>;
 }
 
-export function authenticateApiKey(rawKey: string): { id: number; tier: ApiKeyTier; user: AuthenticatedUser } | null {
+export function authenticateApiKey(rawKey: string): { id: number; tier: ApiKeyTier; limits: ApiKeyLimits; user: AuthenticatedUser } | null {
   const row = getDb().prepare(`
-    SELECT k.id, k.tier, u.id AS user_id, u.username, u.role
+    SELECT k.id, k.tier, k.minute_limit, k.daily_limit, u.id AS user_id, u.username, u.role
     FROM api_keys k JOIN users u ON u.id = k.user_id
     WHERE k.key_hash = ? AND k.revoked_at IS NULL AND u.is_active = 1
       AND (k.expires_at IS NULL OR k.expires_at > ?)
-  `).get(hashLookupToken(rawKey), nowSqlDateTime()) as { id: number; tier: ApiKeyTier; user_id: number; username: string; role: UserRole } | undefined;
+  `).get(hashLookupToken(rawKey), nowSqlDateTime()) as {
+    id: number;
+    tier: ApiKeyTier;
+    minute_limit: number;
+    daily_limit: number;
+    user_id: number;
+    username: string;
+    role: UserRole;
+  } | undefined;
   if (!row) return null;
-  return { id: row.id, tier: row.tier, user: { id: row.user_id, username: row.username, role: row.role } };
+  return {
+    id: row.id,
+    tier: row.tier,
+    limits: { minute_limit: row.minute_limit, daily_limit: row.daily_limit },
+    user: { id: row.user_id, username: row.username, role: row.role },
+  };
 }
 
 export function touchApiKey(id: number): void {
@@ -266,6 +301,41 @@ export function updateApiKeyTier(id: number, tier: ApiKeyTier, actor: Authentica
   if (actor.role !== 'admin') throw new Error('Insufficient permissions');
   if (!['admin', 'operator', 'viewer'].includes(tier)) throw new Error('Invalid API key tier');
   return getDb().prepare("UPDATE api_keys SET tier = ? WHERE id = ? AND revoked_at IS NULL").run(tier, id).changes > 0;
+}
+
+export function updateApiKeyLimits(id: number, limits: ApiKeyLimits, actor: AuthenticatedUser): boolean {
+  if (actor.role !== 'admin') throw new Error('Insufficient permissions');
+  const minuteLimit = normalizeApiKeyLimit(limits.minute_limit, 'minute_limit');
+  const dailyLimit = normalizeApiKeyLimit(limits.daily_limit, 'daily_limit');
+  return getDb().prepare(`
+    UPDATE api_keys SET minute_limit = ?, daily_limit = ? WHERE id = ? AND revoked_at IS NULL
+  `).run(minuteLimit, dailyLimit, id).changes > 0;
+}
+
+export function consumeApiKeyQuota(id: number, windowSeconds: number, limit: number): { allowed: boolean; remaining: number; resetAt: number } {
+  const now = Math.floor(Date.now() / 1000);
+  const periodStart = Math.floor(now / windowSeconds) * windowSeconds;
+  const transaction = getDb().transaction(() => {
+    const row = getDb().prepare(`
+      SELECT request_count FROM api_key_usage
+      WHERE api_key_id = ? AND period_start = ? AND period_seconds = ?
+    `).get(id, periodStart, windowSeconds) as { request_count: number } | undefined;
+    const count = (row?.request_count ?? 0) + 1;
+    if (row) {
+      getDb().prepare(`
+        UPDATE api_key_usage SET request_count = ?
+        WHERE api_key_id = ? AND period_start = ? AND period_seconds = ?
+      `).run(count, id, periodStart, windowSeconds);
+    } else {
+      getDb().prepare(`
+        INSERT INTO api_key_usage (api_key_id, period_start, period_seconds, request_count)
+        VALUES (?, ?, ?, ?)
+      `).run(id, periodStart, windowSeconds, count);
+    }
+    return count;
+  });
+  const count = transaction();
+  return { allowed: count <= limit, remaining: Math.max(0, limit - count), resetAt: periodStart + windowSeconds };
 }
 
 export function writeAuditLog(actorUserId: number | null, action: string, targetType: string, targetId: string, ipAddress: string, details: Record<string, unknown> = {}): void {

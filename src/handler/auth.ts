@@ -325,8 +325,16 @@ router.post('/api-keys', requireApiAuth, requireRole('admin', 'operator'), requi
     const tier = req.body?.tier ?? 'operator';
     // Operator-created keys are always operator tier; admin can set any tier
     const effectiveTier = req.authUser!.role === 'admin' ? tier : 'operator';
-    const key = auth.createApiKey(userId, String(req.body?.name ?? ''), effectiveTier, req.body?.expires_at);
-    auth.writeAuditLog(req.authUser!.id, 'api_key.created', 'api_key', String(key.id), req.ip ?? '', { user_id: userId, name: key.name, tier: effectiveTier });
+    const limits = req.authUser!.role === 'admin'
+      ? { minute_limit: req.body?.minute_limit, daily_limit: req.body?.daily_limit }
+      : {};
+    const key = auth.createApiKey(userId, String(req.body?.name ?? ''), effectiveTier, req.body?.expires_at, limits);
+    auth.writeAuditLog(req.authUser!.id, 'api_key.created', 'api_key', String(key.id), req.ip ?? '', {
+      user_id: userId,
+      name: key.name,
+      tier: effectiveTier,
+      ...limits,
+    });
     res.status(201).json(key);
   } catch (error: any) {
     res.status(400).json({ error: 'Bad Request', message: error.message });
@@ -604,6 +612,25 @@ router.post('/reset-request/:token/approve', requireApiAuth, requireRole('admin'
     auth.writeAuditLog(req.authUser!.id, 'password_reset.approved', 'user', result.username, req.ip ?? '', {});
     console.log(`[reset] APPROVED by ${req.authUser!.username} for ${result.username}: ${result.newPassword}`);
     res.json({ success: true, username: result.username, new_password: result.newPassword });
+  } catch (error: any) {
+    res.status(400).json({ error: 'Bad Request', message: error.message });
+  }
+});
+
+router.patch('/api-keys/:id/limits', requireApiAuth, requireRole('admin'), requireCsrf, (req: Request, res: Response): void => {
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'Bad Request', message: 'Invalid API key ID' });
+    return;
+  }
+  try {
+    const limits = { minute_limit: req.body?.minute_limit, daily_limit: req.body?.daily_limit };
+    if (!auth.updateApiKeyLimits(id, limits, req.authUser!)) {
+      res.status(404).json({ error: 'Not Found', message: 'API key not found or already revoked' });
+      return;
+    }
+    auth.writeAuditLog(req.authUser!.id, 'api_key.limits_updated', 'api_key', String(id), req.ip ?? '', limits);
+    res.json({ success: true });
   } catch (error: any) {
     res.status(400).json({ error: 'Bad Request', message: error.message });
   }

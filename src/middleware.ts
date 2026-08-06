@@ -13,6 +13,8 @@ declare global {
       authUser?: AuthenticatedUser;
       authType?: 'session' | 'api_key';
       apiKeyTier?: import('./model.js').ApiKeyTier;
+      apiKeyId?: number;
+      apiKeyLimits?: import('./auth.js').ApiKeyLimits;
     }
   }
 }
@@ -93,7 +95,9 @@ function authenticateApiKey(req: Request): AuthenticatedUser | null {
   auth.touchApiKey(apiKey.id);
   req.authType = 'api_key';
   req.authUser = apiKey.user;
+  req.apiKeyId = apiKey.id;
   req.apiKeyTier = apiKey.tier;
+  req.apiKeyLimits = apiKey.limits;
   return apiKey.user;
 }
 
@@ -141,7 +145,9 @@ export function clearApiKeyIdentity(req: Request, _res: Response, next: NextFunc
   if (req.authType === 'api_key') {
     delete req.authType;
     delete req.authUser;
+    delete req.apiKeyId;
     delete req.apiKeyTier;
+    delete req.apiKeyLimits;
   }
   next();
 }
@@ -259,6 +265,27 @@ export function rateLimit(options: { windowMs: number; limit: number; key?: (req
       for (const [storedKey, stored] of entries) {
         if (stored.resetAt <= now) entries.delete(storedKey);
       }
+    }
+    next();
+  };
+}
+
+export function apiKeyRateLimit(windowSeconds: number, limitField: 'minute_limit' | 'daily_limit') {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    const limit = req.apiKeyLimits?.[limitField] ?? 0;
+    if (req.authType !== 'api_key' || !req.apiKeyId || limit === 0) {
+      next();
+      return;
+    }
+
+    const quota = auth.consumeApiKeyQuota(req.apiKeyId, windowSeconds, limit);
+    res.setHeader('RateLimit-Limit', limit);
+    res.setHeader('RateLimit-Remaining', quota.remaining);
+    res.setHeader('RateLimit-Reset', quota.resetAt);
+    if (!quota.allowed) {
+      res.setHeader('Retry-After', Math.max(1, quota.resetAt - Math.floor(Date.now() / 1000)));
+      res.status(429).json({ error: 'Too Many Requests', message: 'API key rate limit exceeded' });
+      return;
     }
     next();
   };

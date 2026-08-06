@@ -84,6 +84,39 @@ class SecurityIntegrationTests(unittest.TestCase):
         }, timeout=5)
         self.assertEqual(response.status_code, 403)
 
+    def test_api_key_limits_are_enforced_per_key(self):
+        self.assertEqual(self.login().status_code, 200)
+        headers = {"X-CSRF-Token": self.csrf()}
+
+        minute_key = self.session.post(f"{BASE}/api/v1/auth/api-keys", headers=headers, json={
+            "name": f"minute-limit-{time.time_ns()}",
+            "minute_limit": 1,
+            "daily_limit": 0,
+        }, timeout=5)
+        self.assertEqual(minute_key.status_code, 201, minute_key.text)
+        minute_headers = {"X-API-Key": minute_key.json()["key"]}
+        first_minute = requests.post(f"{BASE}/api/v1/crash-report", headers=minute_headers, json={"exception_type": "MinuteLimit"}, timeout=5)
+        second_minute = requests.post(f"{BASE}/api/v1/crash-report", headers=minute_headers, json={"exception_type": "MinuteLimit"}, timeout=5)
+        self.assertEqual(first_minute.status_code, 201, first_minute.text)
+        self.assertEqual(second_minute.status_code, 429, second_minute.text)
+
+        daily_key = self.session.post(f"{BASE}/api/v1/auth/api-keys", headers=headers, json={
+            "name": f"daily-limit-{time.time_ns()}",
+            "minute_limit": 0,
+            "daily_limit": 1,
+        }, timeout=5)
+        self.assertEqual(daily_key.status_code, 201, daily_key.text)
+        daily_headers = {"X-API-Key": daily_key.json()["key"]}
+        first_daily = requests.post(f"{BASE}/api/v1/crash-report", headers=daily_headers, json={"exception_type": "DailyLimit"}, timeout=5)
+        second_daily = requests.post(f"{BASE}/api/v1/crash-report", headers=daily_headers, json={"exception_type": "DailyLimit"}, timeout=5)
+        self.assertEqual(first_daily.status_code, 201, first_daily.text)
+        self.assertEqual(second_daily.status_code, 429, second_daily.text)
+
+        listed = self.session.get(f"{BASE}/api/v1/auth/api-keys", timeout=5)
+        self.assertEqual(listed.status_code, 200, listed.text)
+        self.assertTrue(any(key["minute_limit"] == 1 and key["daily_limit"] == 0 for key in listed.json()["items"]))
+        self.assertTrue(any(key["minute_limit"] == 0 and key["daily_limit"] == 1 for key in listed.json()["items"]))
+
 
 if __name__ == "__main__":
     unittest.main()

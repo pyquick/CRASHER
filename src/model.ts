@@ -38,6 +38,8 @@ export interface ApiKeyRecord {
   key_prefix: string;
   key_hash: string;
   tier: ApiKeyTier;
+  minute_limit: number;
+  daily_limit: number;
   expires_at: string | null;
   revoked_at: string | null;
   last_used_at: string | null;

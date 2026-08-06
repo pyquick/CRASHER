@@ -139,13 +139,15 @@
       <div><h2 class="text-lg font-semibold">Ingestion API Keys</h2><p class="text-sm text-gray-500">Use X-API-Key or Authorization: Bearer for client submissions.</p></div>
       <button @click="showCreateKey = !showCreateKey" class="btn btn-blue">Create key</button>
     </div>
-    <form x-show="showCreateKey" @submit.prevent="createKeyFromForm" class="grid md:grid-cols-3 gap-3 mb-5 p-4 bg-surface-950 rounded-lg border border-gray-800">
+    <form x-show="showCreateKey" @submit.prevent="createKeyFromForm" class="grid md:grid-cols-5 gap-3 mb-5 p-4 bg-surface-950 rounded-lg border border-gray-800">
       <input x-model="newKey.name" required placeholder="Key name" autocomplete="off" class="fc">
       <select x-model="newKey.tier" class="fc admin-only" style="display:none">
         <option value="operator">operator</option>
         <option value="viewer">viewer</option>
         <option value="admin">admin</option>
       </select>
+      <input x-model.number="newKey.minute_limit" type="number" min="0" step="1" placeholder="Per minute (0 = unlimited)" class="fc admin-only" style="display:none">
+      <input x-model.number="newKey.daily_limit" type="number" min="0" step="1" placeholder="Per day (0 = unlimited)" class="fc admin-only" style="display:none">
       <button type="submit" class="btn btn-green">Create key</button>
     </form>
     <div x-show="createdKey" class="mb-4 p-4 border border-yellow-700/50 bg-yellow-900/20 rounded-lg">
@@ -158,12 +160,15 @@
             <span x-text="key.name"></span>
             <span class="text-xs text-gray-500 ml-3" x-text="key.key_prefix + '…'"></span>
             <span class="text-xs px-1.5 py-0.5 rounded ml-2" :class="tierClass(key.tier)" x-text="key.tier"></span>
+            <span x-show="key.minute_limit" class="text-xs text-gray-500 ml-2" x-text="key.minute_limit + '/min'"></span>
+            <span x-show="key.daily_limit" class="text-xs text-gray-500 ml-2" x-text="key.daily_limit + '/day'"></span>
             <span x-show="key.revoked_at" class="text-xs text-red-400 ml-3">revoked</span>
           </div>
           <div class="flex items-center gap-2">
             <select @change="updateTier(key, $event)" class="fc fc-sm admin-only" style="display:none" :disabled="key.revoked_at">
               <option value="admin" :selected="key.tier === 'admin'">admin</option><option value="operator" :selected="key.tier === 'operator'">operator</option><option value="viewer" :selected="key.tier === 'viewer'">viewer</option>
             </select>
+            <button x-show="!key.revoked_at" @click="editLimits(key)" class="text-xs text-blue-400 admin-only" style="display:none">Limits</button>
             <button x-show="!key.revoked_at" @click="revokeKey(key)" class="text-xs text-red-400">Revoke</button>
           </div>
         </div>
@@ -176,7 +181,7 @@
   document.addEventListener('alpine:init', () => Alpine.data('accountSecurity', () => ({
     users: [], keys: [], emails: [], currentUserId: null,
     showCreate: false, showCreateKey: false, createdKey: '', message: '', failed: false,
-    newKey: { name: '', tier: 'operator' }, newUser: { username: '', password: '', role: 'viewer' },
+    newKey: { name: '', tier: 'operator', minute_limit: 0, daily_limit: 0 }, newUser: { username: '', password: '', role: 'viewer' },
     // Email
     newEmail: '', sendingCode: false, emailMsg: '', emailFailed: false,
     verifyEmailId: null, verifyEmailAddr: '', verifyCode: '', verifying: false, verifyMsg: '', verifyFailed: false,
@@ -230,7 +235,8 @@
     async toggleUser(user) { if (user.id === this.currentUserId) { this.notify('You cannot disable your own account', true); return; } try { await this.request('/api/v1/auth/users/' + user.id, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_active: !Boolean(user.is_active) }) }); this.notify('Account updated'); await this.load(); } catch (e) { this.notify(e.message, true); } },
 
     // ── API Keys ──
-    async createKeyFromForm() { try { const k = await this.request('/api/v1/auth/api-keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: this.newKey.name, tier: this.newKey.tier }) }); this.createdKey = k.key; this.showCreateKey = false; this.newKey = { name: '', tier: 'operator' }; await this.load(); } catch (e) { this.notify(e.message, true); } },
+    async createKeyFromForm() { try { const k = await this.request('/api/v1/auth/api-keys', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(this.newKey) }); this.createdKey = k.key; this.showCreateKey = false; this.newKey = { name: '', tier: 'operator', minute_limit: 0, daily_limit: 0 }; await this.load(); } catch (e) { this.notify(e.message, true); } },
+    async editLimits(key) { const minuteLimit = await Modal.prompt('API Key Limits', 'Requests per minute. Enter 0 for unlimited.', 'number', String(key.minute_limit ?? 0), 'Next'); if (minuteLimit === null) return; const dailyLimit = await Modal.prompt('API Key Limits', 'Requests per day. Enter 0 for unlimited.', 'number', String(key.daily_limit ?? 0), 'Save'); if (dailyLimit === null) return; try { await this.request('/api/v1/auth/api-keys/' + key.id + '/limits', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ minute_limit: Number(minuteLimit), daily_limit: Number(dailyLimit) }) }); key.minute_limit = Number(minuteLimit); key.daily_limit = Number(dailyLimit); this.notify('API key limits updated'); } catch (e) { this.notify(e.message, true); } },
     async revokeKey(key) { if (!await Modal.confirm('Revoke API Key', 'Permanently revoke key "' + key.name + '"?', 'Revoke')) return; try { await this.request('/api/v1/auth/api-keys/' + key.id, { method: 'DELETE' }); this.notify('API key revoked'); await this.load(); } catch (e) { this.notify(e.message, true); } },
     async updateTier(key, ev) { const tier = ev.target.value; if (!await Modal.confirm('Change Tier', 'Change "' + key.name + '" tier to ' + tier + '?', 'Change')) { ev.target.value = key.tier; return; } try { await this.request('/api/v1/auth/api-keys/' + key.id + '/tier', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ tier }) }); key.tier = tier; this.notify('Tier updated'); } catch (e) { ev.target.value = key.tier; this.notify(e.message, true); } },
     tierClass(tier) { return { admin: 'bg-red-900/50 text-red-300', operator: 'bg-blue-900/50 text-blue-300', viewer: 'bg-gray-700 text-gray-300' }[tier] || 'bg-gray-700 text-gray-300'; }

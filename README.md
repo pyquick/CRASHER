@@ -73,7 +73,7 @@ Authorization: Bearer <api-key>
 X-API-Key: <api-key>
 ```
 
-API Key 由登录用户通过账户页面或 `/api/v1/auth/api-keys` 创建，明文只在创建响应中返回一次。viewer key 不能写入；operator/admin key 可以调用上报端点。
+API Key 由登录用户通过账户页面或 `/api/v1/auth/api-keys` 创建，明文只在创建响应中返回一次。管理员可为每把 Key 配置每分钟和每日调用上限，`0` 表示不限量。额度按 Key 在 SQLite 中持久化，服务重启后仍生效。viewer key 不能写入；operator/admin key 可以调用上报端点。
 
 ### 管理 API Session
 
@@ -445,9 +445,10 @@ GET    /api-keys
 POST   /api-keys
 DELETE /api-keys/:id
 PATCH  /api-keys/:id/tier
+PATCH  /api-keys/:id/limits
 ```
 
-具体可用操作由 admin/operator/viewer 角色限制。API Key tier 为 `admin`、`operator`、`viewer`。
+具体可用操作由 admin/operator/viewer 角色限制。API Key tier 为 `admin`、`operator`、`viewer`。管理员创建时可传 `minute_limit` 和 `daily_limit`，或通过 `PATCH /api-keys/:id/limits` 更新二者；值必须是 0 到 1000000000 的整数，`0` 表示不限量。
 
 ### 12. 数据清理和健康检查
 

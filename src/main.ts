@@ -6,6 +6,7 @@ import { initDb, closeDb } from './database.js';
 import { purgeExpiredSessions, purgeExpiredResetTokens } from './auth.js';
 import {
   authenticateSession,
+  apiKeyRateLimit,
   clearApiKeyIdentity,
   errorHandler,
   notFoundHandler,
@@ -84,11 +85,25 @@ app.use('/web', authHandler);
 app.use('/api/v1/auth', authHandler);
 
 const ingestLimiter = rateLimit({ windowMs: 60 * 1000, limit: config.ingestRateLimit });
+const apiKeyMinuteLimiter = apiKeyRateLimit(60, 'minute_limit');
+const apiKeyDailyLimiter = apiKeyRateLimit(24 * 60 * 60, 'daily_limit');
+const onIngestPost = (middleware: (req: Request, res: Response, next: NextFunction) => void) => {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (req.method === 'POST') middleware(req, res, next);
+    else next();
+  };
+};
+const onFeedbackPost = (middleware: (req: Request, res: Response, next: NextFunction) => void) => {
+  return (req: Request, res: Response, next: NextFunction): void => {
+    if (req.method === 'POST' && req.path === '/') middleware(req, res, next);
+    else next();
+  };
+};
 // Ingest routes: API key required for POST, viewer-tier keys cannot write
-app.use('/api/v1/crash-report', (req, res, next) => req.method === 'POST' ? ingestLimiter(req, res, next) : next(), (req, res, next) => req.method === 'POST' ? requireApiKey(req, res, next) : next(), requireApiKeyWriteAccess);
-app.use('/api/v1/player-feedback', (req, res, next) => req.method === 'POST' && req.path === '/' ? ingestLimiter(req, res, next) : next(), (req, res, next) => req.method === 'POST' && req.path === '/' ? requireApiKey(req, res, next) : next(), requireApiKeyWriteAccess);
-app.use('/api/v1/unity/crash-report', (req, res, next) => req.method === 'POST' ? ingestLimiter(req, res, next) : next(), (req, res, next) => req.method === 'POST' ? requireApiKey(req, res, next) : next(), requireApiKeyWriteAccess);
-app.use('/api/v1/project-sources', (req, res, next) => req.method === 'POST' ? ingestLimiter(req, res, next) : next(), (req, res, next) => req.method === 'POST' ? requireApiKey(req, res, next) : next(), requireApiKeyWriteAccess);
+app.use('/api/v1/crash-report', onIngestPost(ingestLimiter), onIngestPost(requireApiKey), onIngestPost(apiKeyMinuteLimiter), onIngestPost(apiKeyDailyLimiter), requireApiKeyWriteAccess);
+app.use('/api/v1/player-feedback', onFeedbackPost(ingestLimiter), onFeedbackPost(requireApiKey), onFeedbackPost(apiKeyMinuteLimiter), onFeedbackPost(apiKeyDailyLimiter), requireApiKeyWriteAccess);
+app.use('/api/v1/unity/crash-report', onIngestPost(ingestLimiter), onIngestPost(requireApiKey), onIngestPost(apiKeyMinuteLimiter), onIngestPost(apiKeyDailyLimiter), requireApiKeyWriteAccess);
+app.use('/api/v1/project-sources', onIngestPost(ingestLimiter), onIngestPost(requireApiKey), onIngestPost(apiKeyMinuteLimiter), onIngestPost(apiKeyDailyLimiter), requireApiKeyWriteAccess);
 // Viewer API keys cannot access crash/feedback/symbol GET endpoints; admin+operator only
 app.use('/api/v1', crashReportHandler);
 app.use('/api/v1', feedbackHandler);
