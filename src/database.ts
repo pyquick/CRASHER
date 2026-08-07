@@ -317,6 +317,23 @@ function runMigrations(db: Database.Database): void {
   addColumnIfNotExists(db, 'users', 'totp_secret', 'TEXT');
   addColumnIfNotExists(db, 'users', 'totp_enabled', 'INTEGER NOT NULL DEFAULT 0');
 
+  // v9 migration: 2FA method preference on users
+  addColumnIfNotExists(db, 'users', 'two_factor_method', "TEXT NOT NULL DEFAULT 'totp' CHECK(two_factor_method IN ('totp','email','sms','none'))");
+
+  // v10 migration: phone numbers for SMS 2FA
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS user_phones (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      phone TEXT NOT NULL UNIQUE,
+      phone_verified INTEGER NOT NULL DEFAULT 0,
+      phone_verify_token_hash TEXT,
+      phone_verify_expires_at TEXT,
+      is_primary INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+  `);
+
   db.exec(`
     CREATE INDEX IF NOT EXISTS idx_crash_reports_build_guid ON crash_reports(build_guid);
     CREATE INDEX IF NOT EXISTS idx_crash_reports_symbol_id ON crash_reports(symbol_id);
@@ -326,6 +343,7 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_source_files_snapshot_path ON source_files(snapshot_id, relative_path);
     CREATE INDEX IF NOT EXISTS idx_crash_groups_project_id ON crash_groups(project_id);
     CREATE INDEX IF NOT EXISTS idx_crash_reports_project_id ON crash_reports(project_id);
+    CREATE INDEX IF NOT EXISTS idx_user_phones_user_id ON user_phones(user_id);
   `);
 }
 

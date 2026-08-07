@@ -1,14 +1,17 @@
 import { Router, type Request, type Response } from 'express';
 import { config } from '../config.js';
 import * as auth from '../auth.js';
-import { sendResetApprovalEmail, sendVerificationEmail } from '../notification/service.js';
+import { sendResetApprovalEmail, sendSmsCode, sendVerificationEmail } from '../notification/service.js';
+import type { TwoFactorMethod } from '../model.js';
 import {
   rateLimit,
+  readMfaToken,
   readSession,
   requireApiAuth,
   requireCsrf,
   requireRole,
   setCsrfCookie,
+  setMfaCookie,
 } from '../middleware.js';
 
 const router = Router();
@@ -18,6 +21,91 @@ function maskEmail(email: string): string {
   if (!name || !domain) return email;
   const dn = domain.split('.');
   return `${name[0]}***@${dn[0][0]}***.${dn.slice(1).join('.')}`;
+}
+
+function maskPhone(phone: string): string {
+  return auth.maskPhone(phone);
+}
+
+/**
+ * Resolve 2FA for account operations.
+ * If the user has 2FA methods available and hasn't provided a valid MFA token,
+ * initiates a 2FA challenge and returns 403.
+ */
+async function resolve2FA(
+  req: Request,
+  res: Response,
+  actionName: string,
+  execute: () => Promise<void> | void,
+): Promise<void> {
+  // API key auth skips 2FA
+  if (req.authType === 'api_key') {
+    execute();
+    return;
+  }
+
+  const user = req.authUser!;
+  const methods = auth.getAvailable2FAMethods(user.id);
+
+  // No 2FA methods available — allow the operation
+  if (methods.length === 0) {
+    execute();
+    return;
+  }
+
+  // Check for existing valid MFA session (via cookie)
+  const mfaToken = readMfaToken(req);
+  if (mfaToken && auth.validateMfaSession(mfaToken, user.id)) {
+    execute();
+    return;
+  }
+
+  // Need 2FA: choose the default method based on user preference
+  const full = auth.getUserById(user.id);
+  const prefMethod = full?.two_factor_method ?? 'totp';
+  const method: TwoFactorMethod =
+    (prefMethod !== 'none' && (methods as string[]).includes(prefMethod))
+      ? prefMethod as TwoFactorMethod
+      : methods[0];
+
+  // Strip _2fa_token from body before storing payload
+  const { _2fa_token, ...cleanBody } = req.body || {};
+  const session = auth.createOperation2FASession(user.id, method, actionName, cleanBody);
+  if (!session) {
+    res.status(400).json({ error: 'Bad Request', message: 'Could not create 2FA challenge. Set up a verified email or phone number first.' });
+    return;
+  }
+
+  // Send code for email/sms methods
+  let emailHint: string | undefined;
+  let phoneHint: string | undefined;
+  if (method === 'email' && session.email && session.code) {
+    await sendVerificationEmail(session.email!, session.code!);
+    console.log(`[2fa] EMAIL code for ${user.username} (${session.email}): ${session.code}`);
+    emailHint = maskEmail(session.email!);
+  } else if (method === 'sms' && session.phone && session.code) {
+    await sendSmsCode(session.phone!, session.code!);
+    console.log(`[2fa] SMS code for ${user.username} (${session.phone}): ${session.code}`);
+    phoneHint = maskPhone(session.phone!);
+  }
+
+  auth.writeAuditLog(user.id, '2fa.challenged', 'user', String(user.id), req.ip ?? '', {
+    method,
+    action: actionName,
+  });
+
+  res.status(403).json({
+    success: true,
+    requires_2fa: true,
+    temp_token: session.tempToken,
+    method,
+    available_methods: methods,
+    email_hint: emailHint,
+    phone_hint: phoneHint,
+    message: method === 'totp'
+      ? 'Enter your authenticator code to continue.'
+      : `A verification code has been sent to your ${method}.`,
+  });
 }
 
 async function beginAdminEmailVerification(
@@ -112,13 +200,38 @@ router.post('/login', rateLimit({
   }
 
   const full = auth.getUserById(user.id);
+
+  // TOTP takes priority if enabled
   if (full?.totp_enabled) {
     const tempToken = auth.createTotpTempToken(user.id);
-    res.json({ success: true, requires_totp: true, temp_token: tempToken });
+    const methods = auth.getAvailable2FAMethods(user.id);
+    res.json({ success: true, requires_totp: true, temp_token: tempToken, available_methods: methods });
     return;
   }
 
-  // Admins with email addresses must verify one before a session is created.
+  // Email 2FA for users with verified email and two_factor_method !== 'none'
+  const methods = auth.getAvailable2FAMethods(user.id);
+  if (methods.includes('email') && full?.two_factor_method !== 'none') {
+    const session = auth.createLoginEmail2FASession(user.id);
+    if (session) {
+      const sendResult = await sendVerificationEmail(session.email, session.emailCode);
+      console.log(`[login] EMAIL-2FA code for ${user.username} (${session.email}): ${session.emailCode}`);
+      res.json({
+        success: true,
+        requires_2fa: true,
+        method: 'email',
+        temp_token: session.tempToken,
+        email_hint: maskEmail(session.email),
+        available_methods: methods,
+        message: sendResult.ok
+          ? `A verification code has been sent to ${maskEmail(session.email)}.`
+          : 'SMTP unavailable. Check console for the verification code.',
+      });
+      return;
+    }
+  }
+
+  // Admins with unverified email addresses must verify one before a session is created.
   if (full && await beginAdminEmailVerification(full, req, res)) return;
 
   const token = auth.createSession(user.id);
@@ -131,7 +244,7 @@ router.post('/login', rateLimit({
   });
   setCsrfCookie(res);
   auth.writeAuditLog(user.id, 'login.succeeded', 'user', String(user.id), req.ip ?? '', {});
-  res.json({ success: true, user });
+  res.json({ success: true, user, available_methods: methods });
 });
 
 router.post('/login/totp', rateLimit({
@@ -225,6 +338,101 @@ router.post('/login/resend-email', rateLimit({
   });
 });
 
+// ── Login Email 2FA (general-purpose, for users with verified emails) ──
+
+router.post('/login/2fa/email', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 5,
+  key: req => `login-2fa-email:${req.ip}`,
+}), async (req: Request, res: Response): Promise<void> => {
+  const tempToken = typeof req.body?.temp_token === 'string' ? req.body.temp_token.trim() : '';
+  const code = typeof req.body?.code === 'string' ? req.body.code.replace(/\s/g, '') : '';
+  if (!tempToken || !code) {
+    res.status(400).json({ error: 'Bad Request', message: 'Temp token and verification code are required' });
+    return;
+  }
+  const userId = auth.consumeLoginEmail2FASession(tempToken, code);
+  if (!userId) {
+    res.status(400).json({ error: 'Bad Request', message: 'Invalid or expired verification code' });
+    return;
+  }
+  const user = auth.getUserById(userId);
+  if (!user || !user.is_active) {
+    res.status(401).json({ success: false, message: 'Account is disabled' });
+    return;
+  }
+  // Check admin email verification (same as TOTP flow)
+  if (await beginAdminEmailVerification(user, req, res)) return;
+
+  const sessionToken = auth.createSession(userId);
+  res.cookie('auth_token', sessionToken, {
+    httpOnly: true, secure: config.cookieSecure, sameSite: 'strict',
+    maxAge: config.sessionHours * 60 * 60 * 1000, path: '/',
+  });
+  setCsrfCookie(res);
+  auth.writeAuditLog(userId, 'login.succeeded', 'user', String(userId), req.ip ?? '', { email_2fa: true });
+  res.json({ success: true, user: { id: user.id, username: user.username, role: user.role, totp_enabled: user.totp_enabled } });
+});
+
+router.post('/login/2fa/resend', rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 3,
+  key: req => `login-2fa-resend:${req.ip}`,
+}), async (req: Request, res: Response): Promise<void> => {
+  const tempToken = typeof req.body?.temp_token === 'string' ? req.body.temp_token.trim() : '';
+  if (!tempToken) {
+    res.status(400).json({ error: 'Bad Request', message: 'Temp token is required' });
+    return;
+  }
+  // Try login email 2FA first
+  let result = auth.resendLoginEmail2FACode(tempToken);
+  if (result) {
+    const sendResult = await sendVerificationEmail(result.email, result.emailCode);
+    console.log(`[login] EMAIL-2FA code (resent) for ${result.email}: ${result.emailCode}`);
+    res.json({
+      success: true,
+      email_hint: maskEmail(result.email),
+      message: sendResult.ok
+        ? `A new verification code has been sent to ${maskEmail(result.email)}.`
+        : 'SMTP unavailable. Check console for the new verification code.',
+    });
+    return;
+  }
+  // Try first-login email verification resend
+  result = auth.resendFirstLoginCode(tempToken) as { emailCode: string; email: string } | null;
+  if (result) {
+    const sendResult = await sendVerificationEmail(result.email, result.emailCode);
+    console.log(`[login] EMAIL-VERIFICATION code (resent) for ${result.email}: ${result.emailCode}`);
+    res.json({
+      success: true,
+      email_hint: maskEmail(result.email),
+      message: sendResult.ok
+        ? `A new verification code has been sent to ${maskEmail(result.email)}.`
+        : 'SMTP unavailable. Check console for the new verification code.',
+    });
+    return;
+  }
+  // Try operation 2FA resend
+  const opResult = auth.resendOperation2FACode(tempToken);
+  if (opResult) {
+    if (opResult.email) {
+      await sendVerificationEmail(opResult.email!, opResult.code);
+      console.log(`[2fa] EMAIL code (resent) for ${opResult.email}: ${opResult.code}`);
+    } else if (opResult.phone) {
+      await sendSmsCode(opResult.phone!, opResult.code);
+      console.log(`[2fa] SMS code (resent) for ${opResult.phone}: ${opResult.code}`);
+    }
+    res.json({
+      success: true,
+      email_hint: opResult.email ? maskEmail(opResult.email!) : undefined,
+      phone_hint: opResult.phone ? maskPhone(opResult.phone!) : undefined,
+      message: 'A new verification code has been sent.',
+    });
+    return;
+  }
+  res.status(400).json({ error: 'Bad Request', message: 'Invalid or expired session. Please start again.' });
+});
+
 router.post('/logout', requireApiAuth, (req: Request, res: Response): void => {
   const session = readSession(req);
   if (session) auth.deleteSession(session.sessionId);
@@ -237,122 +445,251 @@ router.post('/logout', requireApiAuth, (req: Request, res: Response): void => {
 router.get('/me', requireApiAuth, (req: Request, res: Response): void => {
   const u = req.authUser!;
   const full = auth.getUserById(u.id);
-  res.json({ user: { id: u.id, username: u.username, role: u.role, totp_enabled: full?.totp_enabled ?? 0 } });
+  const methods = auth.getAvailable2FAMethods(u.id);
+  res.json({ user: { id: u.id, username: u.username, role: u.role, totp_enabled: full?.totp_enabled ?? 0, two_factor_method: full?.two_factor_method ?? 'totp', available_2fa_methods: methods } });
+});
+
+// ── Operation 2FA Routes ──
+
+/**
+ * POST /api/v1/auth/2fa/challenge
+ * Initiate a 2FA challenge for an account operation.
+ * Body: { action, method? }
+ */
+router.post('/2fa/challenge', requireApiAuth, requireCsrf, async (req: Request, res: Response): Promise<void> => {
+  const action = typeof req.body?.action === 'string' ? req.body.action.trim() : '';
+  const method = typeof req.body?.method === 'string' ? req.body.method.trim() : undefined;
+  if (!action) {
+    res.status(400).json({ error: 'Bad Request', message: 'Action name is required' });
+    return;
+  }
+  const user = req.authUser!;
+  const methods = auth.getAvailable2FAMethods(user.id);
+  if (methods.length === 0) {
+    res.status(400).json({ error: 'Bad Request', message: 'No 2FA methods available. Set up a verified email or phone number first.' });
+    return;
+  }
+  const chosenMethod = method && methods.includes(method) ? method : methods[0];
+  const { _2fa_token, ...cleanBody } = req.body || {};
+  const session = auth.createOperation2FASession(user.id, chosenMethod, action, cleanBody);
+  if (!session) {
+    res.status(400).json({ error: 'Bad Request', message: 'Could not create 2FA challenge.' });
+    return;
+  }
+
+  let emailHint: string | undefined;
+  let phoneHint: string | undefined;
+  if (chosenMethod === 'email' && session.email && session.code) {
+    await sendVerificationEmail(session.email!, session.code!);
+    console.log(`[2fa] EMAIL code for ${user.username} (${session.email}): ${session.code}`);
+    emailHint = maskEmail(session.email!);
+  } else if (chosenMethod === 'sms' && session.phone && session.code) {
+    await sendSmsCode(session.phone!, session.code!);
+    console.log(`[2fa] SMS code for ${user.username} (${session.phone}): ${session.code}`);
+    phoneHint = maskPhone(session.phone!);
+  } else if (chosenMethod === 'totp') {
+    console.log(`[2fa] TOTP challenge for ${user.username} (action: ${action})`);
+  }
+
+  auth.writeAuditLog(user.id, '2fa.challenged', 'user', String(user.id), req.ip ?? '', { method: chosenMethod, action });
+
+  res.json({
+    success: true,
+    temp_token: session.tempToken,
+    method: chosenMethod,
+    available_methods: methods,
+    email_hint: emailHint,
+    phone_hint: phoneHint,
+    message: chosenMethod === 'totp'
+      ? 'Enter your authenticator code.'
+      : `A verification code has been sent to your ${chosenMethod}.`,
+  });
+});
+
+/**
+ * POST /api/v1/auth/2fa/verify
+ * Verify a 2FA code for an account operation. Sets MFA session cookie.
+ * Body: { temp_token, code }
+ */
+router.post('/2fa/verify', requireApiAuth, rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 10,
+  key: req => `2fa-verify:${req.ip}`,
+}), (req: Request, res: Response): void => {
+  const tempToken = typeof req.body?.temp_token === 'string' ? req.body.temp_token.trim() : '';
+  const code = typeof req.body?.code === 'string' ? req.body.code.replace(/\s/g, '') : '';
+  if (!tempToken || !code) {
+    res.status(400).json({ error: 'Bad Request', message: 'Temp token and verification code are required' });
+    return;
+  }
+  const result = auth.consumeOperation2FASession(tempToken, code);
+  if (!result || result.userId !== req.authUser!.id) {
+    res.status(400).json({ error: 'Bad Request', message: 'Invalid or expired verification code' });
+    return;
+  }
+
+  // Create MFA session (sets cookie so the original request can be retried)
+  const mfaToken = auth.createMfaSession(req.authUser!.id);
+  setMfaCookie(res, mfaToken);
+  auth.writeAuditLog(req.authUser!.id, '2fa.verified', 'user', String(req.authUser!.id), req.ip ?? '', { action: result.action });
+
+  res.json({ success: true, action: result.action });
+});
+
+/**
+ * PATCH /api/v1/auth/me/two-factor-method
+ * Change the user's preferred 2FA method.
+ * Body: { method: 'totp' | 'email' | 'sms' | 'none' }
+ */
+router.patch('/me/two-factor-method', requireApiAuth, requireCsrf, (req: Request, res: Response): void => {
+  const method = typeof req.body?.method === 'string' ? req.body.method.trim() : '';
+  if (!['totp', 'email', 'sms', 'none'].includes(method)) {
+    res.status(400).json({ error: 'Bad Request', message: 'Method must be totp, email, sms, or none' });
+    return;
+  }
+  const user = req.authUser!;
+  const methods = auth.getAvailable2FAMethods(user.id);
+  if (method !== 'none' && method !== 'totp' && !methods.includes(method)) {
+    res.status(400).json({ error: 'Bad Request', message: `Cannot set method to '${method}' without a verified ${method === 'sms' ? 'phone number' : 'email address'}` });
+    return;
+  }
+  if (method === 'totp') {
+    const full = auth.getUserById(user.id);
+    if (!full?.totp_enabled) {
+      res.status(400).json({ error: 'Bad Request', message: 'TOTP is not enabled for your account. Enable it first.' });
+      return;
+    }
+  }
+  // Use the updateUser pattern: directly update the DB
+  const { getDb } = require('../database.js');
+  getDb().prepare('UPDATE users SET two_factor_method = ?, updated_at = datetime(\'now\') WHERE id = ?').run(method, user.id);
+  auth.writeAuditLog(user.id, 'user.2fa_method_changed', 'user', String(user.id), req.ip ?? '', { method });
+  res.json({ success: true, two_factor_method: method });
 });
 
 router.get('/users', requireApiAuth, requireRole('admin'), (_req: Request, res: Response): void => {
   res.json({ items: auth.listUsers() });
 });
 
-router.post('/users', requireApiAuth, requireRole('admin'), requireCsrf, (req: Request, res: Response): void => {
-  try {
-    const role = req.body?.role ?? 'viewer';
-    const requestedPassword = typeof req.body?.password === 'string' ? req.body.password : '';
-    const generatedPassword = role === 'viewer' && !requestedPassword ? auth.generateInitialPassword() : '';
-    const user = auth.createUser(String(req.body?.username ?? ''), requestedPassword || generatedPassword, role);
-    auth.writeAuditLog(req.authUser!.id, 'user.created', 'user', String(user.id), req.ip ?? '', { role: user.role, generated_password: Boolean(generatedPassword) });
-    res.status(201).json({ user, ...(generatedPassword ? { initial_password: generatedPassword } : {}) });
-  } catch (error: any) {
-    const duplicate = error?.code === 'SQLITE_CONSTRAINT_UNIQUE';
-    const status = duplicate ? 409 : 400;
-    res.status(status).json({ error: duplicate ? 'Conflict' : 'Bad Request', message: duplicate ? 'Username already exists' : error.message });
-  }
+router.post('/users', requireApiAuth, requireRole('admin'), requireCsrf, async (req: Request, res: Response): Promise<void> => {
+  await resolve2FA(req, res, 'user.create', () => {
+    try {
+      const role = req.body?.role ?? 'viewer';
+      const requestedPassword = typeof req.body?.password === 'string' ? req.body.password : '';
+      const generatedPassword = role === 'viewer' && !requestedPassword ? auth.generateInitialPassword() : '';
+      const user = auth.createUser(String(req.body?.username ?? ''), requestedPassword || generatedPassword, role);
+      auth.writeAuditLog(req.authUser!.id, 'user.created', 'user', String(user.id), req.ip ?? '', { role: user.role, generated_password: Boolean(generatedPassword) });
+      res.status(201).json({ user, ...(generatedPassword ? { initial_password: generatedPassword } : {}) });
+    } catch (error: any) {
+      const duplicate = error?.code === 'SQLITE_CONSTRAINT_UNIQUE';
+      const status = duplicate ? 409 : 400;
+      res.status(status).json({ error: duplicate ? 'Conflict' : 'Bad Request', message: duplicate ? 'Username already exists' : error.message });
+    }
+  });
 });
 
-router.patch('/users/:id', requireApiAuth, requireRole('admin'), requireCsrf, (req: Request, res: Response): void => {
-  const id = parseInt(String(req.params.id), 10);
-  if (!Number.isInteger(id) || id <= 0) {
-    res.status(400).json({ error: 'Bad Request', message: 'Invalid user ID' });
-    return;
-  }
-  const requestedActive = req.body?.is_active;
-  if (requestedActive !== undefined && typeof requestedActive !== 'boolean') {
-    res.status(400).json({ error: 'Bad Request', message: 'is_active must be a boolean' });
-    return;
-  }
-  if (id === req.authUser!.id && requestedActive === false) {
-    res.status(403).json({ error: 'Forbidden', message: 'You cannot disable your own account' });
-    return;
-  }
-  try {
-    if (!auth.updateUser(id, { role: req.body?.role, is_active: requestedActive }, req.authUser!.id)) {
-      res.status(404).json({ error: 'Not Found', message: 'User not found' });
+router.patch('/users/:id', requireApiAuth, requireRole('admin'), requireCsrf, async (req: Request, res: Response): Promise<void> => {
+  await resolve2FA(req, res, 'user.update', () => {
+    const id = parseInt(String(req.params.id), 10);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: 'Bad Request', message: 'Invalid user ID' });
       return;
     }
-    auth.writeAuditLog(req.authUser!.id, 'user.updated', 'user', String(id), req.ip ?? '', { role: req.body?.role, is_active: requestedActive });
-    res.json({ success: true });
-  } catch (error: any) {
-    res.status(400).json({ error: 'Bad Request', message: error.message });
-  }
+    const requestedActive = req.body?.is_active;
+    if (requestedActive !== undefined && typeof requestedActive !== 'boolean') {
+      res.status(400).json({ error: 'Bad Request', message: 'is_active must be a boolean' });
+      return;
+    }
+    if (id === req.authUser!.id && requestedActive === false) {
+      res.status(403).json({ error: 'Forbidden', message: 'You cannot disable your own account' });
+      return;
+    }
+    try {
+      if (!auth.updateUser(id, { role: req.body?.role, is_active: requestedActive }, req.authUser!.id)) {
+        res.status(404).json({ error: 'Not Found', message: 'User not found' });
+        return;
+      }
+      auth.writeAuditLog(req.authUser!.id, 'user.updated', 'user', String(id), req.ip ?? '', { role: req.body?.role, is_active: requestedActive });
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(400).json({ error: 'Bad Request', message: error.message });
+    }
+  });
 });
 
-router.put('/users/:id/password', requireApiAuth, requireRole('admin', 'operator'), requireCsrf, (req: Request, res: Response): void => {
-  const id = parseInt(String(req.params.id), 10);
-  if (!Number.isInteger(id) || id <= 0) {
-    res.status(400).json({ error: 'Bad Request', message: 'Invalid user ID' });
-    return;
-  }
-  if (req.authUser!.role === 'operator' && id !== req.authUser!.id) {
-    res.status(403).json({ error: 'Forbidden', message: 'Operators may only change their own password' });
-    return;
-  }
-  const target = auth.getUserById(id);
-  if (target && target.role === 'admin') {
-    res.status(403).json({ error: 'Forbidden', message: 'Admin passwords cannot be changed directly. Use the forgot-password flow to reset your password.' });
-    return;
-  }
-  try {
-    if (!auth.changePassword(req.authUser!, id, req.body?.current_password, String(req.body?.new_password ?? ''))) {
-      res.status(404).json({ error: 'Not Found', message: 'User not found' });
+router.put('/users/:id/password', requireApiAuth, requireRole('admin', 'operator'), requireCsrf, async (req: Request, res: Response): Promise<void> => {
+  await resolve2FA(req, res, 'user.password_change', () => {
+    const id = parseInt(String(req.params.id), 10);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: 'Bad Request', message: 'Invalid user ID' });
       return;
     }
-    auth.writeAuditLog(req.authUser!.id, 'user.password_changed', 'user', String(id), req.ip ?? '', {});
-    res.json({ success: true, relogin_required: true });
-  } catch (error: any) {
-    const forbidden = error.message === 'Insufficient permissions';
-    const status = forbidden ? 403 : 400;
-    res.status(status).json({ error: forbidden ? 'Forbidden' : 'Bad Request', message: error.message });
-  }
+    if (req.authUser!.role === 'operator' && id !== req.authUser!.id) {
+      res.status(403).json({ error: 'Forbidden', message: 'Operators may only change their own password' });
+      return;
+    }
+    const target = auth.getUserById(id);
+    if (target && target.role === 'admin') {
+      res.status(403).json({ error: 'Forbidden', message: 'Admin passwords cannot be changed directly. Use the forgot-password flow to reset your password.' });
+      return;
+    }
+    try {
+      if (!auth.changePassword(req.authUser!, id, req.body?.current_password, String(req.body?.new_password ?? ''))) {
+        res.status(404).json({ error: 'Not Found', message: 'User not found' });
+        return;
+      }
+      auth.writeAuditLog(req.authUser!.id, 'user.password_changed', 'user', String(id), req.ip ?? '', {});
+      res.json({ success: true, relogin_required: true });
+    } catch (error: any) {
+      const forbidden = error.message === 'Insufficient permissions';
+      const status = forbidden ? 403 : 400;
+      res.status(status).json({ error: forbidden ? 'Forbidden' : 'Bad Request', message: error.message });
+    }
+  });
 });
 
 router.get('/api-keys', requireApiAuth, requireRole('admin', 'operator'), (req: Request, res: Response): void => {
   res.json({ items: auth.listApiKeysForUser(req.authUser!) });
 });
 
-router.post('/api-keys', requireApiAuth, requireRole('admin', 'operator'), requireCsrf, (req: Request, res: Response): void => {
-  try {
-    const userId = req.authUser!.role === 'admin' && req.body?.user_id ? Number(req.body.user_id) : req.authUser!.id;
-    const tier = req.body?.tier ?? 'operator';
-    // Operator-created keys are always operator tier; admin can set any tier
-    const effectiveTier = req.authUser!.role === 'admin' ? tier : 'operator';
-    const limits = req.authUser!.role === 'admin'
-      ? { minute_limit: req.body?.minute_limit, daily_limit: req.body?.daily_limit }
-      : {};
-    const key = auth.createApiKey(userId, String(req.body?.name ?? ''), effectiveTier, req.body?.expires_at, limits);
-    auth.writeAuditLog(req.authUser!.id, 'api_key.created', 'api_key', String(key.id), req.ip ?? '', {
-      user_id: userId,
-      name: key.name,
-      tier: effectiveTier,
-      ...limits,
-    });
-    res.status(201).json(key);
-  } catch (error: any) {
-    res.status(400).json({ error: 'Bad Request', message: error.message });
-  }
+router.post('/api-keys', requireApiAuth, requireRole('admin', 'operator'), requireCsrf, async (req: Request, res: Response): Promise<void> => {
+  await resolve2FA(req, res, 'apikey.create', () => {
+    try {
+      const userId = req.authUser!.role === 'admin' && req.body?.user_id ? Number(req.body.user_id) : req.authUser!.id;
+      const tier = req.body?.tier ?? 'operator';
+      // Operator-created keys are always operator tier; admin can set any tier
+      const effectiveTier = req.authUser!.role === 'admin' ? tier : 'operator';
+      const limits = req.authUser!.role === 'admin'
+        ? { minute_limit: req.body?.minute_limit, daily_limit: req.body?.daily_limit }
+        : {};
+      const key = auth.createApiKey(userId, String(req.body?.name ?? ''), effectiveTier, req.body?.expires_at, limits);
+      auth.writeAuditLog(req.authUser!.id, 'api_key.created', 'api_key', String(key.id), req.ip ?? '', {
+        user_id: userId,
+        name: key.name,
+        tier: effectiveTier,
+        ...limits,
+      });
+      res.status(201).json(key);
+    } catch (error: any) {
+      res.status(400).json({ error: 'Bad Request', message: error.message });
+    }
+  });
 });
 
-router.delete('/api-keys/:id', requireApiAuth, requireRole('admin', 'operator'), requireCsrf, (req: Request, res: Response): void => {
-  const id = parseInt(String(req.params.id), 10);
-  if (!Number.isInteger(id) || id <= 0) {
-    res.status(400).json({ error: 'Bad Request', message: 'Invalid API key ID' });
-    return;
-  }
-  if (!auth.revokeApiKey(id, req.authUser!)) {
-    res.status(404).json({ error: 'Not Found', message: 'API key not found or already revoked' });
-    return;
-  }
-  auth.writeAuditLog(req.authUser!.id, 'api_key.revoked', 'api_key', String(id), req.ip ?? '', {});
-  res.json({ success: true });
+router.delete('/api-keys/:id', requireApiAuth, requireRole('admin', 'operator'), requireCsrf, async (req: Request, res: Response): Promise<void> => {
+  await resolve2FA(req, res, 'apikey.revoke', () => {
+    const id = parseInt(String(req.params.id), 10);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: 'Bad Request', message: 'Invalid API key ID' });
+      return;
+    }
+    if (!auth.revokeApiKey(id, req.authUser!)) {
+      res.status(404).json({ error: 'Not Found', message: 'API key not found or already revoked' });
+      return;
+    }
+    auth.writeAuditLog(req.authUser!.id, 'api_key.revoked', 'api_key', String(id), req.ip ?? '', {});
+    res.json({ success: true });
+  });
 });
 
 // ── Email Management Routes ──
@@ -397,35 +734,39 @@ router.post('/me/emails/:id/verify', requireApiAuth, requireCsrf, (req: Request,
   res.json({ success: true, email: result.email, email_verified: true });
 });
 
-router.post('/me/emails/:id/primary', requireApiAuth, requireCsrf, (req: Request, res: Response): void => {
-  const id = parseInt(String(req.params.id), 10);
-  if (!Number.isInteger(id) || id <= 0) {
-    res.status(400).json({ error: 'Bad Request', message: 'Invalid email ID' });
-    return;
-  }
-  if (!auth.setPrimaryEmail(req.authUser!.id, id)) {
-    res.status(400).json({ error: 'Bad Request', message: 'Email not found or not verified. Verify it first.' });
-    return;
-  }
-  res.json({ success: true });
-});
-
-router.delete('/me/emails/:id', requireApiAuth, requireCsrf, (req: Request, res: Response): void => {
-  const id = parseInt(String(req.params.id), 10);
-  if (!Number.isInteger(id) || id <= 0) {
-    res.status(400).json({ error: 'Bad Request', message: 'Invalid email ID' });
-    return;
-  }
-  try {
-    const deleted = auth.deleteEmail(req.authUser!.id, id);
-    if (!deleted) {
-      res.status(404).json({ error: 'Not Found', message: 'Email not found' });
+router.post('/me/emails/:id/primary', requireApiAuth, requireCsrf, async (req: Request, res: Response): Promise<void> => {
+  await resolve2FA(req, res, 'email.set_primary', () => {
+    const id = parseInt(String(req.params.id), 10);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: 'Bad Request', message: 'Invalid email ID' });
+      return;
+    }
+    if (!auth.setPrimaryEmail(req.authUser!.id, id)) {
+      res.status(400).json({ error: 'Bad Request', message: 'Email not found or not verified. Verify it first.' });
       return;
     }
     res.json({ success: true });
-  } catch (error: any) {
-    res.status(400).json({ error: 'Bad Request', message: error.message });
-  }
+  });
+});
+
+router.delete('/me/emails/:id', requireApiAuth, requireCsrf, async (req: Request, res: Response): Promise<void> => {
+  await resolve2FA(req, res, 'email.delete', () => {
+    const id = parseInt(String(req.params.id), 10);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: 'Bad Request', message: 'Invalid email ID' });
+      return;
+    }
+    try {
+      const deleted = auth.deleteEmail(req.authUser!.id, id);
+      if (!deleted) {
+        res.status(404).json({ error: 'Not Found', message: 'Email not found' });
+        return;
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(400).json({ error: 'Bad Request', message: error.message });
+    }
+  });
 });
 
 router.post('/me/emails/:id/resend', requireApiAuth, requireCsrf, async (req: Request, res: Response): Promise<void> => {
@@ -444,6 +785,104 @@ router.post('/me/emails/:id/resend', requireApiAuth, requireCsrf, async (req: Re
     res.json({ success: true, message: `Verification code sent to ${result.email}.` });
   } else {
     res.json({ success: true, message: `SMTP unavailable: ${sendResult.error || 'not configured'}. Code logged to console.` });
+  }
+});
+
+// ── Phone Management Routes ──
+
+router.get('/me/phones', requireApiAuth, (req: Request, res: Response): void => {
+  res.json({ items: auth.listPhones(req.authUser!.id) });
+});
+
+router.post('/me/phones', requireApiAuth, requireCsrf, async (req: Request, res: Response): Promise<void> => {
+  const phone = typeof req.body?.phone === 'string' ? req.body.phone.trim() : '';
+  if (!phone) {
+    res.status(400).json({ error: 'Bad Request', message: 'Phone number is required' });
+    return;
+  }
+  try {
+    const result = auth.addPhone(req.authUser!.id, phone);
+    const sendResult = await sendSmsCode(result.phone, result.code);
+    auth.writeAuditLog(req.authUser!.id, 'phone.added', 'user', String(req.authUser!.id), req.ip ?? '', { phone: result.phone });
+    if (sendResult.ok) {
+      res.json({ success: true, method: 'sms', message: `Verification code sent to ${maskPhone(result.phone)}.` });
+    } else {
+      console.log(`[phone] Verification code for ${result.phone}: ${result.code}`);
+      res.json({ success: true, method: 'console', message: `SMS unavailable: ${sendResult.error || 'not configured'}. Verification code logged to console.` });
+    }
+  } catch (error: any) {
+    res.status(400).json({ error: 'Bad Request', message: error.message });
+  }
+});
+
+router.post('/me/phones/:id/verify', requireApiAuth, requireCsrf, (req: Request, res: Response): void => {
+  const id = parseInt(String(req.params.id), 10);
+  const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
+  if (!Number.isInteger(id) || id <= 0 || !code) {
+    res.status(400).json({ error: 'Bad Request', message: 'Phone ID and verification code are required' });
+    return;
+  }
+  const result = auth.verifyPhoneCode(req.authUser!.id, id, code);
+  if (!result) {
+    res.status(400).json({ error: 'Bad Request', message: 'Invalid or expired verification code' });
+    return;
+  }
+  auth.writeAuditLog(req.authUser!.id, 'phone.verified', 'user', String(req.authUser!.id), req.ip ?? '', { phone: result.phone });
+  res.json({ success: true, phone: result.phone, phone_verified: true });
+});
+
+router.post('/me/phones/:id/primary', requireApiAuth, requireCsrf, async (req: Request, res: Response): Promise<void> => {
+  await resolve2FA(req, res, 'phone.set_primary', () => {
+    const id = parseInt(String(req.params.id), 10);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: 'Bad Request', message: 'Invalid phone ID' });
+      return;
+    }
+    if (!auth.setPrimaryPhone(req.authUser!.id, id)) {
+      res.status(400).json({ error: 'Bad Request', message: 'Phone not found or not verified. Verify it first.' });
+      return;
+    }
+    res.json({ success: true });
+  });
+});
+
+router.delete('/me/phones/:id', requireApiAuth, requireCsrf, async (req: Request, res: Response): Promise<void> => {
+  await resolve2FA(req, res, 'phone.delete', () => {
+    const id = parseInt(String(req.params.id), 10);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: 'Bad Request', message: 'Invalid phone ID' });
+      return;
+    }
+    try {
+      const deleted = auth.deletePhone(req.authUser!.id, id);
+      if (!deleted) {
+        res.status(404).json({ error: 'Not Found', message: 'Phone not found' });
+        return;
+      }
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(400).json({ error: 'Bad Request', message: error.message });
+    }
+  });
+});
+
+router.post('/me/phones/:id/resend', requireApiAuth, requireCsrf, async (req: Request, res: Response): Promise<void> => {
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(id) || id <= 0) {
+    res.status(400).json({ error: 'Bad Request', message: 'Invalid phone ID' });
+    return;
+  }
+  const result = auth.resendPhoneVerificationCode(req.authUser!.id, id);
+  if (!result) {
+    res.status(400).json({ error: 'Bad Request', message: 'Phone not found or already verified' });
+    return;
+  }
+  const sendResult = await sendSmsCode(result.phone, result.code);
+  console.log(`[phone] Verification code (resent) for ${result.phone}: ${result.code}`);
+  if (sendResult.ok) {
+    res.json({ success: true, message: `Verification code sent to ${maskPhone(result.phone)}.` });
+  } else {
+    res.json({ success: true, message: `SMS unavailable: ${sendResult.error || 'not configured'}. Code logged to console.` });
   }
 });
 
@@ -617,48 +1056,52 @@ router.post('/reset-request/:token/approve', requireApiAuth, requireRole('admin'
   }
 });
 
-router.patch('/api-keys/:id/limits', requireApiAuth, requireRole('admin'), requireCsrf, (req: Request, res: Response): void => {
-  const id = parseInt(String(req.params.id), 10);
-  if (!Number.isInteger(id) || id <= 0) {
-    res.status(400).json({ error: 'Bad Request', message: 'Invalid API key ID' });
-    return;
-  }
-  try {
-    const limits = { minute_limit: req.body?.minute_limit, daily_limit: req.body?.daily_limit };
-    if (!auth.updateApiKeyLimits(id, limits, req.authUser!)) {
-      res.status(404).json({ error: 'Not Found', message: 'API key not found or already revoked' });
+router.patch('/api-keys/:id/limits', requireApiAuth, requireRole('admin'), requireCsrf, async (req: Request, res: Response): Promise<void> => {
+  await resolve2FA(req, res, 'apikey.limits_change', () => {
+    const id = parseInt(String(req.params.id), 10);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: 'Bad Request', message: 'Invalid API key ID' });
       return;
     }
-    auth.writeAuditLog(req.authUser!.id, 'api_key.limits_updated', 'api_key', String(id), req.ip ?? '', limits);
-    res.json({ success: true });
-  } catch (error: any) {
-    res.status(400).json({ error: 'Bad Request', message: error.message });
-  }
+    try {
+      const limits = { minute_limit: req.body?.minute_limit, daily_limit: req.body?.daily_limit };
+      if (!auth.updateApiKeyLimits(id, limits, req.authUser!)) {
+        res.status(404).json({ error: 'Not Found', message: 'API key not found or already revoked' });
+        return;
+      }
+      auth.writeAuditLog(req.authUser!.id, 'api_key.limits_updated', 'api_key', String(id), req.ip ?? '', limits);
+      res.json({ success: true });
+    } catch (error: any) {
+      res.status(400).json({ error: 'Bad Request', message: error.message });
+    }
+  });
 });
 
 /**
  * PATCH /api/v1/auth/api-keys/:id/tier
  * Admin updates the tier of an API key.
  */
-router.patch('/api-keys/:id/tier', requireApiAuth, requireRole('admin'), requireCsrf, (req: Request, res: Response): void => {
-  const id = parseInt(String(req.params.id), 10);
-  if (!Number.isInteger(id) || id <= 0) {
-    res.status(400).json({ error: 'Bad Request', message: 'Invalid API key ID' });
-    return;
-  }
-  try {
-    const tier = req.body?.tier ?? 'operator';
-    if (!auth.updateApiKeyTier(id, tier, req.authUser!)) {
-      res.status(404).json({ error: 'Not Found', message: 'API key not found or already revoked' });
+router.patch('/api-keys/:id/tier', requireApiAuth, requireRole('admin'), requireCsrf, async (req: Request, res: Response): Promise<void> => {
+  await resolve2FA(req, res, 'apikey.tier_change', () => {
+    const id = parseInt(String(req.params.id), 10);
+    if (!Number.isInteger(id) || id <= 0) {
+      res.status(400).json({ error: 'Bad Request', message: 'Invalid API key ID' });
       return;
     }
-    auth.writeAuditLog(req.authUser!.id, 'api_key.tier_updated', 'api_key', String(id), req.ip ?? '', { tier });
-    res.json({ success: true });
-  } catch (error: any) {
-    const forbidden = error.message === 'Insufficient permissions';
-    const status = forbidden ? 403 : 400;
-    res.status(status).json({ error: forbidden ? 'Forbidden' : 'Bad Request', message: error.message });
-  }
+    try {
+      const tier = req.body?.tier ?? 'operator';
+      if (!auth.updateApiKeyTier(id, tier, req.authUser!)) {
+        res.status(404).json({ error: 'Not Found', message: 'API key not found or already revoked' });
+        return;
+      }
+      auth.writeAuditLog(req.authUser!.id, 'api_key.tier_updated', 'api_key', String(id), req.ip ?? '', { tier });
+      res.json({ success: true });
+    } catch (error: any) {
+      const forbidden = error.message === 'Insufficient permissions';
+      const status = forbidden ? 403 : 400;
+      res.status(status).json({ error: forbidden ? 'Forbidden' : 'Bad Request', message: error.message });
+    }
+  });
 });
 
 export default router;

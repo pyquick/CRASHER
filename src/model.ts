@@ -1,11 +1,21 @@
 export type UserRole = 'admin' | 'operator' | 'viewer';
 export type ApiKeyTier = 'admin' | 'operator' | 'viewer';
+export type TwoFactorMethod = 'totp' | 'email' | 'sms' | 'none';
 
 export interface UserEmail {
   id: number;
   user_id: number;
   email: string;
   email_verified: number;
+  is_primary: number;
+  created_at: string;
+}
+
+export interface UserPhone {
+  id: number;
+  user_id: number;
+  phone: string;
+  phone_verified: number;
   is_primary: number;
   created_at: string;
 }
@@ -19,6 +29,7 @@ export interface User {
   session_version: number;
   totp_secret: string | null;
   totp_enabled: number;
+  two_factor_method: string;
   created_at: string;
   updated_at: string;
   last_login_at: string | null;

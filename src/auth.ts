@@ -1,7 +1,7 @@
 import { createHash, createHmac, pbkdf2Sync, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 import { config } from './config.js';
 import { getDb } from './database.js';
-import type { ApiKeyRecord, ApiKeyTier, AuthenticatedUser, User, UserEmail, UserRole } from './model.js';
+import type { ApiKeyRecord, ApiKeyTier, AuthenticatedUser, TwoFactorMethod, User, UserEmail, UserPhone, UserRole } from './model.js';
 
 const SCRYPT_KEY_LENGTH = 64;
 // SHA-256 via PBKDF2: 128-bit salt, 310,000 iterations, 32-byte output (256-bit)
@@ -751,4 +751,300 @@ export function resendFirstLoginCode(tempToken: string): { emailCode: string; em
   session.codeHash = createHash('sha256').update(emailCode).digest('hex');
   session.lastResentAt = Date.now();
   return { emailCode, email: session.email };
+}
+
+// ── Available 2FA methods ──
+
+export function hasVerifiedEmail(userId: number): boolean {
+  const row = getDb().prepare('SELECT COUNT(*) AS c FROM user_emails WHERE user_id = ? AND email_verified = 1').get(userId) as { c: number };
+  return row.c > 0;
+}
+
+export function hasVerifiedPhone(userId: number): boolean {
+  const row = getDb().prepare('SELECT COUNT(*) AS c FROM user_phones WHERE user_id = ? AND phone_verified = 1').get(userId) as { c: number };
+  return row.c > 0;
+}
+
+export function getAvailable2FAMethods(userId: number): TwoFactorMethod[] {
+  const methods: TwoFactorMethod[] = [];
+  const user = getUserById(userId);
+  if (user?.totp_enabled) methods.push('totp');
+  if (hasVerifiedEmail(userId)) methods.push('email');
+  if (hasVerifiedPhone(userId)) methods.push('sms');
+  return methods;
+}
+
+// ── Email 2FA for login (general-purpose, for users with verified emails) ──
+
+const LOGIN_EMAIL_2FA_TTL = 10 * 60 * 1000; // 10 minutes
+const LOGIN_EMAIL_2FA_COOLDOWN = 60_000;     // 60 seconds
+
+interface LoginEmail2FASession {
+  userId: number;
+  codeHash: string;
+  email: string;
+  expires: number;
+  lastResentAt: number;
+}
+
+const loginEmail2FASessions = new Map<string, LoginEmail2FASession>();
+
+export function createLoginEmail2FASession(userId: number): { tempToken: string; emailCode: string; email: string } | null {
+  const email = getPrimaryEmail(userId);
+  if (!email) return null;
+  const emailCode = String(Math.floor(100000 + Math.random() * 900000));
+  const tempToken = randomBytes(32).toString('base64url');
+  loginEmail2FASessions.set(tempToken, {
+    userId,
+    codeHash: createHash('sha256').update(emailCode).digest('hex'),
+    email,
+    expires: Date.now() + LOGIN_EMAIL_2FA_TTL,
+    lastResentAt: Date.now(),
+  });
+  return { tempToken, emailCode, email };
+}
+
+export function consumeLoginEmail2FASession(tempToken: string, code: string): number | null {
+  const session = loginEmail2FASessions.get(tempToken);
+  if (!session || session.expires < Date.now()) {
+    loginEmail2FASessions.delete(tempToken);
+    return null;
+  }
+  const codeHash = createHash('sha256').update(code.trim()).digest('hex');
+  if (codeHash !== session.codeHash) return null;
+  loginEmail2FASessions.delete(tempToken);
+  return session.userId;
+}
+
+export function resendLoginEmail2FACode(tempToken: string): { emailCode: string; email: string } | null {
+  const session = loginEmail2FASessions.get(tempToken);
+  if (!session || session.expires < Date.now()) {
+    loginEmail2FASessions.delete(tempToken);
+    return null;
+  }
+  if (Date.now() - session.lastResentAt < LOGIN_EMAIL_2FA_COOLDOWN) {
+    return null;
+  }
+  const emailCode = String(Math.floor(100000 + Math.random() * 900000));
+  session.codeHash = createHash('sha256').update(emailCode).digest('hex');
+  session.lastResentAt = Date.now();
+  return { emailCode, email: session.email };
+}
+
+// ── Operation 2FA (for account management actions) ──
+
+const OPERATION_2FA_TTL = 5 * 60 * 1000; // 5 minutes
+const OPERATION_2FA_COOLDOWN = 60_000;   // 60 seconds
+
+interface Operation2FASession {
+  userId: number;
+  method: TwoFactorMethod;
+  action: string;
+  bodyPayload: string; // JSON-stringified original request body
+  codeHash?: string;   // for email/sms: SHA-256 of the code
+  email?: string;
+  phone?: string;
+  expires: number;
+  lastResentAt: number;
+}
+
+const operation2FASessions = new Map<string, Operation2FASession>();
+
+export function createOperation2FASession(
+  userId: number,
+  method: TwoFactorMethod,
+  action: string,
+  bodyPayload: Record<string, unknown>,
+): { tempToken: string; code?: string; email?: string; phone?: string } | null {
+  const tempToken = randomBytes(32).toString('base64url');
+  const session: Operation2FASession = {
+    userId,
+    method,
+    action,
+    bodyPayload: JSON.stringify(bodyPayload),
+    expires: Date.now() + OPERATION_2FA_TTL,
+    lastResentAt: Date.now(),
+  };
+
+  if (method === 'email' || method === 'sms') {
+    const code = String(Math.floor(100000 + Math.random() * 900000));
+    session.codeHash = createHash('sha256').update(code).digest('hex');
+    if (method === 'email') {
+      const email = getPrimaryEmail(userId);
+      if (!email) return null;
+      session.email = email;
+      operation2FASessions.set(tempToken, session);
+      return { tempToken, code, email };
+    } else {
+      const phone = getPrimaryPhone(userId);
+      if (!phone) return null;
+      session.phone = phone;
+      operation2FASessions.set(tempToken, session);
+      return { tempToken, code, phone };
+    }
+  }
+
+  // TOTP: no code to generate; user provides from their authenticator app
+  operation2FASessions.set(tempToken, session);
+  return { tempToken };
+}
+
+export function consumeOperation2FASession(
+  tempToken: string,
+  code: string,
+): { userId: number; action: string; bodyPayload: Record<string, unknown> } | null {
+  const session = operation2FASessions.get(tempToken);
+  if (!session || session.expires < Date.now()) {
+    operation2FASessions.delete(tempToken);
+    return null;
+  }
+
+  let valid = false;
+  if (session.method === 'totp') {
+    valid = verifyTotp(session.userId, code);
+  } else if (session.codeHash) {
+    valid = createHash('sha256').update(code.trim()).digest('hex') === session.codeHash;
+  }
+
+  if (!valid) return null;
+
+  operation2FASessions.delete(tempToken);
+  let bodyPayload: Record<string, unknown> = {};
+  try { bodyPayload = JSON.parse(session.bodyPayload); } catch { /* keep empty */ }
+  return { userId: session.userId, action: session.action, bodyPayload };
+}
+
+export function resendOperation2FACode(tempToken: string): { code: string; email?: string; phone?: string } | null {
+  const session = operation2FASessions.get(tempToken);
+  if (!session || session.expires < Date.now()) {
+    operation2FASessions.delete(tempToken);
+    return null;
+  }
+  if (session.method === 'totp') return null; // can't resend TOTP
+  if (Date.now() - session.lastResentAt < OPERATION_2FA_COOLDOWN) return null;
+
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  session.codeHash = createHash('sha256').update(code).digest('hex');
+  session.lastResentAt = Date.now();
+  return { code, email: session.email, phone: session.phone };
+}
+
+// ── MFA session cookie (short-lived, set after 2FA verification for account ops) ──
+
+const MFA_SESSION_TTL = 5 * 60 * 1000; // 5 minutes
+
+interface MfaSession {
+  userId: number;
+  expires: number;
+}
+
+const mfaSessions = new Map<string, MfaSession>();
+
+export function createMfaSession(userId: number): string {
+  const token = randomBytes(32).toString('base64url');
+  mfaSessions.set(token, { userId, expires: Date.now() + MFA_SESSION_TTL });
+  return token;
+}
+
+export function validateMfaSession(token: string, userId: number): boolean {
+  const session = mfaSessions.get(token);
+  if (!session || session.expires < Date.now()) {
+    mfaSessions.delete(token);
+    return false;
+  }
+  if (session.userId !== userId) return false;
+  return true;
+}
+
+// ── Phone Management ──
+
+const PHONE_PATTERN = /^\+[1-9]\d{6,14}$/;
+
+function validatePhoneFormat(phone: string): string | null {
+  const normalized = phone.trim();
+  if (!normalized || normalized.length > 20) return 'Phone number is required and must be at most 20 characters';
+  if (!PHONE_PATTERN.test(normalized)) return 'Phone number must be in E.164 format (e.g., +1234567890)';
+  return null;
+}
+
+export function listPhones(userId: number): UserPhone[] {
+  return getDb().prepare('SELECT * FROM user_phones WHERE user_id = ? ORDER BY is_primary DESC, created_at ASC').all(userId) as UserPhone[];
+}
+
+export function addPhone(userId: number, phone: string): { code: string; phone: string } {
+  const normalized = phone.trim();
+  const formatError = validatePhoneFormat(normalized);
+  if (formatError) throw new Error(formatError);
+
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const tokenHash = createHash('sha256').update(code).digest('hex');
+  const expiresSql = nowSqlDateTimePlus(15);
+  const isPrimary = listPhones(userId).length === 0 ? 1 : 0;
+
+  getDb().prepare(`
+    INSERT INTO user_phones (user_id, phone, phone_verify_token_hash, phone_verify_expires_at, is_primary)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(userId, normalized, tokenHash, expiresSql, isPrimary);
+
+  return { code, phone: normalized };
+}
+
+export function resendPhoneVerificationCode(userId: number, phoneId: number): { code: string; phone: string } | null {
+  const phone = getDb().prepare('SELECT * FROM user_phones WHERE id = ? AND user_id = ? AND phone_verified = 0')
+    .get(phoneId, userId) as UserPhone | undefined;
+  if (!phone) return null;
+
+  const code = String(Math.floor(100000 + Math.random() * 900000));
+  const tokenHash = createHash('sha256').update(code).digest('hex');
+  const expiresSql = nowSqlDateTimePlus(15);
+  getDb().prepare('UPDATE user_phones SET phone_verify_token_hash = ?, phone_verify_expires_at = ? WHERE id = ?')
+    .run(tokenHash, expiresSql, phoneId);
+  return { code, phone: phone.phone };
+}
+
+export function verifyPhoneCode(userId: number, phoneId: number, code: string): UserPhone | null {
+  const tokenHash = createHash('sha256').update(code.trim()).digest('hex');
+  const row = getDb().prepare(`
+    SELECT * FROM user_phones WHERE id = ? AND user_id = ? AND phone_verify_token_hash = ? AND phone_verify_expires_at > datetime('now')
+  `).get(phoneId, userId, tokenHash) as UserPhone | undefined;
+  if (!row) return null;
+
+  getDb().prepare('UPDATE user_phones SET phone_verified = 1, phone_verify_token_hash = NULL, phone_verify_expires_at = NULL WHERE id = ?').run(phoneId);
+  row.phone_verified = 1;
+  return row;
+}
+
+export function setPrimaryPhone(userId: number, phoneId: number): boolean {
+  const row = getDb().prepare('SELECT * FROM user_phones WHERE id = ? AND user_id = ? AND phone_verified = 1').get(phoneId, userId);
+  if (!row) return false;
+  getDb().prepare('UPDATE user_phones SET is_primary = 0 WHERE user_id = ?').run(userId);
+  getDb().prepare('UPDATE user_phones SET is_primary = 1 WHERE id = ?').run(phoneId);
+  return true;
+}
+
+export function deletePhone(userId: number, phoneId: number): boolean {
+  const count = (getDb().prepare('SELECT COUNT(*) AS c FROM user_phones WHERE user_id = ?').get(userId) as { c: number }).c;
+  const emailCount = (getDb().prepare('SELECT COUNT(*) AS c FROM user_emails WHERE user_id = ?').get(userId) as { c: number }).c;
+  // Allow deletion if user has at least one email OR more than one phone
+  if (count <= 1 && emailCount === 0) throw new Error('Cannot remove your only contact method');
+  const phone = getDb().prepare('SELECT * FROM user_phones WHERE id = ? AND user_id = ?').get(phoneId, userId) as UserPhone | undefined;
+  if (!phone) return false;
+  const wasPrimary = !!phone.is_primary;
+  getDb().prepare('DELETE FROM user_phones WHERE id = ? AND user_id = ?').run(phoneId, userId);
+  if (wasPrimary) {
+    const next = getDb().prepare('SELECT id FROM user_phones WHERE user_id = ? LIMIT 1').get(userId) as { id: number } | undefined;
+    if (next) getDb().prepare('UPDATE user_phones SET is_primary = 1 WHERE id = ?').run(next.id);
+  }
+  return true;
+}
+
+export function getPrimaryPhone(userId: number): string | null {
+  const row = getDb().prepare('SELECT phone FROM user_phones WHERE user_id = ? AND is_primary = 1 AND phone_verified = 1').get(userId) as { phone: string } | undefined;
+  return row ? row.phone : null;
+}
+
+export function maskPhone(phone: string): string {
+  if (phone.length < 8) return phone;
+  const visible = 3;
+  return phone.substring(0, visible + 1) + '****' + phone.substring(phone.length - 2);
 }

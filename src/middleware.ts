@@ -292,3 +292,25 @@ export function apiKeyRateLimit(windowSeconds: number, limitField: 'minute_limit
 }
 
 export { readSession };
+
+const MFA_COOKIE = 'mfa_token';
+
+export function setMfaCookie(res: Response, token?: string): string {
+  const mfaToken = token || randomBytes(32).toString('base64url');
+  res.cookie(MFA_COOKIE, mfaToken, {
+    httpOnly: true,
+    secure: config.cookieSecure,
+    sameSite: 'strict',
+    maxAge: 5 * 60 * 1000, // 5 minutes
+    path: '/',
+  });
+  return mfaToken;
+}
+
+export function readMfaToken(req: Request): string | undefined {
+  return readCookie(req, MFA_COOKIE);
+}
+
+export function clearMfaCookie(res: Response): void {
+  res.clearCookie(MFA_COOKIE, { path: '/', secure: config.cookieSecure, sameSite: 'strict' });
+}

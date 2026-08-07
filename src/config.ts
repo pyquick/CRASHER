@@ -37,6 +37,10 @@ export interface Config {
   alertOnNewGroup: boolean;
   alertThresholdCount: number;
   baseUrl: string;
+  smsProvider: string;
+  smsApiKey: string;
+  smsApiSecret: string;
+  smsFrom: string;
 }
 
 function env(key: string, fallback: string): string {
@@ -110,6 +114,10 @@ function loadConfig(): Config {
     alertOnNewGroup: envBool('ALERT_ON_NEW_GROUP', true),
     alertThresholdCount: envInt('ALERT_THRESHOLD_COUNT', 10),
     baseUrl: env('BASE_URL', `http://localhost:${port}`),
+    smsProvider: env('SMS_PROVIDER', ''),
+    smsApiKey: env('SMS_API_KEY', ''),
+    smsApiSecret: env('SMS_API_SECRET', ''),
+    smsFrom: env('SMS_FROM', ''),
   };
 }
 

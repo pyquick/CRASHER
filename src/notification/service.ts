@@ -113,6 +113,17 @@ export async function sendVerificationEmail(to: string, code: string): Promise<S
   }
 }
 
+export async function sendSmsCode(phone: string, code: string): Promise<SendResult> {
+  if (!config.smsProvider) {
+    console.log(`[sms] Verification code for ${phone}: ${code} (SMS provider not configured — check console)`);
+    return { ok: false, method: 'console', error: 'SMS provider not configured' };
+  }
+  // Future: integrate with Twilio, Vonage, etc.
+  // For now, always console fallback
+  console.log(`[sms] Verification code for ${phone}: ${code}`);
+  return { ok: false, method: 'console', error: `Provider '${config.smsProvider}' integration not yet implemented` };
+}
+
 export interface AlertPayload {
   type: 'new_group' | 'threshold_reached';
   group: CrashGroup;
