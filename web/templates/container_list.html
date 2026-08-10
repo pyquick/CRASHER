@@ -53,6 +53,7 @@
                 <button x-show="!c.container.is_banned" @click="banContainer(c)" class="text-xs text-red-400 hover:text-red-300">Ban</button>
                 <button x-show="c.container.is_banned" @click="unbanContainer(c)" class="text-xs text-green-400 hover:text-green-300">Unban</button>
                 <button @click="createAdmin(c)" class="text-xs text-blue-400 hover:text-blue-300">+Admin</button>
+                <button @click="deleteContainer(c)" class="text-xs text-red-600 hover:text-red-400">Delete</button>
               </td>
             </tr>
           </template>
@@ -237,6 +238,20 @@
       if (!await Modal.confirm('Unban Container', 'Unban "' + c.container.name + '"?', 'Unban')) return;
       try {
         await this.request('/api/v1/auth/containers/' + c.container.id + '/unban', { method: 'POST' });
+        await this.load();
+      } catch (e) {
+        this.message = e.message;
+        this.failed = true;
+      }
+    },
+
+    async deleteContainer(c) {
+      if (!await Modal.confirm('Delete Container',
+        'Permanently delete "' + c.container.name + '" and ALL its data (users, crashes, feedback, symbols)? This cannot be undone.',
+        'Delete Forever')) return;
+      try {
+        await this.request('/api/v1/auth/containers/' + c.container.id, { method: 'DELETE' });
+        this.message = 'Container "' + c.container.name + '" deleted.';
         await this.load();
       } catch (e) {
         this.message = e.message;

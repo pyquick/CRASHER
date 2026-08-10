@@ -1,4 +1,5 @@
 import { createHash, createHmac, pbkdf2Sync, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
+import { existsSync, unlinkSync } from 'fs';
 import { config } from './config.js';
 import { getDb } from './database.js';
 import type { ApiKeyRecord, ApiKeyTier, AuthenticatedUser, Container, ContainerStatus, ContainerTier, TwoFactorMethod, User, UserEmail, UserPhone, UserRole } from './model.js';
@@ -233,6 +234,9 @@ export function createContainer(name: string, tier: number, createdBy: number): 
   if (!/^[A-Za-z0-9_\-. ]+$/.test(normalizedName)) throw new Error('Container name contains invalid characters');
   if (![1, 2, 3, 4, 5].includes(tier)) throw new Error('Invalid tier. Must be 1-5');
 
+  const existing = getDb().prepare('SELECT id FROM containers WHERE name = ? COLLATE NOCASE').get(normalizedName);
+  if (existing) throw new Error('A container with this name already exists');
+
   const result = getDb().prepare(`
     INSERT INTO containers (name, tier, created_by) VALUES (?, ?, ?)
   `).run(normalizedName, tier, createdBy);
@@ -279,6 +283,82 @@ export function unbanContainer(id: number, actorId: number): Container | null {
   return getContainerById(id)!;
 }
 
+export function deleteContainer(id: number, actorId: number): boolean {
+  const container = getContainerById(id);
+  if (!container) return false;
+
+  const db = getDb();
+
+  db.transaction(() => {
+    // Delete crash attachments from disk and DB
+    const crashAtts = db.prepare(`
+      SELECT ca.file_path FROM crash_attachments ca
+      JOIN crash_reports cr ON cr.id = ca.crash_report_id
+      WHERE cr.container_id = ?
+    `).all(id) as { file_path: string }[];
+    for (const a of crashAtts) { try { if (existsSync(a.file_path)) unlinkSync(a.file_path); } catch {} }
+
+    db.prepare(`DELETE FROM crash_attachments WHERE crash_report_id IN (SELECT id FROM crash_reports WHERE container_id = ?)`).run(id);
+    db.prepare('DELETE FROM crash_reports WHERE container_id = ?').run(id);
+    db.prepare('DELETE FROM crash_groups WHERE container_id = ?').run(id);
+
+    // Delete feedback attachments from disk and DB
+    const fbAtts = db.prepare(`
+      SELECT fa.file_path FROM feedback_attachments fa
+      JOIN player_feedback pf ON pf.id = fa.feedback_id
+      WHERE pf.container_id = ?
+    `).all(id) as { file_path: string }[];
+    for (const a of fbAtts) { try { if (existsSync(a.file_path)) unlinkSync(a.file_path); } catch {} }
+
+    db.prepare(`DELETE FROM feedback_attachments WHERE feedback_id IN (SELECT id FROM player_feedback WHERE container_id = ?)`).run(id);
+    db.prepare('DELETE FROM player_feedback WHERE container_id = ?').run(id);
+
+    // Delete source files from disk and DB
+    const srcFiles = db.prepare(`
+      SELECT sf.storage_path FROM source_files sf
+      JOIN source_snapshots ss ON ss.id = sf.snapshot_id
+      WHERE ss.container_id = ?
+    `).all(id) as { storage_path: string }[];
+    for (const f of srcFiles) { try { if (existsSync(f.storage_path)) unlinkSync(f.storage_path); } catch {} }
+
+    db.prepare(`DELETE FROM source_files WHERE snapshot_id IN (SELECT id FROM source_snapshots WHERE container_id = ?)`).run(id);
+    db.prepare('DELETE FROM source_snapshots WHERE container_id = ?').run(id);
+
+    // Delete symbols from disk and DB
+    const symFiles = db.prepare('SELECT file_path FROM symbols WHERE container_id = ?').all(id) as { file_path: string }[];
+    for (const f of symFiles) { try { if (existsSync(f.file_path)) unlinkSync(f.file_path); } catch {} }
+    db.prepare('DELETE FROM symbols WHERE container_id = ?').run(id);
+
+    // Delete projects
+    db.prepare('DELETE FROM projects WHERE container_id = ?').run(id);
+
+    // Delete API keys and their usage records
+    db.prepare('DELETE FROM api_key_usage WHERE api_key_id IN (SELECT id FROM api_keys WHERE container_id = ?)').run(id);
+    db.prepare('DELETE FROM api_keys WHERE container_id = ?').run(id);
+
+    // Delete sessions for users in this container
+    db.prepare('DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE container_id = ?)').run(id);
+
+    // Delete emails, phones, password reset data for users in container
+    db.prepare('DELETE FROM user_emails WHERE user_id IN (SELECT id FROM users WHERE container_id = ?)').run(id);
+    db.prepare('DELETE FROM user_phones WHERE user_id IN (SELECT id FROM users WHERE container_id = ?)').run(id);
+    db.prepare('DELETE FROM password_reset_tokens WHERE user_id IN (SELECT id FROM users WHERE container_id = ?)').run(id);
+    db.prepare('DELETE FROM password_reset_requests WHERE user_id IN (SELECT id FROM users WHERE container_id = ?)').run(id);
+
+    // Delete audit logs for users in this container
+    db.prepare('DELETE FROM audit_logs WHERE actor_user_id IN (SELECT id FROM users WHERE container_id = ?)').run(id);
+
+    // Delete users
+    db.prepare('DELETE FROM users WHERE container_id = ?').run(id);
+
+    // Finally delete the container
+    db.prepare('DELETE FROM containers WHERE id = ?').run(id);
+  })();
+
+  writeAuditLog(actorId, 'container.deleted', 'container', String(id), '', { name: container.name });
+  return true;
+}
+
 export function isContainerBanned(containerId: number): boolean {
   const c = getDb().prepare('SELECT is_banned FROM containers WHERE id = ?').get(containerId) as { is_banned: number } | undefined;
   return c?.is_banned === 1;
@@ -300,25 +380,25 @@ export function markBanNotificationSent(containerId: number): void {
 export function getContainerStorageSize(containerId: number): number {
   // Sum of crash report data + attachments + symbols + feedback
   const crashSize = (getDb().prepare(`
-    SELECT COALESCE(SUM(LENGTH(COALESCE(exception_type,'')) + LENGTH(COALESCE(exception_message,'')) + LENGTH(COALESCE(stack_trace,'')) + LENGTH(COALESCE(log_text,'')) + LENGTH(COALESCE(custom_data,'')) + LENGTH(COALESCE(dump_info,'')) + LENGTH(COALESCE(symbolicated_stack,'')) + LENGTH(COALESCE(symbolication_info,''))), 0)
+    SELECT COALESCE(SUM(LENGTH(COALESCE(exception_type,'')) + LENGTH(COALESCE(exception_message,'')) + LENGTH(COALESCE(stack_trace,'')) + LENGTH(COALESCE(log_text,'')) + LENGTH(COALESCE(custom_data,'')) + LENGTH(COALESCE(dump_info,'')) + LENGTH(COALESCE(symbolicated_stack,'')) + LENGTH(COALESCE(symbolication_info,''))), 0) AS c
     FROM crash_reports WHERE container_id = ?
-  `).get(containerId) as { c: number }).c || 0;
+  `).get(containerId) as { c: number }).c;
 
   const attachmentSize = (getDb().prepare(`
-    SELECT COALESCE(SUM(ca.file_size), 0) FROM crash_attachments ca
+    SELECT COALESCE(SUM(ca.file_size), 0) AS c FROM crash_attachments ca
     JOIN crash_reports cr ON cr.id = ca.crash_report_id
     WHERE cr.container_id = ?
-  `).get(containerId) as { c: number }).c || 0;
+  `).get(containerId) as { c: number }).c;
 
   const feedbackAttachSize = (getDb().prepare(`
-    SELECT COALESCE(SUM(fa.file_size), 0) FROM feedback_attachments fa
+    SELECT COALESCE(SUM(fa.file_size), 0) AS c FROM feedback_attachments fa
     JOIN player_feedback pf ON pf.id = fa.feedback_id
     WHERE pf.container_id = ?
-  `).get(containerId) as { c: number }).c || 0;
+  `).get(containerId) as { c: number }).c;
 
   const symbolSize = (getDb().prepare(`
-    SELECT COALESCE(SUM(file_size), 0) FROM symbols WHERE container_id = ?
-  `).get(containerId) as { c: number }).c || 0;
+    SELECT COALESCE(SUM(file_size), 0) AS c FROM symbols WHERE container_id = ?
+  `).get(containerId) as { c: number }).c;
 
   return crashSize + attachmentSize + feedbackAttachSize + symbolSize;
 }

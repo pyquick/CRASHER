@@ -1190,6 +1190,13 @@ router.post('/containers/:id/unban', requireApiAuth, requireRole('ultraadmin'), 
   res.json({ success: true, container });
 });
 
+router.delete('/containers/:id', requireApiAuth, requireRole('ultraadmin'), requireCsrf, (req: Request, res: Response): void => {
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(id) || id <= 0) { res.status(400).json({ error: 'Invalid ID' }); return; }
+  if (!auth.deleteContainer(id, req.authUser!.id)) { res.status(404).json({ error: 'Not found' }); return; }
+  res.json({ success: true });
+});
+
 router.post('/containers/:id/users', requireApiAuth, requireRole('ultraadmin'), requireCsrf, async (req: Request, res: Response): Promise<void> => {
   const containerId = parseInt(String(req.params.id), 10);
   if (!Number.isInteger(containerId) || containerId <= 0) { res.status(400).json({ error: 'Invalid ID' }); return; }
