@@ -77,30 +77,31 @@ async function handleCrashReport(req: Request, res: Response): Promise<void> {
       input.log_text = input.log_text.substring(0, config.maxLogSize) + '\n...[truncated]';
     }
 
-    const clientIp = req.ip ?? req.socket?.remoteAddress ?? 'unknown';
-    const now = new Date().toISOString();
+	    const clientIp = req.ip ?? req.socket?.remoteAddress ?? 'unknown';
+	    const now = new Date().toISOString();
+	    const containerId = req.authUser?.container_id ?? null;
 
-    // Parse dump files from attachments
-    let dumpInfo = '';
-    const files = (req as any).files as Express.Multer.File[] | undefined;
-    const singleFile = (req as any).file as Express.Multer.File | undefined;
-    const allFiles = files || (singleFile ? [singleFile] : []);
+	    // Parse dump files from attachments
+	    let dumpInfo = '';
+	    const files = (req as any).files as Express.Multer.File[] | undefined;
+	    const singleFile = (req as any).file as Express.Multer.File | undefined;
+	    const allFiles = files || (singleFile ? [singleFile] : []);
 
-    if (allFiles.length > 0) {
-      const parsedDumps: any[] = [];
-      for (const file of allFiles) {
-        try {
-          const buffer = readFileSync(file.path);
-          const dump = parseDump(buffer, file.originalname, file.mimetype);
-          if (dump) parsedDumps.push({ source_file: file.originalname, ...dump });
-        } catch (parseErr: any) {
-          console.warn(`[dump] Parse error for ${file.originalname}:`, parseErr.message);
-        }
-      }
-      if (parsedDumps.length > 0) dumpInfo = JSON.stringify(parsedDumps);
-    }
+	    if (allFiles.length > 0) {
+	      const parsedDumps: any[] = [];
+	      for (const file of allFiles) {
+	        try {
+	          const buffer = readFileSync(file.path);
+	          const dump = parseDump(buffer, file.originalname, file.mimetype);
+	          if (dump) parsedDumps.push({ source_file: file.originalname, ...dump });
+	        } catch (parseErr: any) {
+	          console.warn(`[dump] Parse error for ${file.originalname}:`, parseErr.message);
+	        }
+	      }
+	      if (parsedDumps.length > 0) dumpInfo = JSON.stringify(parsedDumps);
+	    }
 
-    const result = await ingestCrash(input, clientIp, now, dumpInfo);
+	    const result = await ingestCrash(input, clientIp, now, dumpInfo, containerId);
 
     if (allFiles.length > 0) {
       for (const file of allFiles) {

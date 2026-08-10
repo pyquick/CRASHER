@@ -66,6 +66,7 @@ router.post(
           return;
         }
 
+        const containerId = req.authUser?.role !== 'ultraadmin' ? req.authUser?.container_id ?? null : null;
         const symbol = store.createSymbol(
           String(platform),
           String(buildGuid),
@@ -74,7 +75,8 @@ router.post(
           file.path,
           String(symbolType),
           String(moduleName),
-          String(architecture)
+          String(architecture),
+          containerId,
         );
 
         res.status(201).json(symbol);
@@ -95,7 +97,10 @@ router.post(
  */
 router.get('/symbols', (req: Request, res: Response): void => {
   const q = req.query;
+  const user = req.authUser;
+  const containerId = user?.role !== 'ultraadmin' ? user?.container_id ?? null : undefined;
   const result = store.listSymbols({
+    container_id: containerId,
     page: parseInt(String(q.page), 10) || 1,
     page_size: Math.min(parseInt(String(q.page_size), 10) || 50, 200),
     platform: q.platform as string | undefined,

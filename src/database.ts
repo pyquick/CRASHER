@@ -56,7 +56,7 @@ function runMigrations(db: Database.Database): void {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       username TEXT NOT NULL COLLATE NOCASE UNIQUE,
       password_hash TEXT NOT NULL,
-      role TEXT NOT NULL DEFAULT 'viewer' CHECK(role IN ('admin','operator','viewer')),
+      role TEXT NOT NULL DEFAULT 'viewer' CHECK(role IN ('ultraadmin','admin','operator','viewer')),
       is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
       session_version INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT (datetime('now')),
@@ -256,6 +256,16 @@ function runMigrations(db: Database.Database): void {
       created_at TEXT DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS containers (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      name TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      tier INTEGER NOT NULL DEFAULT 1 CHECK(tier IN (1,2,3,4,5)),
+      is_banned INTEGER NOT NULL DEFAULT 0 CHECK(is_banned IN (0,1)),
+      storage_size_bytes INTEGER NOT NULL DEFAULT 0,
+      created_by INTEGER REFERENCES users(id),
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
     CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
     CREATE INDEX IF NOT EXISTS idx_sessions_expires_at ON sessions(expires_at);
@@ -344,6 +354,62 @@ function runMigrations(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_crash_groups_project_id ON crash_groups(project_id);
     CREATE INDEX IF NOT EXISTS idx_crash_reports_project_id ON crash_reports(project_id);
     CREATE INDEX IF NOT EXISTS idx_user_phones_user_id ON user_phones(user_id);
+  `);
+
+  // v11 migration: containers, ultraadmin role, and container_id columns
+  // Fix users table CHECK constraint to allow 'ultraadmin' role
+  const roleConstraint = db.prepare(
+    "SELECT sql FROM sqlite_master WHERE type='table' AND name='users'"
+  ).get() as { sql: string } | undefined;
+  if (roleConstraint && !roleConstraint.sql.includes("'ultraadmin'")) {
+    db.exec(`
+      CREATE TABLE users_new (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        username TEXT NOT NULL COLLATE NOCASE UNIQUE,
+        password_hash TEXT NOT NULL,
+        role TEXT NOT NULL DEFAULT 'viewer' CHECK(role IN ('ultraadmin','admin','operator','viewer')),
+        is_active INTEGER NOT NULL DEFAULT 1 CHECK(is_active IN (0,1)),
+        session_version INTEGER NOT NULL DEFAULT 1,
+        created_at TEXT NOT NULL DEFAULT (datetime('now')),
+        updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+        last_login_at TEXT
+      );
+      INSERT INTO users_new SELECT id, username, password_hash, role, is_active, session_version, created_at, updated_at, last_login_at FROM users;
+      DROP TABLE users;
+      ALTER TABLE users_new RENAME TO users;
+    `);
+    // Recreate indexes
+    db.exec(`CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);`);
+  }
+
+  // Add container_id to users (nullable — UltraAdmin has NULL)
+  addColumnIfNotExists(db, 'users', 'container_id', 'INTEGER REFERENCES containers(id) ON DELETE SET NULL');
+  // Add TOTP mandatory flag for ultraadmin
+  addColumnIfNotExists(db, 'users', 'totp_mandatory', 'INTEGER NOT NULL DEFAULT 0');
+
+  // Add container_id to all data tables
+  addColumnIfNotExists(db, 'crash_groups', 'container_id', 'INTEGER REFERENCES containers(id) ON DELETE SET NULL');
+  addColumnIfNotExists(db, 'crash_reports', 'container_id', 'INTEGER REFERENCES containers(id) ON DELETE SET NULL');
+  addColumnIfNotExists(db, 'player_feedback', 'container_id', 'INTEGER REFERENCES containers(id) ON DELETE SET NULL');
+  addColumnIfNotExists(db, 'projects', 'container_id', 'INTEGER REFERENCES containers(id) ON DELETE SET NULL');
+  addColumnIfNotExists(db, 'symbols', 'container_id', 'INTEGER REFERENCES containers(id) ON DELETE SET NULL');
+  addColumnIfNotExists(db, 'api_keys', 'container_id', 'INTEGER REFERENCES containers(id) ON DELETE SET NULL');
+  addColumnIfNotExists(db, 'source_snapshots', 'container_id', 'INTEGER REFERENCES containers(id) ON DELETE SET NULL');
+
+  // Add container ban notification tracking
+  addColumnIfNotExists(db, 'containers', 'banned_at', 'TEXT');
+  addColumnIfNotExists(db, 'containers', 'banned_notification_sent', 'INTEGER NOT NULL DEFAULT 0');
+
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_users_container_id ON users(container_id);
+    CREATE INDEX IF NOT EXISTS idx_crash_groups_container_id ON crash_groups(container_id);
+    CREATE INDEX IF NOT EXISTS idx_crash_reports_container_id ON crash_reports(container_id);
+    CREATE INDEX IF NOT EXISTS idx_player_feedback_container_id ON player_feedback(container_id);
+    CREATE INDEX IF NOT EXISTS idx_projects_container_id ON projects(container_id);
+    CREATE INDEX IF NOT EXISTS idx_symbols_container_id ON symbols(container_id);
+    CREATE INDEX IF NOT EXISTS idx_api_keys_container_id ON api_keys(container_id);
+    CREATE INDEX IF NOT EXISTS idx_source_snapshots_container_id ON source_snapshots(container_id);
+    CREATE INDEX IF NOT EXISTS idx_containers_name ON containers(name);
   `);
 }
 

@@ -23,17 +23,39 @@ export function findProjectByName(name: string): Project | undefined {
   return getDb().prepare('SELECT * FROM projects WHERE name = ? COLLATE NOCASE').get(name) as Project | undefined;
 }
 
-export function getOrCreateProject(name: string, now: string): Project {
-  const existing = findProjectByName(name);
-  if (existing) return existing;
-  getDb().prepare(`
-    INSERT INTO projects (name, created_at, updated_at) VALUES (?, ?, ?)
-    ON CONFLICT(name) DO UPDATE SET updated_at = excluded.updated_at
-  `).run(name, now, now);
-  return findProjectByName(name)!;
+export function getOrCreateProject(name: string, now: string, containerId?: number | null): Project {
+  // Look up by name within the container
+  const existing = getDb().prepare(
+    'SELECT * FROM projects WHERE name = ? COLLATE NOCASE AND (container_id = ? OR (container_id IS NULL AND ? IS NULL))'
+  ).get(name, containerId ?? null, containerId ?? null) as Project | undefined;
+  if (existing) {
+    // Update timestamp
+    getDb().prepare('UPDATE projects SET updated_at = ? WHERE id = ?').run(now, existing.id);
+    existing.updated_at = now;
+    return existing;
+  }
+  const result = getDb().prepare(`
+    INSERT INTO projects (name, container_id, created_at, updated_at) VALUES (?, ?, ?, ?)
+  `).run(name, containerId ?? null, now, now);
+  return {
+    id: Number(result.lastInsertRowid),
+    name,
+    created_at: now,
+    updated_at: now,
+  };
 }
 
-export function listProjects(): Array<Project & { crash_count: number }> {
+export function listProjects(containerId?: number | null): Array<Project & { crash_count: number }> {
+  if (containerId !== undefined && containerId !== null) {
+    return getDb().prepare(`
+      SELECT p.*, COUNT(cr.id) AS crash_count
+      FROM projects p
+      LEFT JOIN crash_reports cr ON cr.project_id = p.id
+      WHERE p.container_id = ?
+      GROUP BY p.id
+      ORDER BY p.name COLLATE NOCASE
+    `).all(containerId) as Array<Project & { crash_count: number }>;
+  }
   return getDb().prepare(`
     SELECT p.*, COUNT(cr.id) AS crash_count
     FROM projects p
@@ -106,13 +128,14 @@ export function createGroup(
   exceptionType: string,
   exceptionMessage: string,
   now: string,
-  projectId: number | null = null
+  projectId: number | null = null,
+  containerId: number | null = null,
 ): CrashGroup {
   const stmt = getDb().prepare(`
-    INSERT INTO crash_groups (project_id, crash_hash, exception_type, exception_message, first_seen, last_seen)
-    VALUES (?, ?, ?, ?, ?, ?)
+    INSERT INTO crash_groups (project_id, container_id, crash_hash, exception_type, exception_message, first_seen, last_seen)
+    VALUES (?, ?, ?, ?, ?, ?, ?)
   `);
-  const result = stmt.run(projectId, hash, exceptionType, exceptionMessage, now, now);
+  const result = stmt.run(projectId, containerId, hash, exceptionType, exceptionMessage, now, now);
   return {
     id: Number(result.lastInsertRowid),
     project_id: projectId,
@@ -145,12 +168,16 @@ export function getGroupById(id: number): CrashGroup | undefined {
   `).get(id) as CrashGroup | undefined;
 }
 
-export function listGroups(query: CrashGroupQuery): PaginatedResult<CrashGroup> {
+export function listGroups(query: CrashGroupQuery & { container_id?: number | null }): PaginatedResult<CrashGroup> {
   const page = query.page ?? 1;
   const pageSize = query.page_size ?? 20;
   const conditions: string[] = [];
   const params: unknown[] = [];
 
+  if (query.container_id !== undefined && query.container_id !== null) {
+    conditions.push('cg.container_id = ?');
+    params.push(query.container_id);
+  }
   if (query.project_id !== undefined) {
     if (query.project_id === 0) {
       conditions.push('cg.project_id IS NULL');
@@ -254,7 +281,8 @@ export function createReport(
   clientIp: string,
   now: string,
   dumpInfo: string = '',
-  projectId: number | null = null
+  projectId: number | null = null,
+  containerId: number | null = null,
 ): CrashReport {
   const customData =
     typeof input.custom_data === 'object'
@@ -263,18 +291,19 @@ export function createReport(
 
   const stmt = getDb().prepare(`
     INSERT INTO crash_reports (
-      group_id, project_id, exception_type, exception_message, stack_trace, log_text,
+      group_id, project_id, container_id, exception_type, exception_message, stack_trace, log_text,
       runtime, runtime_version, framework, environment, server_name, release, error_severity,
       unity_version, platform, device_model, os_version, gpu_name, cpu_name,
       memory_mb, app_version, bundle_id, scene_name, custom_data,
       client_ip, client_timestamp, created_at, dump_info, build_guid,
       symbolicated_stack, symbolication_info, symbolication_status, symbol_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const result = stmt.run(
     groupId,
     projectId,
+    containerId,
     input.exception_type,
     input.exception_message ?? '',
     input.stack_trace ?? '',
@@ -323,6 +352,7 @@ export function getReportById(id: number): CrashReport | undefined {
 export function listReports(params: {
   group_id?: number;
   project_id?: number;
+  container_id?: number | null;
   page?: number;
   page_size?: number;
   platform?: string;
@@ -335,6 +365,10 @@ export function listReports(params: {
   const conditions: string[] = [];
   const values: unknown[] = [];
 
+  if (params.container_id !== undefined && params.container_id !== null) {
+    conditions.push('cr.container_id = ?');
+    values.push(params.container_id);
+  }
   if (params.project_id !== undefined) {
     if (params.project_id === 0) {
       conditions.push('cr.project_id IS NULL');
@@ -453,18 +487,20 @@ export function getAttachmentById(id: number): CrashAttachment | undefined {
 export function createFeedback(
   input: PlayerFeedbackInput,
   clientIp: string,
-  now: string
+  now: string,
+  containerId: number | null = null,
 ): PlayerFeedback {
   const customData = typeof input.custom_data === 'object'
     ? JSON.stringify(input.custom_data)
     : (input.custom_data ?? '');
   const result = getDb().prepare(`
     INSERT INTO player_feedback (
-      title, description, category, severity, player_id, player_name, contact,
+      container_id, title, description, category, severity, player_id, player_name, contact,
       app_version, platform, device_model, scene_name, custom_data,
       client_ip, client_timestamp, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `).run(
+    containerId,
     input.title,
     input.description,
     input.category ?? 'bug',
@@ -495,11 +531,13 @@ export function listFeedback(params: {
   status?: string;
   category?: string;
   search?: string;
+  container_id?: number | null;
 }): PaginatedResult<PlayerFeedback> {
   const page = params.page ?? 1;
   const pageSize = params.page_size ?? 20;
   const conditions: string[] = [];
   const values: unknown[] = [];
+  if (params.container_id !== undefined && params.container_id !== null) { conditions.push('container_id = ?'); values.push(params.container_id); }
   if (params.status) { conditions.push('status = ?'); values.push(params.status); }
   if (params.category) { conditions.push('category = ?'); values.push(params.category); }
   if (params.search) {
@@ -565,13 +603,14 @@ export function createSymbol(
   filePath: string,
   symbolType: string = 'unknown',
   moduleName: string = '',
-  architecture: string = ''
+  architecture: string = '',
+  containerId: number | null = null,
 ): Symbol {
   const stmt = getDb().prepare(`
-    INSERT INTO symbols (platform, build_guid, filename, file_size, file_path, symbol_type, module_name, architecture)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO symbols (platform, build_guid, filename, file_size, file_path, symbol_type, module_name, architecture, container_id)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
-  const result = stmt.run(platform, buildGuid, filename, fileSize, filePath, symbolType, moduleName, architecture);
+  const result = stmt.run(platform, buildGuid, filename, fileSize, filePath, symbolType, moduleName, architecture, containerId);
   return getDb()
     .prepare('SELECT * FROM symbols WHERE id = ?')
     .get(Number(result.lastInsertRowid)) as Symbol;
@@ -580,6 +619,7 @@ export function createSymbol(
 export function listSymbols(params: {
   platform?: string;
   build_guid?: string;
+  container_id?: number | null;
   page?: number;
   page_size?: number;
 }): PaginatedResult<Symbol> {
@@ -588,6 +628,10 @@ export function listSymbols(params: {
   const conditions: string[] = [];
   const values: unknown[] = [];
 
+  if (params.container_id !== undefined && params.container_id !== null) {
+    conditions.push('container_id = ?');
+    values.push(params.container_id);
+  }
   if (params.platform) {
     conditions.push('platform = ?');
     values.push(params.platform);
@@ -632,38 +676,33 @@ export function deleteSymbol(id: number): boolean {
 
 // ----- Dashboard Stats -----
 
-export function getDashboardStats(): DashboardStats {
+export function getDashboardStats(containerId?: number | null): DashboardStats {
   const db = getDb();
+  const whereClause = containerId != null ? 'WHERE container_id = ?' : '';
+  const whereParam = containerId != null ? [containerId] : [];
+  const groupWhere = containerId != null ? "WHERE container_id = ? AND status = 'open'" : "WHERE status = 'open'";
+  const groupResolvedWhere = containerId != null ? "WHERE container_id = ? AND status = 'resolved'" : "WHERE status = 'resolved'";
+  const gp = containerId != null ? [containerId] : [];
 
   const totalCrashes = (
-    db.prepare('SELECT COUNT(*) as c FROM crash_reports').get() as { c: number }
+    db.prepare(`SELECT COUNT(*) as c FROM crash_reports ${whereClause}`).get(...whereParam) as { c: number }
   ).c;
   const totalGroups = (
-    db.prepare('SELECT COUNT(*) as c FROM crash_groups').get() as { c: number }
+    db.prepare(`SELECT COUNT(*) as c FROM crash_groups ${whereClause}`).get(...whereParam) as { c: number }
   ).c;
   const openGroups = (
-    db
-      .prepare("SELECT COUNT(*) as c FROM crash_groups WHERE status = 'open'")
-      .get() as { c: number }
+    db.prepare(`SELECT COUNT(*) as c FROM crash_groups ${groupWhere}`).get(...gp) as { c: number }
   ).c;
   const resolvedGroups = (
-    db
-      .prepare("SELECT COUNT(*) as c FROM crash_groups WHERE status = 'resolved'")
-      .get() as { c: number }
+    db.prepare(`SELECT COUNT(*) as c FROM crash_groups ${groupResolvedWhere}`).get(...gp) as { c: number }
   ).c;
+  const todayFilter = containerId != null ? "container_id = ? AND created_at >= date('now')" : "created_at >= date('now')";
+  const weekFilter = containerId != null ? "container_id = ? AND created_at >= date('now', '-7 days')" : "created_at >= date('now', '-7 days')";
   const crashesToday = (
-    db
-      .prepare(
-        "SELECT COUNT(*) as c FROM crash_reports WHERE created_at >= date('now')"
-      )
-      .get() as { c: number }
+    db.prepare(`SELECT COUNT(*) as c FROM crash_reports WHERE ${todayFilter}`).get(...whereParam) as { c: number }
   ).c;
   const crashesWeek = (
-    db
-      .prepare(
-        "SELECT COUNT(*) as c FROM crash_reports WHERE created_at >= date('now', '-7 days')"
-      )
-      .get() as { c: number }
+    db.prepare(`SELECT COUNT(*) as c FROM crash_reports WHERE ${weekFilter}`).get(...whereParam) as { c: number }
   ).c;
 
   const topCrashes = db
@@ -671,61 +710,62 @@ export function getDashboardStats(): DashboardStats {
       `SELECT g.id as group_id, g.exception_type, g.exception_message,
               g.total_count as count, g.last_seen
        FROM crash_groups g
-       WHERE g.status = 'open'
+       ${containerId != null ? "WHERE g.container_id = ? AND g.status = 'open'" : "WHERE g.status = 'open'"}
        ORDER BY g.total_count DESC
        LIMIT 10`
     )
-    .all() as DashboardStats['top_crashes'];
+    .all(...(containerId != null ? [containerId] : [])) as DashboardStats['top_crashes'];
 
   const platformDistribution = db
     .prepare(
       `SELECT platform, COUNT(*) as count
        FROM crash_reports
-       WHERE platform != ''
+       WHERE platform != '' ${containerId != null ? 'AND container_id = ?' : ''}
        GROUP BY platform
        ORDER BY count DESC`
     )
-    .all() as DashboardStats['platform_distribution'];
+    .all(...(containerId != null ? [containerId] : [])) as DashboardStats['platform_distribution'];
 
   const versionDistribution = db
     .prepare(
       `SELECT app_version, COUNT(*) as count
        FROM crash_reports
-       WHERE app_version != ''
+       WHERE app_version != '' ${containerId != null ? 'AND container_id = ?' : ''}
        GROUP BY app_version
        ORDER BY count DESC
        LIMIT 20`
     )
-    .all() as DashboardStats['version_distribution'];
+    .all(...(containerId != null ? [containerId] : [])) as DashboardStats['version_distribution'];
 
   const dailyTrend = db
     .prepare(
       `SELECT date(created_at) as date, COUNT(*) as count
        FROM crash_reports
-       WHERE created_at >= date('now', '-30 days')
+       WHERE created_at >= date('now', '-30 days') ${containerId != null ? 'AND container_id = ?' : ''}
        GROUP BY date(created_at)
        ORDER BY date ASC`
     )
-    .all() as DashboardStats['daily_trend'];
+    .all(...(containerId != null ? [containerId] : [])) as DashboardStats['daily_trend'];
 
   const runtimeDistribution = db
     .prepare(
       `SELECT runtime, COUNT(*) as count
        FROM crash_reports
-       WHERE runtime != ''
+       WHERE runtime != '' ${containerId != null ? 'AND container_id = ?' : ''}
        GROUP BY runtime
        ORDER BY count DESC`
     )
-    .all() as DashboardStats['runtime_distribution'];
+    .all(...(containerId != null ? [containerId] : [])) as DashboardStats['runtime_distribution'];
 
   const environmentDistribution = db
     .prepare(
       `SELECT COALESCE(NULLIF(environment, ''), 'production') as environment, COUNT(*) as count
        FROM crash_reports
+       ${whereClause}
        GROUP BY environment
        ORDER BY count DESC`
     )
-    .all() as DashboardStats['environment_distribution'];
+    .all(...whereParam) as DashboardStats['environment_distribution'];
 
   return {
     total_crashes: totalCrashes,

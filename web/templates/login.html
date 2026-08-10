@@ -39,12 +39,12 @@
 
       <!-- Setup Form (no users yet) -->
       <form x-show="!checking && needsSetup" @submit.prevent="doSetup" class="space-y-4">
-        <p class="text-sm text-blue-400 text-center">Welcome! Create your administrator account.</p>
+        <p class="text-sm text-purple-400 text-center">Welcome! Create your UltraAdmin account. <br><span class="text-xs text-gray-500">Username: 15+ chars, with letters, numbers, and symbols</span></p>
         <div>
           <label class="block text-xs text-gray-500 mb-1">Username</label>
           <input type="text" x-model="username" required autocomplete="off"
                  class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
-                 placeholder="admin">
+                 placeholder="e.g. super_admin@2024!">
         </div>
         <div>
           <label class="block text-xs text-gray-500 mb-1">Email (for password reset verification)</label>
@@ -90,6 +90,16 @@
           <input type="password" x-model="password" required autocomplete="current-password"
                  class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
                  placeholder="Enter password">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Container (optional for UltraAdmin)</label>
+          <select x-model="containerId"
+                  class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500">
+            <option value="">-- No container (UltraAdmin only) --</option>
+            <template x-for="c in containers" :key="c.id">
+              <option :value="c.id" x-text="c.name + ' (Tier ' + c.tier + ')'"></option>
+            </template>
+          </select>
         </div>
 
         <p x-show="errorMsg" class="text-sm text-red-400 text-center" x-text="errorMsg"></p>
@@ -166,6 +176,8 @@
       password: '',
       email: '',
       confirmPassword: '',
+      containerId: '',
+      containers: [],
       loading: false,
       checking: true,
       needsSetup: false,
@@ -184,6 +196,12 @@
           const res = await fetch('/api/v1/auth/setup-status');
           const data = await res.json();
           this.needsSetup = !!data.needs_setup;
+          if (!this.needsSetup) {
+            // Load available containers
+            const cRes = await fetch('/api/v1/auth/containers/active');
+            const cData = await cRes.json();
+            this.containers = cData.items || [];
+          }
         } catch {}
         this.checking = false;
       },
@@ -223,10 +241,12 @@
         this.errorMsg = '';
         this.loading = true;
         try {
+          const body = { username: this.username, password: this.password };
+          if (this.containerId) body.container_id = parseInt(this.containerId);
           const res = await fetch('/web/login', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: this.username, password: this.password }),
+            body: JSON.stringify(body),
           });
           const data = await res.json();
           if (res.ok && data.success) {

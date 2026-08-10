@@ -1,7 +1,8 @@
 import { createHash, createHmac, pbkdf2Sync, randomBytes, scryptSync, timingSafeEqual } from 'crypto';
 import { config } from './config.js';
 import { getDb } from './database.js';
-import type { ApiKeyRecord, ApiKeyTier, AuthenticatedUser, TwoFactorMethod, User, UserEmail, UserPhone, UserRole } from './model.js';
+import type { ApiKeyRecord, ApiKeyTier, AuthenticatedUser, Container, ContainerStatus, ContainerTier, TwoFactorMethod, User, UserEmail, UserPhone, UserRole } from './model.js';
+import { CONTAINER_TIER_LIMITS } from './model.js';
 
 const SCRYPT_KEY_LENGTH = 64;
 // SHA-256 via PBKDF2: 128-bit salt, 310,000 iterations, 32-byte output (256-bit)
@@ -11,14 +12,39 @@ const PBKDF2_ITERATIONS = 310_000;
 // We use 310k for server performance; adjust higher if needed
 const RESET_TOKEN_LENGTH = 32;
 const USERNAME_PATTERN = /^[A-Za-z0-9_.-]{3,64}$/;
+// UltraAdmin usernames: 15+ chars, must have letters, numbers, and symbols
+const UA_USERNAME_MIN_LENGTH = 15;
+const UA_HAS_LETTER = /[A-Za-z]/;
+const UA_HAS_DIGIT = /\d/;
+const UA_HAS_SYMBOL = /[^A-Za-z0-9]/;
 
 function hashLookupToken(token: string): string {
   return createHash('sha256').update(token).digest('hex');
 }
 
-export function validateUsername(username: string): string | null {
+export function validateUsername(username: string, role?: UserRole): string | null {
+  if (role === 'ultraadmin') {
+    if (username.length < UA_USERNAME_MIN_LENGTH || username.length > 64) {
+      return `UltraAdmin username must be ${UA_USERNAME_MIN_LENGTH}-64 characters`;
+    }
+    if (!UA_HAS_LETTER.test(username)) {
+      return 'UltraAdmin username must contain at least one letter';
+    }
+    if (!UA_HAS_DIGIT.test(username)) {
+      return 'UltraAdmin username must contain at least one number';
+    }
+    if (!UA_HAS_SYMBOL.test(username)) {
+      return 'UltraAdmin username must contain at least one symbol';
+    }
+    return null;
+  }
   if (!USERNAME_PATTERN.test(username)) {
     return 'Username must be 3-64 characters and contain only letters, numbers, dot, underscore, or hyphen';
+  }
+  // Check for collision with any ultraadmin username
+  const ua = getDb().prepare("SELECT username FROM users WHERE role = 'ultraadmin' AND username = ? COLLATE NOCASE").get(username) as { username: string } | undefined;
+  if (ua) {
+    return 'Username is already taken';
   }
   return null;
 }
@@ -75,8 +101,8 @@ export function passwordIsCurrent(encoded: string): boolean {
   return encoded.startsWith('pbkdf2-sha256$');
 }
 
-function publicUser(user: { id: number; username: string; role: UserRole; totp_enabled?: number | null }): AuthenticatedUser {
-  return { id: user.id, username: user.username, role: user.role, totp_enabled: user.totp_enabled ?? 0 };
+function publicUser(user: { id: number; username: string; role: UserRole; container_id?: number | null; totp_enabled?: number | null }): AuthenticatedUser {
+  return { id: user.id, username: user.username, role: user.role, container_id: user.container_id ?? null, totp_enabled: user.totp_enabled ?? 0 };
 }
 
 export function hasUsers(): boolean {
@@ -87,25 +113,37 @@ export function generateInitialPassword(): string {
   return `V9!${randomBytes(24).toString('base64url')}`;
 }
 
-export function createUser(username: string, password: string, role: UserRole): AuthenticatedUser {
+export function createUser(username: string, password: string, role: UserRole, containerId?: number | null): AuthenticatedUser {
   const normalizedUsername = username.trim();
-  const usernameError = validateUsername(normalizedUsername);
+  const usernameError = validateUsername(normalizedUsername, role);
   if (usernameError) throw new Error(usernameError);
   const passwordError = validatePassword(password, normalizedUsername);
   if (passwordError) throw new Error(passwordError);
-  if (!['admin', 'operator', 'viewer'].includes(role)) throw new Error('Invalid role');
+  if (!['ultraadmin', 'admin', 'operator', 'viewer'].includes(role)) throw new Error('Invalid role');
+  if (role === 'ultraadmin' && hasUsers()) throw new Error('UltraAdmin can only be created during initial setup');
 
   const result = getDb().prepare(`
-    INSERT INTO users (username, password_hash, role) VALUES (?, ?, ?)
-  `).run(normalizedUsername, hashPassword(password), role);
-  return { id: Number(result.lastInsertRowid), username: normalizedUsername, role };
+    INSERT INTO users (username, password_hash, role, container_id, totp_mandatory) VALUES (?, ?, ?, ?, ?)
+  `).run(normalizedUsername, hashPassword(password), role, containerId ?? null, role === 'ultraadmin' ? 1 : 0);
+  return { id: Number(result.lastInsertRowid), username: normalizedUsername, role, container_id: containerId ?? null };
 }
 
-export function authenticateUser(username: string, password: string): AuthenticatedUser | null {
-  const user = getDb().prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').get(username.trim()) as User | undefined;
+export function authenticateUser(username: string, password: string, containerId?: number | null): AuthenticatedUser | null {
+  let user: User | undefined;
+  if (containerId !== undefined && containerId !== null) {
+    // Container-scoped login: find user in specific container
+    user = getDb().prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE AND container_id = ?').get(username.trim(), containerId) as User | undefined;
+  } else {
+    // UltraAdmin login or no container specified: find any matching user
+    user = getDb().prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE').get(username.trim()) as User | undefined;
+  }
   const fallback = 'pbkdf2-sha256$AAAAAAAAAAAAAAAAAAAAAA$' + Buffer.alloc(PBKDF2_KEY_LENGTH).toString('base64url');
   const valid = verifyPassword(password, user?.password_hash ?? fallback);
   if (!user || !valid || user.is_active !== 1) return null;
+  // Check container ban for non-ultraadmin users
+  if (user.role !== 'ultraadmin' && user.container_id) {
+    if (isContainerBanned(user.container_id)) return null;
+  }
   // Auto-upgrade legacy scrypt hashes to SHA-256 on successful login
   if (!passwordIsCurrent(user.password_hash)) {
     getDb().prepare("UPDATE users SET password_hash = ? WHERE id = ?").run(hashPassword(password), user.id);
@@ -113,15 +151,26 @@ export function authenticateUser(username: string, password: string): Authentica
   return publicUser(user);
 }
 
-export function listUsers(): Array<Omit<User, 'password_hash' | 'session_version'>> {
+export function listUsers(containerId?: number | null): Array<Omit<User, 'password_hash' | 'session_version'>> {
+  if (containerId !== undefined && containerId !== null) {
+    return getDb().prepare(`
+      SELECT id, username, role, is_active, container_id, created_at, updated_at, last_login_at
+      FROM users WHERE container_id = ? AND role != 'ultraadmin'
+      ORDER BY username COLLATE NOCASE
+    `).all(containerId) as Array<Omit<User, 'password_hash' | 'session_version'>>;
+  }
   return getDb().prepare(`
-    SELECT id, username, role, is_active, created_at, updated_at, last_login_at
+    SELECT id, username, role, is_active, container_id, created_at, updated_at, last_login_at
     FROM users ORDER BY username COLLATE NOCASE
   `).all() as Array<Omit<User, 'password_hash' | 'session_version'>>;
 }
 
 export function getUserById(id: number): User | undefined {
   return getDb().prepare('SELECT * FROM users WHERE id = ?').get(id) as User | undefined;
+}
+
+export function getUserByUsernameInContainer(username: string, containerId: number): User | null {
+  return getDb().prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE AND container_id = ?').get(username.trim(), containerId) as User | undefined || null;
 }
 
 export function lookupUserByUsername(username: string): User | null {
@@ -131,12 +180,13 @@ export function lookupUserByUsername(username: string): User | null {
 export function updateUser(id: number, changes: { role?: UserRole; is_active?: boolean }, actorId?: number): boolean {
   const user = getUserById(id);
   if (!user) return false;
+  if (user.role === 'ultraadmin') throw new Error('Cannot modify UltraAdmin account');
   if (actorId === id && changes.is_active === false) throw new Error('You cannot disable your own account');
   const role = changes.role ?? user.role;
   const active = changes.is_active === undefined ? user.is_active : changes.is_active ? 1 : 0;
   if (!['admin', 'operator', 'viewer'].includes(role)) throw new Error('Invalid role');
-  if (user.role === 'admin' && user.is_active === 1 && (role !== 'admin' || active === 0) && countActiveAdmins() <= 1) {
-    throw new Error('At least one active admin account is required');
+  if (user.role === 'admin' && user.is_active === 1 && (role !== 'admin' || active === 0) && countActiveAdmins(user.container_id) <= 1) {
+    throw new Error('At least one active admin account is required in this container');
   }
   getDb().prepare(`
     UPDATE users SET role = ?, is_active = ?, session_version = session_version + 1,
@@ -146,8 +196,15 @@ export function updateUser(id: number, changes: { role?: UserRole; is_active?: b
   return true;
 }
 
-function countActiveAdmins(): number {
+function countActiveAdmins(containerId?: number | null): number {
+  if (containerId !== undefined && containerId !== null) {
+    return (getDb().prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'admin' AND is_active = 1 AND container_id = ?").get(containerId) as { count: number }).count;
+  }
   return (getDb().prepare("SELECT COUNT(*) AS count FROM users WHERE role = 'admin' AND is_active = 1").get() as { count: number }).count;
+}
+
+export function countActiveAdminsInContainer(containerId: number): number {
+  return countActiveAdmins(containerId);
 }
 
 export function changePassword(actor: AuthenticatedUser, userId: number, currentPassword: string | undefined, newPassword: string): boolean {
@@ -166,6 +223,164 @@ export function changePassword(actor: AuthenticatedUser, userId: number, current
   `).run(hashPassword(newPassword), userId);
   getDb().prepare('DELETE FROM sessions WHERE user_id = ?').run(userId);
   return true;
+}
+
+// ── Container Management ──
+
+export function createContainer(name: string, tier: number, createdBy: number): Container {
+  const normalizedName = name.trim();
+  if (!normalizedName || normalizedName.length > 100) throw new Error('Container name must be 1-100 characters');
+  if (!/^[A-Za-z0-9_\-. ]+$/.test(normalizedName)) throw new Error('Container name contains invalid characters');
+  if (![1, 2, 3, 4, 5].includes(tier)) throw new Error('Invalid tier. Must be 1-5');
+
+  const result = getDb().prepare(`
+    INSERT INTO containers (name, tier, created_by) VALUES (?, ?, ?)
+  `).run(normalizedName, tier, createdBy);
+  return getContainerById(Number(result.lastInsertRowid))!;
+}
+
+export function getContainerById(id: number): Container | undefined {
+  return getDb().prepare('SELECT * FROM containers WHERE id = ?').get(id) as Container | undefined;
+}
+
+export function getContainerByName(name: string): Container | undefined {
+  return getDb().prepare('SELECT * FROM containers WHERE name = ? COLLATE NOCASE').get(name.trim()) as Container | undefined;
+}
+
+export function listContainers(): Container[] {
+  return getDb().prepare('SELECT * FROM containers ORDER BY name COLLATE NOCASE').all() as Container[];
+}
+
+export function listActiveContainers(): Container[] {
+  return getDb().prepare('SELECT * FROM containers WHERE is_banned = 0 ORDER BY name COLLATE NOCASE').all() as Container[];
+}
+
+export function banContainer(id: number, actorId: number): Container | null {
+  const container = getContainerById(id);
+  if (!container) return null;
+  getDb().prepare(`
+    UPDATE containers SET is_banned = 1, banned_at = datetime('now'), banned_notification_sent = 0 WHERE id = ?
+  `).run(id);
+  // Invalidate all sessions for users in this container
+  getDb().prepare(`
+    DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE container_id = ?)
+  `).run(id);
+  writeAuditLog(actorId, 'container.banned', 'container', String(id), '', { name: container.name });
+  return getContainerById(id)!;
+}
+
+export function unbanContainer(id: number, actorId: number): Container | null {
+  const container = getContainerById(id);
+  if (!container) return null;
+  getDb().prepare(`
+    UPDATE containers SET is_banned = 0, banned_at = NULL, banned_notification_sent = 0 WHERE id = ?
+  `).run(id);
+  writeAuditLog(actorId, 'container.unbanned', 'container', String(id), '', { name: container.name });
+  return getContainerById(id)!;
+}
+
+export function isContainerBanned(containerId: number): boolean {
+  const c = getDb().prepare('SELECT is_banned FROM containers WHERE id = ?').get(containerId) as { is_banned: number } | undefined;
+  return c?.is_banned === 1;
+}
+
+export function getContainerAdminsForNotification(containerId: number): { userId: number; email: string; username: string }[] {
+  return getDb().prepare(`
+    SELECT u.id AS userId, ue.email, u.username
+    FROM users u
+    JOIN user_emails ue ON ue.user_id = u.id AND ue.email_verified = 1 AND ue.is_primary = 1
+    WHERE u.container_id = ? AND u.role = 'admin' AND u.is_active = 1
+  `).all(containerId) as { userId: number; email: string; username: string }[];
+}
+
+export function markBanNotificationSent(containerId: number): void {
+  getDb().prepare('UPDATE containers SET banned_notification_sent = 1 WHERE id = ?').run(containerId);
+}
+
+export function getContainerStorageSize(containerId: number): number {
+  // Sum of crash report data + attachments + symbols + feedback
+  const crashSize = (getDb().prepare(`
+    SELECT COALESCE(SUM(LENGTH(COALESCE(exception_type,'')) + LENGTH(COALESCE(exception_message,'')) + LENGTH(COALESCE(stack_trace,'')) + LENGTH(COALESCE(log_text,'')) + LENGTH(COALESCE(custom_data,'')) + LENGTH(COALESCE(dump_info,'')) + LENGTH(COALESCE(symbolicated_stack,'')) + LENGTH(COALESCE(symbolication_info,''))), 0)
+    FROM crash_reports WHERE container_id = ?
+  `).get(containerId) as { c: number }).c || 0;
+
+  const attachmentSize = (getDb().prepare(`
+    SELECT COALESCE(SUM(ca.file_size), 0) FROM crash_attachments ca
+    JOIN crash_reports cr ON cr.id = ca.crash_report_id
+    WHERE cr.container_id = ?
+  `).get(containerId) as { c: number }).c || 0;
+
+  const feedbackAttachSize = (getDb().prepare(`
+    SELECT COALESCE(SUM(fa.file_size), 0) FROM feedback_attachments fa
+    JOIN player_feedback pf ON pf.id = fa.feedback_id
+    WHERE pf.container_id = ?
+  `).get(containerId) as { c: number }).c || 0;
+
+  const symbolSize = (getDb().prepare(`
+    SELECT COALESCE(SUM(file_size), 0) FROM symbols WHERE container_id = ?
+  `).get(containerId) as { c: number }).c || 0;
+
+  return crashSize + attachmentSize + feedbackAttachSize + symbolSize;
+}
+
+export function getContainerStatus(containerId: number): ContainerStatus | null {
+  const container = getContainerById(containerId);
+  if (!container) return null;
+
+  const storageBytes = getContainerStorageSize(containerId);
+  const limitBytes = CONTAINER_TIER_LIMITS[container.tier as ContainerTier];
+
+  const userCount = (getDb().prepare(
+    "SELECT COUNT(*) AS c FROM users WHERE container_id = ? AND role != 'ultraadmin'"
+  ).get(containerId) as { c: number }).c;
+
+  const crashCount = (getDb().prepare(
+    'SELECT COUNT(*) AS c FROM crash_reports WHERE container_id = ?'
+  ).get(containerId) as { c: number }).c;
+
+  const feedbackCount = (getDb().prepare(
+    'SELECT COUNT(*) AS c FROM player_feedback WHERE container_id = ?'
+  ).get(containerId) as { c: number }).c;
+
+  const symbolCount = (getDb().prepare(
+    'SELECT COUNT(*) AS c FROM symbols WHERE container_id = ?'
+  ).get(containerId) as { c: number }).c;
+
+  return {
+    container,
+    storage_bytes: storageBytes,
+    limit_bytes: limitBytes,
+    usage_percent: limitBytes > 0 ? (storageBytes / limitBytes) * 100 : 0,
+    is_over_limit: storageBytes > limitBytes,
+    user_count: userCount,
+    crash_count: crashCount,
+    feedback_count: feedbackCount,
+    symbol_count: symbolCount,
+  };
+}
+
+export function listContainerStatuses(): ContainerStatus[] {
+  return listContainers().map(c => getContainerStatus(c.id)!).filter(Boolean);
+}
+
+export function isContainerOverLimit(containerId: number): boolean {
+  const limitBytes = CONTAINER_TIER_LIMITS[
+    (getDb().prepare('SELECT tier FROM containers WHERE id = ?').get(containerId) as { tier: ContainerTier } | undefined)?.tier ?? 1
+  ];
+  return getContainerStorageSize(containerId) > limitBytes;
+}
+
+export function getUserContainerId(userId: number): number | null {
+  const row = getDb().prepare('SELECT container_id FROM users WHERE id = ?').get(userId) as { container_id: number | null } | undefined;
+  return row?.container_id ?? null;
+}
+
+export function createUserInContainer(username: string, password: string, role: UserRole, containerId: number): AuthenticatedUser {
+  if (!['admin', 'operator', 'viewer'].includes(role)) throw new Error('Invalid role for container user');
+  const container = getContainerById(containerId);
+  if (!container) throw new Error('Container not found');
+  if (container.is_banned) throw new Error('Container is banned');
+  return createUser(username, password, role, containerId);
 }
 
 function padNum(n: number): string {
@@ -192,11 +407,15 @@ export function createSession(userId: number): string {
 
 export function getValidSession(rawToken: string, now: string): { user: AuthenticatedUser } | null {
   const row = getDb().prepare(`
-    SELECT u.id, u.username, u.role, u.totp_enabled, u.is_active, u.session_version, s.session_version AS stored_version
+    SELECT u.id, u.username, u.role, u.container_id, u.totp_enabled, u.is_active, u.session_version, s.session_version AS stored_version
     FROM sessions s JOIN users u ON u.id = s.user_id
     WHERE s.id_hash = ? AND s.expires_at > ?
   `).get(hashLookupToken(rawToken), nowSqlDateTime()) as (AuthenticatedUser & { is_active: number; session_version: number; stored_version: number }) | undefined;
   if (!row || row.is_active !== 1 || row.session_version !== row.stored_version) return null;
+  // Check container ban for session users
+  if (row.role !== 'ultraadmin' && row.container_id) {
+    if (isContainerBanned(row.container_id)) return null;
+  }
   getDb().prepare("UPDATE sessions SET last_seen_at = datetime('now') WHERE id_hash = ?").run(hashLookupToken(rawToken));
   return { user: publicUser(row) };
 }
@@ -262,7 +481,7 @@ export function listApiKeysForUser(user: AuthenticatedUser): Array<Omit<ApiKeyRe
 
 export function authenticateApiKey(rawKey: string): { id: number; tier: ApiKeyTier; limits: ApiKeyLimits; user: AuthenticatedUser } | null {
   const row = getDb().prepare(`
-    SELECT k.id, k.tier, k.minute_limit, k.daily_limit, u.id AS user_id, u.username, u.role
+    SELECT k.id, k.tier, k.minute_limit, k.daily_limit, u.id AS user_id, u.username, u.role, u.container_id
     FROM api_keys k JOIN users u ON u.id = k.user_id
     WHERE k.key_hash = ? AND k.revoked_at IS NULL AND u.is_active = 1
       AND (k.expires_at IS NULL OR k.expires_at > ?)
@@ -274,13 +493,18 @@ export function authenticateApiKey(rawKey: string): { id: number; tier: ApiKeyTi
     user_id: number;
     username: string;
     role: UserRole;
+    container_id: number | null;
   } | undefined;
   if (!row) return null;
+  // Check container ban for api key users
+  if (row.role !== 'ultraadmin' && row.container_id) {
+    if (isContainerBanned(row.container_id)) return null;
+  }
   return {
     id: row.id,
     tier: row.tier,
     limits: { minute_limit: row.minute_limit, daily_limit: row.daily_limit },
-    user: { id: row.user_id, username: row.username, role: row.role },
+    user: { id: row.user_id, username: row.username, role: row.role, container_id: row.container_id },
   };
 }
 
@@ -365,19 +589,22 @@ function nowSqlDateTimePlus(minutes: number): string {
  * Returns the approval token and list of admin emails to notify.
  */
 export function createResetRequest(username: string): { token: string; username: string; adminEmails: string[] } | null {
-  const user = getDb().prepare('SELECT * FROM users WHERE username = ? COLLATE NOCASE AND role != \'admin\'').get(username.trim()) as User | undefined;
+  const user = getDb().prepare("SELECT * FROM users WHERE username = ? COLLATE NOCASE AND role != 'admin' AND role != 'ultraadmin'").get(username.trim()) as User | undefined;
   if (!user || user.is_active !== 1) return null;
   const token = randomBytes(RESET_TOKEN_LENGTH).toString('base64url');
   const expiresSql = nowSqlDateTimePlusHours(RESET_REQUEST_EXPIRY_HOURS);
   getDb().prepare(`
     INSERT INTO password_reset_requests (id, user_id, status, expires_at) VALUES (?, ?, 'pending', ?)
   `).run(token, user.id, expiresSql);
-  // Get all admin emails for notification
-  const adminEmails = (getDb().prepare(`
-    SELECT ue.email FROM user_emails ue
-    JOIN users u ON u.id = ue.user_id AND u.role = 'admin' AND u.is_active = 1
-    WHERE ue.email_verified = 1
-  `).all() as { email: string }[]).map(r => r.email);
+  // Get admin emails from the same container for notification
+  let adminEmails: string[] = [];
+  if (user.container_id) {
+    adminEmails = (getDb().prepare(`
+      SELECT ue.email FROM user_emails ue
+      JOIN users u ON u.id = ue.user_id AND u.role = 'admin' AND u.is_active = 1 AND u.container_id = ?
+      WHERE ue.email_verified = 1
+    `).all(user.container_id) as { email: string }[]).map(r => r.email);
+  }
   return { token, username: user.username, adminEmails };
 }
 
@@ -409,10 +636,14 @@ export function approveResetRequest(token: string, adminUserId: number): { usern
   const req = getResetRequest(token);
   if (!req) return null;
   const admin = getUserById(adminUserId);
-  if (!admin || admin.role !== 'admin') throw new Error('Insufficient permissions');
+  if (!admin || (admin.role !== 'admin' && admin.role !== 'ultraadmin')) throw new Error('Insufficient permissions');
   const user = getUserById(req.user_id);
   if (!user || user.is_active !== 1) return null;
-  if (user.role === 'admin') throw new Error('Cannot reset another admin account');
+  if (user.role === 'admin' || user.role === 'ultraadmin') throw new Error('Cannot reset another admin account');
+  // Container-scoped admin can only approve requests from users in their container
+  if (admin.role === 'admin' && admin.container_id !== user.container_id) {
+    throw new Error('Cannot reset users from other containers');
+  }
 
   const newPassword = generateInitialPassword();
   getDb().prepare(`

@@ -37,9 +37,10 @@ router.post('/player-feedback', upload.array('attachments', 10), (req: Request, 
       return;
     }
 
-    const now = new Date().toISOString();
-    const clientIp = req.ip ?? req.socket.remoteAddress ?? 'unknown';
-    const feedback = store.createFeedback(input, clientIp, now);
+	    const now = new Date().toISOString();
+	    const clientIp = req.ip ?? req.socket.remoteAddress ?? 'unknown';
+	    const containerId = req.authUser?.container_id ?? null;
+	    const feedback = store.createFeedback(input, clientIp, now, containerId);
     const files = ((req as any).files ?? []) as Express.Multer.File[];
     const attachments = files.map(file =>
       store.createFeedbackAttachment(feedback.id, file.originalname, file.mimetype, file.size, file.path)

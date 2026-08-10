@@ -164,7 +164,8 @@ router.post('/setup', (req: Request, res: Response): void => {
     return;
   }
   try {
-    const user = auth.createUser(username, password, 'admin');
+    // First user is always UltraAdmin
+    const user = auth.createUser(username, password, 'ultraadmin');
     if (email) {
       try { auth.addEmail(user.id, email); } catch { /* duplicate or invalid — skip */ }
     }
@@ -174,7 +175,7 @@ router.post('/setup', (req: Request, res: Response): void => {
       maxAge: config.sessionHours * 60 * 60 * 1000, path: '/',
     });
     setCsrfCookie(res);
-    auth.writeAuditLog(user.id, 'setup.completed', 'user', String(user.id), req.ip ?? '', {});
+    auth.writeAuditLog(user.id, 'setup.completed', 'user', String(user.id), req.ip ?? '', { role: 'ultraadmin' });
     res.json({ success: true, user });
   } catch (error: any) {
     res.status(400).json({ error: 'Bad Request', message: error.message });
@@ -192,7 +193,17 @@ router.post('/login', rateLimit({
 }), async (req: Request, res: Response): Promise<void> => {
   const username = typeof req.body?.username === 'string' ? req.body.username : '';
   const password = typeof req.body?.password === 'string' ? req.body.password : '';
-  const user = auth.authenticateUser(username, password);
+  const containerId = req.body?.container_id ? parseInt(String(req.body.container_id), 10) : undefined;
+  let user = auth.authenticateUser(username, password, containerId);
+  if (!user && containerId) {
+    // Retry without container filter for UltraAdmin login
+    user = auth.authenticateUser(username, password, null);
+    if (user && user.role !== 'ultraadmin') user = null;
+  }
+  // Non-ultraadmin users must select a container
+  if (user && user.role !== 'ultraadmin' && !containerId) {
+    user = null;
+  }
   if (!user) {
     auth.writeAuditLog(null, 'login.failed', 'user', username.substring(0, 64), req.ip ?? '', {});
     res.status(401).json({ success: false, message: 'Invalid username or password' });
@@ -446,7 +457,12 @@ router.get('/me', requireApiAuth, (req: Request, res: Response): void => {
   const u = req.authUser!;
   const full = auth.getUserById(u.id);
   const methods = auth.getAvailable2FAMethods(u.id);
-  res.json({ user: { id: u.id, username: u.username, role: u.role, totp_enabled: full?.totp_enabled ?? 0, two_factor_method: full?.two_factor_method ?? 'totp', available_2fa_methods: methods } });
+  let containerName: string | undefined;
+  if (full?.container_id) {
+    const c = auth.getContainerById(full.container_id);
+    containerName = c?.name;
+  }
+  res.json({ user: { id: u.id, username: u.username, role: u.role, container_id: full?.container_id ?? null, container_name: containerName, totp_enabled: full?.totp_enabled ?? 0, two_factor_method: full?.two_factor_method ?? 'totp', available_2fa_methods: methods } });
 });
 
 // ── Operation 2FA Routes ──
@@ -567,18 +583,38 @@ router.patch('/me/two-factor-method', requireApiAuth, requireCsrf, (req: Request
   res.json({ success: true, two_factor_method: method });
 });
 
-router.get('/users', requireApiAuth, requireRole('admin'), (_req: Request, res: Response): void => {
-  res.json({ items: auth.listUsers() });
+router.get('/users', requireApiAuth, requireRole('admin'), (req: Request, res: Response): void => {
+  const actor = req.authUser!;
+  const containerId = actor.role === 'ultraadmin' ? undefined : actor.container_id;
+  res.json({ items: auth.listUsers(containerId) });
 });
 
 router.post('/users', requireApiAuth, requireRole('admin'), requireCsrf, async (req: Request, res: Response): Promise<void> => {
   await resolve2FA(req, res, 'user.create', () => {
     try {
+      const actor = req.authUser!;
       const role = req.body?.role ?? 'viewer';
       const requestedPassword = typeof req.body?.password === 'string' ? req.body.password : '';
       const generatedPassword = role === 'viewer' && !requestedPassword ? auth.generateInitialPassword() : '';
-      const user = auth.createUser(String(req.body?.username ?? ''), requestedPassword || generatedPassword, role);
-      auth.writeAuditLog(req.authUser!.id, 'user.created', 'user', String(user.id), req.ip ?? '', { role: user.role, generated_password: Boolean(generatedPassword) });
+
+      let user;
+      if (actor.role === 'ultraadmin') {
+        // UltraAdmin creates users in a specified container
+        const targetContainerId = req.body?.container_id ? parseInt(String(req.body.container_id), 10) : null;
+        if (!targetContainerId) {
+          res.status(400).json({ error: 'Bad Request', message: 'container_id is required for UltraAdmin user creation' });
+          return;
+        }
+        user = auth.createUserInContainer(String(req.body?.username ?? ''), requestedPassword || generatedPassword, role, targetContainerId);
+      } else {
+        // Container admin creates users in their own container
+        if (!actor.container_id) {
+          res.status(400).json({ error: 'Bad Request', message: 'No container assigned' });
+          return;
+        }
+        user = auth.createUserInContainer(String(req.body?.username ?? ''), requestedPassword || generatedPassword, role, actor.container_id);
+      }
+      auth.writeAuditLog(actor.id, 'user.created', 'user', String(user.id), req.ip ?? '', { role: user.role, generated_password: Boolean(generatedPassword), container_id: user.container_id });
       res.status(201).json({ user, ...(generatedPassword ? { initial_password: generatedPassword } : {}) });
     } catch (error: any) {
       const duplicate = error?.code === 'SQLITE_CONSTRAINT_UNIQUE';
@@ -1102,6 +1138,73 @@ router.patch('/api-keys/:id/tier', requireApiAuth, requireRole('admin'), require
       res.status(status).json({ error: forbidden ? 'Forbidden' : 'Bad Request', message: error.message });
     }
   });
+});
+
+// ── Container Management Routes (UltraAdmin only) ──
+
+router.get('/containers/active', (_req: Request, res: Response): void => {
+  res.json({ items: auth.listActiveContainers() });
+});
+
+router.get('/containers', requireApiAuth, requireRole('ultraadmin'), (_req: Request, res: Response): void => {
+  res.json(auth.listContainerStatuses());
+});
+
+router.post('/containers', requireApiAuth, requireRole('ultraadmin'), requireCsrf, (req: Request, res: Response): void => {
+  try {
+    const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
+    const tier = parseInt(String(req.body?.tier ?? 3), 10);
+    if (!name) {
+      res.status(400).json({ error: 'Bad Request', message: 'Container name is required' });
+      return;
+    }
+    const container = auth.createContainer(name, tier, req.authUser!.id);
+    auth.writeAuditLog(req.authUser!.id, 'container.created', 'container', String(container.id), req.ip ?? '', { name, tier });
+    res.status(201).json(container);
+  } catch (error: any) {
+    res.status(400).json({ error: 'Bad Request', message: error.message });
+  }
+});
+
+router.get('/containers/:id/status', requireApiAuth, requireRole('ultraadmin'), (req: Request, res: Response): void => {
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(id) || id <= 0) { res.status(400).json({ error: 'Invalid ID' }); return; }
+  const status = auth.getContainerStatus(id);
+  if (!status) { res.status(404).json({ error: 'Not found' }); return; }
+  res.json(status);
+});
+
+router.post('/containers/:id/ban', requireApiAuth, requireRole('ultraadmin'), requireCsrf, (req: Request, res: Response): void => {
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(id) || id <= 0) { res.status(400).json({ error: 'Invalid ID' }); return; }
+  const container = auth.banContainer(id, req.authUser!.id);
+  if (!container) { res.status(404).json({ error: 'Not found' }); return; }
+  res.json({ success: true, container });
+});
+
+router.post('/containers/:id/unban', requireApiAuth, requireRole('ultraadmin'), requireCsrf, (req: Request, res: Response): void => {
+  const id = parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(id) || id <= 0) { res.status(400).json({ error: 'Invalid ID' }); return; }
+  const container = auth.unbanContainer(id, req.authUser!.id);
+  if (!container) { res.status(404).json({ error: 'Not found' }); return; }
+  res.json({ success: true, container });
+});
+
+router.post('/containers/:id/users', requireApiAuth, requireRole('ultraadmin'), requireCsrf, async (req: Request, res: Response): Promise<void> => {
+  const containerId = parseInt(String(req.params.id), 10);
+  if (!Number.isInteger(containerId) || containerId <= 0) { res.status(400).json({ error: 'Invalid ID' }); return; }
+  try {
+    const role = req.body?.role ?? 'admin';
+    const requestedPassword = typeof req.body?.password === 'string' ? req.body.password : '';
+    const generatedPassword = (role === 'viewer' && !requestedPassword) ? auth.generateInitialPassword() : '';
+    const user = auth.createUserInContainer(String(req.body?.username ?? ''), requestedPassword || generatedPassword, role, containerId);
+    auth.writeAuditLog(req.authUser!.id, 'user.created', 'user', String(user.id), req.ip ?? '', { role, container_id: containerId });
+    res.status(201).json({ user, ...(generatedPassword ? { initial_password: generatedPassword } : {}) });
+  } catch (error: any) {
+    const duplicate = error?.code === 'SQLITE_CONSTRAINT_UNIQUE';
+    const status = duplicate ? 409 : 400;
+    res.status(status).json({ error: duplicate ? 'Conflict' : 'Bad Request', message: duplicate ? 'Username already exists' : error.message });
+  }
 });
 
 export default router;

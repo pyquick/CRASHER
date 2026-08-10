@@ -1,6 +1,39 @@
-export type UserRole = 'admin' | 'operator' | 'viewer';
+export type UserRole = 'ultraadmin' | 'admin' | 'operator' | 'viewer';
 export type ApiKeyTier = 'admin' | 'operator' | 'viewer';
 export type TwoFactorMethod = 'totp' | 'email' | 'sms' | 'none';
+export type ContainerTier = 1 | 2 | 3 | 4 | 5;
+
+export const CONTAINER_TIER_LIMITS: Record<ContainerTier, number> = {
+  1: 50 * 1024 * 1024,     // 50 MB
+  2: 200 * 1024 * 1024,    // 200 MB
+  3: 500 * 1024 * 1024,    // 500 MB
+  4: 5 * 1024 * 1024 * 1024, // 5 GB
+  5: 1024 * 1024 * 1024 * 1024, // 1 TB
+};
+
+export interface Container {
+  id: number;
+  name: string;
+  tier: ContainerTier;
+  is_banned: number;
+  storage_size_bytes: number;
+  created_by: number | null;
+  created_at: string;
+  banned_at: string | null;
+  banned_notification_sent: number;
+}
+
+export interface ContainerStatus {
+  container: Container;
+  storage_bytes: number;
+  limit_bytes: number;
+  usage_percent: number;
+  is_over_limit: boolean;
+  user_count: number;
+  crash_count: number;
+  feedback_count: number;
+  symbol_count: number;
+}
 
 export interface UserEmail {
   id: number;
@@ -27,8 +60,10 @@ export interface User {
   role: UserRole;
   is_active: number;
   session_version: number;
+  container_id: number | null;
   totp_secret: string | null;
   totp_enabled: number;
+  totp_mandatory: number;
   two_factor_method: string;
   created_at: string;
   updated_at: string;
@@ -39,6 +74,7 @@ export interface AuthenticatedUser {
   id: number;
   username: string;
   role: UserRole;
+  container_id?: number | null;
   totp_enabled?: number;
 }
 

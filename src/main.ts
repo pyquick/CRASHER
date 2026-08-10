@@ -8,6 +8,7 @@ import {
   authenticateSession,
   apiKeyRateLimit,
   clearApiKeyIdentity,
+  enforceContainerSizeLimit,
   errorHandler,
   notFoundHandler,
   rateLimit,
@@ -16,6 +17,7 @@ import {
   requireApiKey,
   requireApiKeyDeleteAccess,
   requireApiKeyWriteAccess,
+  requireContainerAccess,
   requireCsrf,
 } from './middleware.js';
 import authHandler from './handler/auth.js';
@@ -81,6 +83,8 @@ app.use(express.urlencoded({ extended: false, limit: '1mb', parameterLimit: 200 
 app.use(authenticateSession);
 app.use(requestLogger);
 
+// Web handler first so HTML pages take priority over JSON API on /web mount
+app.use('/web', requireContainerAccess, webHandler);
 app.use('/web', authHandler);
 app.use('/api/v1/auth', authHandler);
 
@@ -99,11 +103,11 @@ const onFeedbackPost = (middleware: (req: Request, res: Response, next: NextFunc
     else next();
   };
 };
-// Ingest routes: API key required for POST, viewer-tier keys cannot write
-app.use('/api/v1/crash-report', onIngestPost(ingestLimiter), onIngestPost(requireApiKey), onIngestPost(apiKeyMinuteLimiter), onIngestPost(apiKeyDailyLimiter), requireApiKeyWriteAccess);
-app.use('/api/v1/player-feedback', onFeedbackPost(ingestLimiter), onFeedbackPost(requireApiKey), onFeedbackPost(apiKeyMinuteLimiter), onFeedbackPost(apiKeyDailyLimiter), requireApiKeyWriteAccess);
-app.use('/api/v1/unity/crash-report', onIngestPost(ingestLimiter), onIngestPost(requireApiKey), onIngestPost(apiKeyMinuteLimiter), onIngestPost(apiKeyDailyLimiter), requireApiKeyWriteAccess);
-app.use('/api/v1/project-sources', onIngestPost(ingestLimiter), onIngestPost(requireApiKey), onIngestPost(apiKeyMinuteLimiter), onIngestPost(apiKeyDailyLimiter), requireApiKeyWriteAccess);
+// Ingest routes: API key required for POST, viewer-tier keys cannot write, container size limit enforced
+app.use('/api/v1/crash-report', onIngestPost(ingestLimiter), onIngestPost(requireApiKey), onIngestPost(apiKeyMinuteLimiter), onIngestPost(apiKeyDailyLimiter), requireApiKeyWriteAccess, onIngestPost(enforceContainerSizeLimit));
+app.use('/api/v1/player-feedback', onFeedbackPost(ingestLimiter), onFeedbackPost(requireApiKey), onFeedbackPost(apiKeyMinuteLimiter), onFeedbackPost(apiKeyDailyLimiter), requireApiKeyWriteAccess, onFeedbackPost(enforceContainerSizeLimit));
+app.use('/api/v1/unity/crash-report', onIngestPost(ingestLimiter), onIngestPost(requireApiKey), onIngestPost(apiKeyMinuteLimiter), onIngestPost(apiKeyDailyLimiter), requireApiKeyWriteAccess, onIngestPost(enforceContainerSizeLimit));
+app.use('/api/v1/project-sources', onIngestPost(ingestLimiter), onIngestPost(requireApiKey), onIngestPost(apiKeyMinuteLimiter), onIngestPost(apiKeyDailyLimiter), requireApiKeyWriteAccess, onIngestPost(enforceContainerSizeLimit));
 // Viewer API keys cannot access crash/feedback/symbol GET endpoints; admin+operator only
 app.use('/api/v1', crashReportHandler);
 app.use('/api/v1', feedbackHandler);
@@ -112,11 +116,9 @@ app.use('/api/v1', sourceHandler);
 app.use('/api/v1', clearApiKeyIdentity);
 
 const apiLimiter = rateLimit({ windowMs: 60 * 1000, limit: config.apiRateLimit });
-// Protected API routes: session-auth required, CSRF required, API key delete restrictions
-app.use('/api/v1', apiLimiter, requireApiAuth, requireCsrf, requireApiKeyDeleteAccess, queryHandler);
-app.use('/api/v1', apiLimiter, requireApiAuth, requireCsrf, requireApiKeyDeleteAccess, symbolHandler);
-
-app.use('/web', webHandler);
+// Protected API routes: session-auth required, CSRF required, container access enforced, API key delete restrictions
+app.use('/api/v1', apiLimiter, requireApiAuth, requireContainerAccess, requireCsrf, requireApiKeyDeleteAccess, queryHandler);
+app.use('/api/v1', apiLimiter, requireApiAuth, requireContainerAccess, requireCsrf, requireApiKeyDeleteAccess, symbolHandler);
 
 app.get('/', (_req, res) => res.redirect('/web/'));
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));

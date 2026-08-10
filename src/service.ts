@@ -88,7 +88,8 @@ export async function ingestCrash(
   input: CrashReportInput,
   clientIp: string,
   now: string,
-  dumpInfo: string = ''
+  dumpInfo: string = '',
+  containerId?: number | null
 ): Promise<{ report: CrashReport; groupId: number; isNewGroup: boolean }> {
   // Auto-detect runtime if not specified
   if (!input.runtime) {
@@ -102,7 +103,7 @@ export async function ingestCrash(
   // Use client timestamp if provided, otherwise server time
   const effectiveTime = input.client_timestamp ?? now;
   const projectName = input.project_name?.trim() || '';
-  const project = projectName ? store.getOrCreateProject(projectName, now) : undefined;
+  const project = projectName ? store.getOrCreateProject(projectName, now, containerId ?? null) : undefined;
   if (project) input.project_name = project.name;
 
   const symbolication = await symbolicateUnityCrash(input);
@@ -124,12 +125,13 @@ export async function ingestCrash(
       input.exception_type,
       input.exception_message ?? '',
       effectiveTime,
-      project?.id ?? null
+      project?.id ?? null,
+      containerId ?? null
     );
     isNewGroup = true;
   }
 
-  const report = store.createReport(input, group.id, clientIp, now, dumpInfo, project?.id ?? null);
+  const report = store.createReport(input, group.id, clientIp, now, dumpInfo, project?.id ?? null, containerId ?? null);
   if (input.runtime === 'unity') {
     store.updateReportSymbolication(report.id, symbolication);
   }

@@ -72,7 +72,8 @@ function handleSourceUpload(req: Request, res: Response): void {
     for (const candidate of candidates) unique.set(candidate.path.toLowerCase(), candidate);
 
     const now = new Date().toISOString();
-    const project = store.getOrCreateProject(projectName, now);
+    const containerId = req.authUser?.container_id ?? null;
+    const project = store.getOrCreateProject(projectName, now, containerId);
     const snapshot = store.createSourceSnapshot(project.id, release, now);
     snapshotId = snapshot.id;
 

@@ -3,6 +3,7 @@ import { randomBytes, timingSafeEqual } from 'crypto';
 import { config } from './config.js';
 import * as auth from './auth.js';
 import type { AuthenticatedUser, UserRole } from './model.js';
+import { CONTAINER_TIER_LIMITS } from './model.js';
 
 const CSRF_COOKIE = 'csrf_token';
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -208,6 +209,99 @@ export function requireRole(...roles: UserRole[]) {
     }
     next();
   };
+}
+
+/**
+ * Middleware: requireUltraAdmin
+ * Only UltraAdmin can access routes protected by this middleware.
+ */
+export function requireUltraAdmin(req: Request, res: Response, next: NextFunction): void {
+  const user = getAuthenticatedUser(req);
+  if (!user || user.role !== 'ultraadmin') {
+    res.status(403).json({ error: 'Forbidden', message: 'UltraAdmin access required' });
+    return;
+  }
+  next();
+}
+
+/**
+ * Middleware: requireContainerAccess
+ * For non-ultraadmin users:
+ * - Ensures the user belongs to a container
+ * - Redirects to login if not
+ * - Sets req.containerScope for downstream use
+ * UltraAdmin passes through without container scope.
+ */
+export function requireContainerAccess(req: Request, res: Response, next: NextFunction): void {
+  const user = getAuthenticatedUser(req);
+  if (!user) {
+    // No authenticated user — pass through for public routes (login, forgot-password, etc.)
+    // Protected routes are gated by requireAuth/requireApiAuth in their handlers
+    next();
+    return;
+  }
+  if (user.role === 'ultraadmin') {
+    next();
+    return;
+  }
+  if (!user.container_id) {
+    // User has no container — shouldn't happen for non-ultraadmin users
+    res.status(403).json({ error: 'Forbidden', message: 'No container assigned. Contact your UltraAdmin.' });
+    return;
+  }
+  // Check if container is banned
+  if (auth.isContainerBanned(user.container_id)) {
+    // Clear session
+    const session = readSession(req);
+    if (session) auth.deleteSession(session.sessionId);
+    res.clearCookie('auth_token', { path: '/', secure: config.cookieSecure, sameSite: 'strict' });
+    res.clearCookie('csrf_token', { path: '/', secure: config.cookieSecure, sameSite: 'strict' });
+    res.status(403).json({
+      error: 'Forbidden',
+      message: 'Your container has been suspended. Please contact your administrator.',
+      container_banned: true,
+    });
+    return;
+  }
+  next();
+}
+
+/**
+ * Middleware: enforceContainerSizeLimit
+ * For ingest routes (POST), checks if the container has exceeded its storage limit.
+ * Only applies to non-ultraadmin users with API key auth (session auth skips for management).
+ */
+export function enforceContainerSizeLimit(req: Request, res: Response, next: NextFunction): void {
+  if (req.method !== 'POST') {
+    next();
+    return;
+  }
+  if (!config.apiRequireKey) {
+    next();
+    return;
+  }
+  const user = getAuthenticatedUser(req);
+  if (!user || user.role === 'ultraadmin' || !user.container_id) {
+    next();
+    return;
+  }
+  const containerId = user.container_id;
+  const container = auth.getContainerById(containerId);
+  if (!container) {
+    next();
+    return;
+  }
+  const limitBytes = CONTAINER_TIER_LIMITS[container.tier];
+  const storageBytes = auth.getContainerStorageSize(containerId);
+  if (storageBytes > limitBytes) {
+    res.status(403).json({
+      error: 'Forbidden',
+      message: `Container storage limit exceeded. Current: ${(storageBytes / (1024 * 1024)).toFixed(1)}MB, Limit: ${(limitBytes / (1024 * 1024)).toFixed(1)}MB. Contact your UltraAdmin to upgrade your container tier.`,
+      container_over_limit: true,
+    });
+    return;
+  }
+  next();
 }
 
 export function requireCsrf(req: Request, res: Response, next: NextFunction): void {

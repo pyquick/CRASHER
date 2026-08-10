@@ -1,0 +1,299 @@
+<div x-data="containerManager" x-init="load()" class="space-y-8">
+
+  <!-- Container List -->
+  <section class="bg-surface-900 border border-gray-800 rounded-xl p-5">
+    <div class="flex items-center justify-between mb-5">
+      <div>
+        <h2 class="text-lg font-semibold">Containers</h2>
+        <p class="text-sm text-gray-500">Create and manage isolated containers for different customer data.</p>
+      </div>
+      <button @click="openCreateModal" class="btn btn-blue">New Container</button>
+    </div>
+
+    <p x-show="message" x-text="message" class="text-sm mb-4" :class="failed ? 'text-red-400' : 'text-green-400'"></p>
+
+    <div class="overflow-x-auto">
+      <table class="w-full text-sm">
+        <thead class="text-gray-500 border-b border-gray-800">
+          <tr>
+            <th class="text-left py-2">Name</th>
+            <th class="text-left">Tier</th>
+            <th class="text-left">Storage</th>
+            <th class="text-left">Status</th>
+            <th class="text-left">Users</th>
+            <th class="text-left">Crashes</th>
+            <th class="text-right">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="c in containers" :key="c.container.id">
+            <tr class="border-b border-gray-800/60" :class="c.container.is_banned ? 'opacity-50' : ''">
+              <td class="py-3">
+                <span x-text="c.container.name" class="font-medium"></span>
+              </td>
+              <td>
+                <span class="text-xs px-1.5 py-0.5 rounded" :class="tierClass(c.container.tier)" x-text="'T' + c.container.tier"></span>
+              </td>
+              <td class="text-gray-400">
+                <div class="flex items-center gap-2">
+                  <div class="w-24 bg-gray-800 rounded-full h-2">
+                    <div class="h-2 rounded-full" :class="usageColor(c.usage_percent)" :style="'width:' + Math.min(c.usage_percent, 100) + '%'"></div>
+                  </div>
+                  <span class="text-xs" x-text="formatSize(c.storage_bytes) + ' / ' + formatSize(c.limit_bytes)"></span>
+                </div>
+              </td>
+              <td>
+                <span x-show="c.container.is_banned" class="text-xs text-red-400">Banned</span>
+                <span x-show="!c.container.is_banned && c.is_over_limit" class="text-xs text-yellow-400">Over Limit</span>
+                <span x-show="!c.container.is_banned && !c.is_over_limit" class="text-xs text-green-400">Active</span>
+              </td>
+              <td class="text-gray-400" x-text="c.user_count"></td>
+              <td class="text-gray-400" x-text="c.crash_count"></td>
+              <td class="text-right space-x-2">
+                <button x-show="!c.container.is_banned" @click="banContainer(c)" class="text-xs text-red-400 hover:text-red-300">Ban</button>
+                <button x-show="c.container.is_banned" @click="unbanContainer(c)" class="text-xs text-green-400 hover:text-green-300">Unban</button>
+                <button @click="createAdmin(c)" class="text-xs text-blue-400 hover:text-blue-300">+Admin</button>
+              </td>
+            </tr>
+          </template>
+          <tr x-show="containers.length === 0">
+            <td colspan="7" class="py-8 text-center text-gray-600">No containers yet. Create one to get started.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Create Container Modal (dark overlay, mandatory admin) -->
+  <div x-show="showCreate" class="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm" @click.self="cancelCreate">
+    <div class="bg-surface-900 border border-gray-700 rounded-xl p-6 w-full max-w-sm mx-4 shadow-2xl" @click.stop>
+      <h3 class="text-sm font-semibold mb-1">Create New Container</h3>
+      <p class="text-xs text-gray-500 mb-4">Container name is immutable after creation. An admin account is required.</p>
+
+      <div class="space-y-3">
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Container Name</label>
+          <input x-model="newContainer.name" placeholder="e.g. customer-prod" autocomplete="off"
+                 class="fc w-full">
+        </div>
+        <div>
+          <label class="block text-xs text-gray-500 mb-1">Tier</label>
+          <select x-model="newContainer.tier" class="fc w-full">
+            <option value="1">Tier 1 — 50 MB</option>
+            <option value="2">Tier 2 — 200 MB</option>
+            <option value="3">Tier 3 — 500 MB</option>
+            <option value="4">Tier 4 — 5 GB</option>
+            <option value="5">Tier 5 — 1 TB</option>
+          </select>
+        </div>
+        <div class="border-t border-gray-800 pt-3 mt-1">
+          <p class="text-xs text-blue-400 mb-3">Admin account for this container (required)</p>
+          <div class="space-y-2">
+            <input x-model="newContainer.adminUsername" placeholder="Admin username" autocomplete="off"
+                   class="fc w-full">
+            <input x-model="newContainer.adminPassword" type="password" placeholder="Admin password (min 12 chars)"
+                   class="fc w-full" autocomplete="new-password">
+          </div>
+        </div>
+
+        <p x-show="createError" class="text-sm text-red-400" x-text="createError"></p>
+
+        <div class="flex justify-end gap-3 mt-4">
+          <button @click="cancelCreate" :disabled="creating" class="btn btn-gray">Cancel</button>
+          <button @click="doCreateContainer" :disabled="creating" class="btn btn-blue">
+            <span x-show="!creating">Create Container</span>
+            <span x-show="creating" class="inline-flex items-center gap-2">
+              <span class="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+              Creating...
+            </span>
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Create Admin Modal -->
+  <div x-show="showAdminCreate" class="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm" @click.self="showAdminCreate = false">
+    <div class="bg-surface-900 border border-gray-700 rounded-xl p-6 w-full max-w-sm mx-4 shadow-2xl">
+      <h3 class="text-sm font-semibold mb-4">Create Admin in <span x-text="adminTargetContainer?.container.name"></span></h3>
+      <div class="space-y-3">
+        <input x-model="newAdmin.username" placeholder="Username" class="fc w-full" autocomplete="off">
+        <input x-model="newAdmin.password" type="password" placeholder="Password (min 12 chars)" class="fc w-full" autocomplete="new-password">
+        <div class="flex justify-end gap-3 mt-4">
+          <button @click="showAdminCreate = false" class="btn btn-gray">Cancel</button>
+          <button @click="doCreateAdmin" :disabled="adminCreating" class="btn btn-blue">
+            <span x-show="!adminCreating">Create Admin</span>
+            <span x-show="adminCreating">Creating...</span>
+          </button>
+        </div>
+      </div>
+      <p x-show="adminMsg" x-text="adminMsg" class="text-sm mt-3" :class="adminFailed ? 'text-red-400' : 'text-green-400'"></p>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.addEventListener('alpine:init', () => Alpine.data('containerManager', () => ({
+    containers: [],
+    showCreate: false,
+    creating: false,
+    createError: '',
+    message: '',
+    failed: false,
+    newContainer: { name: '', tier: 3, adminUsername: '', adminPassword: '' },
+    showAdminCreate: false,
+    adminTargetContainer: null,
+    adminCreating: false,
+    adminMsg: '',
+    adminFailed: false,
+    newAdmin: { username: '', password: '' },
+
+    async request(url, options = {}) {
+      const r = await fetch(url, options);
+      const d = await r.json();
+      if (!r.ok) throw new Error(d.message || 'Request failed');
+      return d;
+    },
+
+    async load() {
+      try {
+        this.containers = await this.request('/api/v1/auth/containers');
+      } catch (e) {
+        this.message = e.message;
+        this.failed = true;
+      }
+    },
+
+    openCreateModal() {
+      this.createError = '';
+      this.newContainer = { name: '', tier: 3, adminUsername: '', adminPassword: '' };
+      this.showCreate = true;
+    },
+
+    cancelCreate() {
+      this.showCreate = false;
+      this.createError = '';
+    },
+
+    async doCreateContainer() {
+      this.createError = '';
+
+      if (!this.newContainer.name.trim()) {
+        this.createError = 'Container name is required';
+        return;
+      }
+      if (!this.newContainer.adminUsername.trim()) {
+        this.createError = 'Admin username is required to create a container';
+        return;
+      }
+
+      this.creating = true;
+      try {
+        // Step 1: create container
+        const container = await this.request('/api/v1/auth/containers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: this.newContainer.name.trim(),
+            tier: parseInt(this.newContainer.tier),
+          }),
+        });
+
+        // Step 2: create admin in container
+        const password = this.newContainer.adminPassword || undefined;
+        const r = await this.request('/api/v1/auth/containers/' + container.id + '/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: this.newContainer.adminUsername.trim(),
+            password,
+            role: 'admin',
+          }),
+        });
+
+        this.showCreate = false;
+        this.createError = '';
+        const pw = r.initial_password;
+        this.message = pw ? 'Container created. Admin one-time password: ' + pw : 'Container created with admin account.';
+        await this.load();
+      } catch (e) {
+        this.createError = e.message;
+      }
+      this.creating = false;
+    },
+
+    async banContainer(c) {
+      if (!await Modal.confirm('Ban Container', 'Ban "' + c.container.name + '"? All users in this container will be logged out.', 'Ban')) return;
+      try {
+        await this.request('/api/v1/auth/containers/' + c.container.id + '/ban', { method: 'POST' });
+        await this.load();
+      } catch (e) {
+        this.message = e.message;
+        this.failed = true;
+      }
+    },
+
+    async unbanContainer(c) {
+      if (!await Modal.confirm('Unban Container', 'Unban "' + c.container.name + '"?', 'Unban')) return;
+      try {
+        await this.request('/api/v1/auth/containers/' + c.container.id + '/unban', { method: 'POST' });
+        await this.load();
+      } catch (e) {
+        this.message = e.message;
+        this.failed = true;
+      }
+    },
+
+    createAdmin(c) {
+      this.adminTargetContainer = c;
+      this.newAdmin = { username: '', password: '' };
+      this.adminMsg = '';
+      this.showAdminCreate = true;
+    },
+
+    async doCreateAdmin() {
+      this.adminMsg = '';
+      this.adminFailed = false;
+      if (!this.newAdmin.username) { this.adminMsg = 'Username is required'; this.adminFailed = true; return; }
+      this.adminCreating = true;
+      try {
+        const r = await this.request('/api/v1/auth/containers/' + this.adminTargetContainer.container.id + '/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            username: this.newAdmin.username,
+            password: this.newAdmin.password || undefined,
+            role: 'admin',
+          }),
+        });
+        this.showAdminCreate = false;
+        const pw = r.initial_password;
+        this.message = pw ? 'Admin created. One-time password: ' + pw : 'Admin created.';
+        await this.load();
+      } catch (e) {
+        this.adminMsg = e.message;
+        this.adminFailed = true;
+      }
+      this.adminCreating = false;
+    },
+
+    tierClass(tier) {
+      const map = { 1: 'bg-gray-700 text-gray-300', 2: 'bg-blue-900/50 text-blue-300', 3: 'bg-green-900/50 text-green-300', 4: 'bg-purple-900/50 text-purple-300', 5: 'bg-yellow-900/50 text-yellow-300' };
+      return map[tier] || 'bg-gray-700 text-gray-300';
+    },
+
+    usageColor(pct) {
+      if (pct > 90) return 'bg-red-500';
+      if (pct > 70) return 'bg-yellow-500';
+      return 'bg-blue-500';
+    },
+
+    formatSize(bytes) {
+      if (!bytes) return '0 B';
+      const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+      let i = 0, size = bytes;
+      while (size >= 1024 && i < units.length - 1) { size /= 1024; i++; }
+      return size.toFixed(1) + ' ' + units[i];
+    },
+  })));
+</script>

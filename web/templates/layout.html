@@ -206,25 +206,29 @@
       <p class="text-xs text-gray-500 mt-1">Cross-Platform Error Tracking</p>
     </div>
     <nav class="p-3 space-y-1">
-      <a href="/web/" class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium {{CONTENT === '/web/' ? 'active' : 'text-gray-400'}}">
+      <a href="/web/" class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium {{CONTENT === '/web/' ? 'active' : 'text-gray-400'}} ua-hide">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><rect x="2" y="2" width="20" height="8" rx="2" stroke-width="1.5"/><rect x="2" y="14" width="20" height="8" rx="2" stroke-width="1.5"/></svg>
         Dashboard
       </a>
-      <a href="/web/crashes" class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium {{CONTENT === '/web/crashes' ? 'active' : 'text-gray-400'}} viewer-hide">
+      <a href="/web/crashes" class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium {{CONTENT === '/web/crashes' ? 'active' : 'text-gray-400'}} viewer-hide ua-hide">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke-width="1.5"/><path d="M12 6v6l4 2" stroke-width="1.5" stroke-linecap="round"/></svg>
         Crashes
       </a>
-      <a href="/web/feedback" class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium {{CONTENT === '/web/feedback' ? 'active' : 'text-gray-400'}} viewer-hide">
+      <a href="/web/feedback" class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium {{CONTENT === '/web/feedback' ? 'active' : 'text-gray-400'}} viewer-hide ua-hide">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M8 10h.01M12 10h.01M16 10h.01M21 12c0 4.418-4.03 8-9 8a9.86 9.86 0 01-4.255-.949L3 20l1.529-3.057A7.48 7.48 0 013 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
         Player Feedback
       </a>
-      <a href="/web/symbols" class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium {{CONTENT === '/web/symbols' ? 'active' : 'text-gray-400'}} viewer-hide">
+      <a href="/web/symbols" class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium {{CONTENT === '/web/symbols' ? 'active' : 'text-gray-400'}} viewer-hide ua-hide">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 00-1-1.73l-7-4a2 2 0 00-2 0l-7 4A2 2 0 003 8v8a2 2 0 001 1.73l7 4a2 2 0 002 0l7-4A2 2 0 0021 16z" stroke-width="1.5"/></svg>
         Symbols
       </a>
-      <a href="/web/accounts" id="accounts-link" style="display:none" class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium {{CONTENT === '/web/accounts' ? 'active' : 'text-gray-400'}}">
+      <a href="/web/accounts" id="accounts-link" style="display:none" class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium {{CONTENT === '/web/accounts' ? 'active' : 'text-gray-400'}} ua-hide">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M12 12a4 4 0 100-8 4 4 0 000 8zm7 9a7 7 0 00-14 0" stroke-width="1.5" stroke-linecap="round"/></svg>
         Accounts
+      </a>
+      <a href="/web/containers" id="containers-link" style="display:none" class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium {{CONTENT === '/web/containers' ? 'active' : 'text-gray-400'}}">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M20 7l-8-4-8 4m16 0l-8 4m8-4v10l-8 4m0-10L4 7m8 4v10M4 7v10l8 4" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        Containers
       </a>
       <a href="/web/api-doc" class="nav-link flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium text-gray-400">
         <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" stroke-width="1.5"/></svg>
@@ -241,6 +245,7 @@
         <svg class="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path d="M3 12h18M3 6h18M3 18h18" stroke-width="2" stroke-linecap="round"/></svg>
       </button>
       <span class="text-sm text-gray-400 flex-1" id="page-subtitle">{{SUBTITLE}}</span>
+      <span class="text-xs text-gray-500 mr-2" id="container-badge" style="display:none"></span>
       <span class="text-xs text-gray-500" id="current-user"></span>
       <button type="button" onclick="secureLogout()"
               class="text-xs text-gray-500 hover:text-gray-300 transition-colors px-3 py-1.5 rounded-lg hover:bg-gray-800">
@@ -348,14 +353,37 @@
       if (!data.user) return;
       const el = document.getElementById('current-user');
       el.textContent = data.user.username + ' · ' + data.user.role;
-      if (data.user.role === 'admin' || data.user.role === 'operator') {
-        document.getElementById('accounts-link').style.display = '';
-      }
-      if (data.user.role === 'admin') {
+      if (data.user.role === 'ultraadmin') {
+        // UltraAdmin only sees container management
+        document.getElementById('containers-link').style.display = '';
         document.querySelectorAll('.admin-only').forEach(n => { n.style.display = ''; });
-      }
-      if (data.user.role !== 'admin' && data.user.role !== 'operator') {
-        document.querySelectorAll('.viewer-hide').forEach(n => n.remove());
+        // Hide dashboard, crashes, feedback, accounts, symbols for UltraAdmin
+        document.querySelectorAll('.ua-hide').forEach(n => n.remove());
+        const badge = document.getElementById('container-badge');
+        badge.textContent = 'UltraAdmin · All Containers';
+        badge.style.display = '';
+        badge.className = 'text-xs text-purple-400 mr-2 px-2 py-0.5 rounded bg-purple-900/30 border border-purple-700/30';
+        // Redirect UltraAdmin to containers page if on dashboard
+        if (window.location.pathname === '/web/' || window.location.pathname === '/web') {
+          window.location.replace('/web/containers');
+        }
+      } else {
+        document.getElementById('containers-link').remove();
+        if (data.user.role === 'admin' || data.user.role === 'operator') {
+          document.getElementById('accounts-link').style.display = '';
+        }
+        if (data.user.role === 'admin') {
+          document.querySelectorAll('.admin-only').forEach(n => { n.style.display = ''; });
+        }
+        if (data.user.role !== 'admin' && data.user.role !== 'operator') {
+          document.querySelectorAll('.viewer-hide').forEach(n => n.remove());
+        }
+        if (data.container_name) {
+          const badge = document.getElementById('container-badge');
+          badge.textContent = 'Container: ' + data.container_name;
+          badge.style.display = '';
+          badge.className = 'text-xs text-blue-400 mr-2';
+        }
       }
     }).catch(() => {});
   </script>

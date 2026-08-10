@@ -20,11 +20,18 @@ const importUpload = multer({
   limits: { fileSize: 64 * 1024 * 1024, files: 1 },
 });
 
+function getContainerScope(req: Request): number | null | undefined {
+  const user = req.authUser;
+  if (!user || user.role === 'ultraadmin') return undefined; // ultraadmin sees all (undefined = no filter)
+  return user.container_id ?? null;
+}
+
 // ── Crash group query routes ──
 
 router.get('/crash-groups', (req, res) => {
   const q = req.query;
   res.json(store.listGroups({
+    container_id: getContainerScope(req),
     page: parseInt(String(q.page), 10) || 1,
     page_size: Math.min(parseInt(String(q.page_size), 10) || 20, 100),
     project_id: q.project_id !== undefined ? parseInt(String(q.project_id), 10) : undefined,
@@ -67,6 +74,7 @@ router.put('/crash-groups/:id/status', requireRole('admin', 'operator'), (req, r
 router.get('/crash-reports', requireRole('admin', 'operator'), (req, res) => {
   const q = req.query;
   res.json(store.listReports({
+    container_id: getContainerScope(req),
     page: parseInt(String(q.page), 10) || 1,
     page_size: Math.min(parseInt(String(q.page_size), 10) || 20, 100),
     group_id: q.group_id ? parseInt(String(q.group_id), 10) : undefined,
@@ -378,9 +386,10 @@ router.post('/import', requireRole('admin', 'operator'), importUpload.single('pa
 
     // ── Confirmed: write to DB ──
     const now = new Date().toISOString();
+    const importContainerId = getContainerScope(req) ?? null;
 
     const manifestProjectName = typeof manifest.group.project_name === 'string' ? manifest.group.project_name.trim() : '';
-    const manifestProject = manifestProjectName ? store.getOrCreateProject(manifestProjectName, now) : undefined;
+    const manifestProject = manifestProjectName ? store.getOrCreateProject(manifestProjectName, now, importContainerId) : undefined;
 
     // Map old report IDs to new report IDs for attachment linking
     const oldToNewId = new Map<number, number>();
@@ -396,7 +405,8 @@ router.post('/import', requireRole('admin', 'operator'), importUpload.single('pa
         manifest.group.exception_type,
         manifest.group.exception_message || '',
         now,
-        manifestProject?.id ?? null
+        manifestProject?.id ?? null,
+        importContainerId,
       );
       groupId = newGroup.id;
     }
@@ -421,7 +431,7 @@ router.post('/import', requireRole('admin', 'operator'), importUpload.single('pa
       }
 
       const importProjectName = typeof reportData.project_name === 'string' ? reportData.project_name.trim() : '';
-      const importProject = importProjectName ? store.getOrCreateProject(importProjectName, now) : undefined;
+      const importProject = importProjectName ? store.getOrCreateProject(importProjectName, now, importContainerId) : undefined;
 
       // Create the report with the new group ID
       const newReport = store.createReport(
@@ -456,7 +466,8 @@ router.post('/import', requireRole('admin', 'operator'), importUpload.single('pa
         reportData.client_ip || 'imported',
         reportData.created_at || now,
         reportData.dump_info || '',
-        importProject?.id ?? null
+        importProject?.id ?? null,
+        importContainerId,
       );
 
       oldToNewId.set(oldId, newReport.id);
@@ -519,18 +530,28 @@ router.post('/import', requireRole('admin', 'operator'), importUpload.single('pa
 
 // ── Stats and analytics ──
 
-router.get('/stats/dashboard', (_req, res) => { res.json(store.getDashboardStats()); });
+router.get('/stats/dashboard', (req, res) => { res.json(store.getDashboardStats(getContainerScope(req) ?? null)); });
 
-router.get('/projects', (_req, res) => {
-  res.json(store.listProjects());
+router.get('/projects', (req, res) => {
+  res.json(store.listProjects(getContainerScope(req)));
 });
 
-router.get('/platforms', (_req, res) => {
-  res.json((getDb().prepare("SELECT DISTINCT platform FROM crash_reports WHERE platform != '' ORDER BY platform").all() as any[]).map(r => r.platform));
+router.get('/platforms', (req, res) => {
+  const containerId = getContainerScope(req);
+  if (containerId) {
+    res.json((getDb().prepare("SELECT DISTINCT platform FROM crash_reports WHERE platform != '' AND container_id = ? ORDER BY platform").all(containerId) as any[]).map(r => r.platform));
+  } else {
+    res.json((getDb().prepare("SELECT DISTINCT platform FROM crash_reports WHERE platform != '' ORDER BY platform").all() as any[]).map(r => r.platform));
+  }
 });
 
-router.get('/versions', (_req, res) => {
-  res.json((getDb().prepare("SELECT DISTINCT app_version FROM crash_reports WHERE app_version != '' ORDER BY app_version DESC LIMIT 50").all() as any[]).map(r => r.app_version));
+router.get('/versions', (req, res) => {
+  const containerId = getContainerScope(req);
+  if (containerId) {
+    res.json((getDb().prepare("SELECT DISTINCT app_version FROM crash_reports WHERE app_version != '' AND container_id = ? ORDER BY app_version DESC LIMIT 50").all(containerId) as any[]).map(r => r.app_version));
+  } else {
+    res.json((getDb().prepare("SELECT DISTINCT app_version FROM crash_reports WHERE app_version != '' ORDER BY app_version DESC LIMIT 50").all() as any[]).map(r => r.app_version));
+  }
 });
 
 // ── Player feedback management routes ──
@@ -538,6 +559,7 @@ router.get('/versions', (_req, res) => {
 router.get('/player-feedback', requireRole('admin', 'operator'), (req, res) => {
   const q = req.query;
   res.json(store.listFeedback({
+    container_id: getContainerScope(req),
     page: parseInt(String(q.page), 10) || 1,
     page_size: Math.min(parseInt(String(q.page_size), 10) || 20, 100),
     status: q.status as string | undefined,
@@ -647,16 +669,32 @@ router.get('/download/dump/:reportId', requireRole('admin', 'operator'), (req, r
 
 // ── Admin: Clear all crashes ──
 
-router.post('/clear-crashes', requireRole('admin'), (_req, res) => {
+router.post('/clear-crashes', requireRole('admin'), (req, res) => {
   const db = getDb();
-  // Delete attachments files from disk
-  const attachments = db.prepare('SELECT file_path FROM crash_attachments').all();
+  const containerId = getContainerScope(req);
+  let attachmentQuery, reportQuery, groupQuery;
+  let params: unknown[] = [];
+  if (containerId) {
+    attachmentQuery = "SELECT ca.file_path FROM crash_attachments ca JOIN crash_reports cr ON cr.id = ca.crash_report_id WHERE cr.container_id = ?";
+    reportQuery = 'DELETE FROM crash_reports WHERE container_id = ?';
+    groupQuery = 'DELETE FROM crash_groups WHERE container_id = ?';
+    params = [containerId];
+  } else {
+    attachmentQuery = 'SELECT file_path FROM crash_attachments';
+    reportQuery = 'DELETE FROM crash_reports';
+    groupQuery = 'DELETE FROM crash_groups';
+  }
+  const attachments = db.prepare(attachmentQuery).all(...params);
   for (const a of attachments as { file_path: string }[]) {
     try { if (existsSync(a.file_path)) unlinkSync(a.file_path); } catch {}
   }
-  db.exec('DELETE FROM crash_attachments');
-  db.exec('DELETE FROM crash_reports');
-  db.exec('DELETE FROM crash_groups');
+  if (containerId) {
+    db.prepare('DELETE FROM crash_attachments WHERE crash_report_id IN (SELECT id FROM crash_reports WHERE container_id = ?)').run(containerId);
+  } else {
+    db.exec('DELETE FROM crash_attachments');
+  }
+  db.prepare(reportQuery).run(...params);
+  db.prepare(groupQuery).run(...params);
   res.json({ success: true, message: 'All crash data cleared' });
 });
 

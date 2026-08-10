@@ -3,7 +3,7 @@ import { readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
 import * as auth from '../auth.js';
-import { getAuthenticatedUser, rateLimit, requireAuth, requireRole } from '../middleware.js';
+import { getAuthenticatedUser, rateLimit, requireAuth, requireRole, requireUltraAdmin } from '../middleware.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const templatesDir = resolve(__dirname, '..', '..', 'web', 'templates');
@@ -33,6 +33,7 @@ function controllerToRoute(name: string): string {
     'feedback_list.html': '/web/feedback',
     'symbol_list.html': '/web/symbols',
     'account_list.html': '/web/accounts',
+    'container_list.html': '/web/containers',
   };
   return map[name] ?? '/web/';
 }
@@ -154,6 +155,14 @@ router.get('/symbols', requireAuth, (_req: Request, res: Response): void => {
 
 router.get('/accounts', requireAuth, requireRole('admin', 'operator'), (_req: Request, res: Response): void => {
   res.type('html').send(renderTemplate('account_list.html', 'Account Security - Crash Report Server'));
+});
+
+/**
+ * GET /web/containers
+ * Container management page — UltraAdmin only.
+ */
+router.get('/containers', requireAuth, requireUltraAdmin, (_req: Request, res: Response): void => {
+  res.type('html').send(renderTemplate('container_list.html', 'Container Management - Crash Report Server'));
 });
 
 /**
