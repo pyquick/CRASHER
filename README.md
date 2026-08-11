@@ -504,7 +504,7 @@ GET  /health
 | `API_REQUIRE_KEY` | `true` | 上报端点是否要求 API Key |
 | `CORS_ORIGINS` | 空 | 允许的浏览器 Origin，逗号分隔 |
 | `TRUST_PROXY` | `false` | Express trust proxy |
-| `LOGIN_RATE_LIMIT` | `5` | 每 15 分钟、每 IP+用户名登录尝试数 |
+| `LOGIN_RATE_LIMIT` | `150` | 每 5 分钟、每 IP+用户名登录尝试数 |
 | `INGEST_RATE_LIMIT` | `120` | 每 IP 每分钟上报请求数 |
 | `API_RATE_LIMIT` | `600` | 每 IP 每分钟管理 API 请求数 |
 | `WEBHOOK_URL` | 空 | Webhook 告警地址 |

@@ -187,7 +187,7 @@ router.get('/csrf', requireApiAuth, (req: Request, res: Response): void => {
 });
 
 router.post('/login', rateLimit({
-  windowMs: 15 * 60 * 1000,
+  windowMs: 5 * 60 * 1000,
   limit: config.loginRateLimit,
   key: req => `${req.ip}:${String(req.body?.username ?? '').trim().toLowerCase()}`,
 }), async (req: Request, res: Response): Promise<void> => {

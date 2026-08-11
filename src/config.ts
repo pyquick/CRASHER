@@ -99,7 +99,7 @@ function loadConfig(): Config {
     sessionHours: Math.max(1, envInt('SESSION_HOURS', 12)),
     apiRequireKey: envBool('API_REQUIRE_KEY', true),
     trustProxy,
-    loginRateLimit: Math.max(1, envInt('LOGIN_RATE_LIMIT', 5)),
+    loginRateLimit: Math.max(1, envInt('LOGIN_RATE_LIMIT', 150)),
     ingestRateLimit: Math.max(1, envInt('INGEST_RATE_LIMIT', 120)),
     apiRateLimit: Math.max(1, envInt('API_RATE_LIMIT', 600)),
     webhookUrl: env('WEBHOOK_URL', ''),
