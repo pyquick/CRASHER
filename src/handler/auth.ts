@@ -1,8 +1,10 @@
 import { Router, type Request, type Response } from 'express';
 import { config } from '../config.js';
 import * as auth from '../auth.js';
+import { updateUserTwoFactorMethod } from '../database/auth-store.js';
 import { sendResetApprovalEmail, sendSmsCode, sendVerificationEmail } from '../notification/service.js';
 import type { TwoFactorMethod } from '../model.js';
+import { setSessionCookie, clearCookie } from '../shared/cookie.js';
 import {
   rateLimit,
   readMfaToken,
@@ -170,10 +172,7 @@ router.post('/setup', (req: Request, res: Response): void => {
       try { auth.addEmail(user.id, email); } catch { /* duplicate or invalid — skip */ }
     }
     const token = auth.createSession(user.id);
-    res.cookie('auth_token', token, {
-      httpOnly: true, secure: config.cookieSecure, sameSite: 'strict',
-      maxAge: config.sessionHours * 60 * 60 * 1000, path: '/',
-    });
+    setSessionCookie(res, 'auth_token', token, config.sessionHours * 60 * 60 * 1000);;
     setCsrfCookie(res);
     auth.writeAuditLog(user.id, 'setup.completed', 'user', String(user.id), req.ip ?? '', { role: 'ultraadmin' });
     res.json({ success: true, user });
@@ -246,13 +245,7 @@ router.post('/login', rateLimit({
   if (full && await beginAdminEmailVerification(full, req, res)) return;
 
   const token = auth.createSession(user.id);
-  res.cookie('auth_token', token, {
-    httpOnly: true,
-    secure: config.cookieSecure,
-    sameSite: 'strict',
-    maxAge: config.sessionHours * 60 * 60 * 1000,
-    path: '/',
-  });
+  setSessionCookie(res, 'auth_token', token, config.sessionHours * 60 * 60 * 1000);
   setCsrfCookie(res);
   auth.writeAuditLog(user.id, 'login.succeeded', 'user', String(user.id), req.ip ?? '', {});
   res.json({ success: true, user, available_methods: methods });
@@ -287,10 +280,7 @@ router.post('/login/totp', rateLimit({
   if (await beginAdminEmailVerification(user, req, res)) return;
 
   const sessionToken = auth.createSession(userId);
-  res.cookie('auth_token', sessionToken, {
-    httpOnly: true, secure: config.cookieSecure, sameSite: 'strict',
-    maxAge: config.sessionHours * 60 * 60 * 1000, path: '/',
-  });
+  setSessionCookie(res, 'auth_token', sessionToken, config.sessionHours * 60 * 60 * 1000);
   setCsrfCookie(res);
   auth.writeAuditLog(userId, 'login.succeeded', 'user', String(userId), req.ip ?? '', { totp: true });
   res.json({ success: true, user: { id: user.id, username: user.username, role: user.role, totp_enabled: user.totp_enabled } });
@@ -312,13 +302,7 @@ router.post('/login/verify-email', rateLimit({
     res.status(400).json({ error: 'Bad Request', message: 'Invalid or expired verification code' });
     return;
   }
-  res.cookie('auth_token', sessionToken, {
-    httpOnly: true,
-    secure: config.cookieSecure,
-    sameSite: 'strict',
-    maxAge: config.sessionHours * 60 * 60 * 1000,
-    path: '/',
-  });
+  setSessionCookie(res, 'auth_token', sessionToken, config.sessionHours * 60 * 60 * 1000);
   setCsrfCookie(res);
   res.json({ success: true });
 });
@@ -376,10 +360,7 @@ router.post('/login/2fa/email', rateLimit({
   if (await beginAdminEmailVerification(user, req, res)) return;
 
   const sessionToken = auth.createSession(userId);
-  res.cookie('auth_token', sessionToken, {
-    httpOnly: true, secure: config.cookieSecure, sameSite: 'strict',
-    maxAge: config.sessionHours * 60 * 60 * 1000, path: '/',
-  });
+  setSessionCookie(res, 'auth_token', sessionToken, config.sessionHours * 60 * 60 * 1000);
   setCsrfCookie(res);
   auth.writeAuditLog(userId, 'login.succeeded', 'user', String(userId), req.ip ?? '', { email_2fa: true });
   res.json({ success: true, user: { id: user.id, username: user.username, role: user.role, totp_enabled: user.totp_enabled } });
@@ -448,8 +429,8 @@ router.post('/logout', requireApiAuth, (req: Request, res: Response): void => {
   const session = readSession(req);
   if (session) auth.deleteSession(session.sessionId);
   if (req.authUser) auth.writeAuditLog(req.authUser.id, 'logout', 'user', String(req.authUser.id), req.ip ?? '', {});
-  res.clearCookie('auth_token', { path: '/', secure: config.cookieSecure, sameSite: 'strict' });
-  res.clearCookie('csrf_token', { path: '/', secure: config.cookieSecure, sameSite: 'strict' });
+  clearCookie(res, 'auth_token');
+  clearCookie(res, 'csrf_token');
   res.json({ success: true });
 });
 
@@ -576,9 +557,7 @@ router.patch('/me/two-factor-method', requireApiAuth, requireCsrf, (req: Request
       return;
     }
   }
-  // Use the updateUser pattern: directly update the DB
-  const { getDb } = require('../database.js');
-  getDb().prepare('UPDATE users SET two_factor_method = ?, updated_at = datetime(\'now\') WHERE id = ?').run(method, user.id);
+  updateUserTwoFactorMethod(user.id, method);
   auth.writeAuditLog(user.id, 'user.2fa_method_changed', 'user', String(user.id), req.ip ?? '', { method });
   res.json({ success: true, two_factor_method: method });
 });

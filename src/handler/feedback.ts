@@ -1,26 +1,11 @@
 import { Router, type Request, type Response } from 'express';
-import multer from 'multer';
-import { randomBytes } from 'crypto';
 import { config } from '../config.js';
-import { unlinkSync } from 'fs';
 import * as store from '../store.js';
 import type { PlayerFeedbackInput } from '../model.js';
+import { createAttachmentUpload, cleanupUploads, getUploadedFiles, getClientIp, getContainerId, extractFeedbackFormFields } from '../shared/upload.js';
 
 const router = Router();
-
-const attachmentStorage = multer.diskStorage({
-  destination: config.attachmentsDir,
-  filename: (_req, file, cb) => {
-    const unique = randomBytes(12).toString('hex');
-    const extension = file.originalname.split('.').pop() ?? 'bin';
-    cb(null, `${unique}.${extension}`);
-  },
-});
-
-const upload = multer({
-  storage: attachmentStorage,
-  limits: { fileSize: config.maxAttachmentSize, files: 10 },
-});
+const upload = createAttachmentUpload(10);
 
 /**
  * POST /player-feedback
@@ -37,11 +22,12 @@ router.post('/player-feedback', upload.array('attachments', 10), (req: Request, 
       return;
     }
 
-	    const now = new Date().toISOString();
-	    const clientIp = req.ip ?? req.socket.remoteAddress ?? 'unknown';
-	    const containerId = req.authUser?.container_id ?? null;
-	    const feedback = store.createFeedback(input, clientIp, now, containerId);
-    const files = ((req as any).files ?? []) as Express.Multer.File[];
+    const now = new Date().toISOString();
+    const clientIp = getClientIp(req);
+    const containerId = getContainerId(req);
+    const feedback = store.createFeedback(input, clientIp, now, containerId);
+
+    const files = getUploadedFiles(req);
     const attachments = files.map(file =>
       store.createFeedbackAttachment(feedback.id, file.originalname, file.mimetype, file.size, file.path)
     );
@@ -62,13 +48,6 @@ router.post('/player-feedback', upload.array('attachments', 10), (req: Request, 
   }
 });
 
-function cleanupUploads(req: Request): void {
-  const files = ((req as any).files ?? []) as Express.Multer.File[];
-  for (const file of files) {
-    try { unlinkSync(file.path); } catch {}
-  }
-}
-
 function extractInput(req: Request): PlayerFeedbackInput {
   const body = req.body ?? {};
   if (body.feedback) {
@@ -76,33 +55,7 @@ function extractInput(req: Request): PlayerFeedbackInput {
       ? JSON.parse(body.feedback) as PlayerFeedbackInput
       : body.feedback as PlayerFeedbackInput;
   }
-
-  const text = (key: string) => String(body[key] ?? '').trim();
-  const input: PlayerFeedbackInput = {
-    title: text('title'),
-    description: text('description'),
-    category: text('category') as PlayerFeedbackInput['category'],
-    severity: text('severity') as PlayerFeedbackInput['severity'],
-    player_id: text('player_id') || undefined,
-    player_name: text('player_name') || undefined,
-    contact: text('contact') || undefined,
-    app_version: text('app_version') || undefined,
-    platform: text('platform') || undefined,
-    device_model: text('device_model') || undefined,
-    scene_name: text('scene_name') || undefined,
-    client_timestamp: text('client_timestamp') || undefined,
-  };
-
-  if (body.custom_data) {
-    try {
-      input.custom_data = typeof body.custom_data === 'string'
-        ? JSON.parse(body.custom_data)
-        : body.custom_data;
-    } catch {
-      input.custom_data = String(body.custom_data);
-    }
-  }
-  return input;
+  return extractFeedbackFormFields(body) as unknown as PlayerFeedbackInput;
 }
 
 function validateInput(input: PlayerFeedbackInput): string | null {

@@ -86,18 +86,24 @@
     </div>
   </div>
 
+  <!-- Error state -->
+  <div x-show="error" class="bg-red-900/20 border border-red-800 text-red-400 rounded-lg p-4 mb-4">
+    <span x-text="error"></span>
+    <button class="btn btn-gray btn-sm ml-3" @click="load()">Retry</button>
+  </div>
+
   <!-- Table -->
   <div class="bg-surface-900 rounded-xl border border-gray-800 overflow-hidden" :class="{ loading }">
-    <table class="w-full text-sm" x-show="items.length > 0">
+    <table class="data-table" x-show="items.length > 0">
       <thead>
-        <tr class="border-b border-gray-800 text-gray-500 text-xs uppercase">
-          <th class="text-left px-4 py-3 font-medium">Filename</th>
-          <th class="text-left px-4 py-3 font-medium">Platform</th>
-          <th class="text-left px-4 py-3 font-medium hidden sm:table-cell">Type</th>
-          <th class="text-left px-4 py-3 font-medium hidden sm:table-cell">Build GUID</th>
-          <th class="text-left px-4 py-3 font-medium hidden md:table-cell">Size</th>
-          <th class="text-left px-4 py-3 font-medium hidden md:table-cell">Uploaded</th>
-          <th class="text-left px-4 py-3 font-medium">Action</th>
+        <tr>
+          <th>Filename</th>
+          <th>Platform</th>
+          <th class="hidden sm:table-cell">Type</th>
+          <th class="hidden sm:table-cell">Build GUID</th>
+          <th class="hidden md:table-cell">Size</th>
+          <th class="hidden md:table-cell">Uploaded</th>
+          <th>Action</th>
         </tr>
       </thead>
       <tbody>
@@ -132,7 +138,7 @@
       items: [],
       page: 1,
       total: 0,
-      loading: false,
+      loading: false, error: '',
       showUpload: false,
       uploading: false,
       uploadMsg: '',
@@ -145,7 +151,7 @@
       },
 
       async load() {
-        this.loading = true;
+        this.loading = true; this.error = '';
         try {
           const params = new URLSearchParams({ page: String(this.page) });
           if (this.filters.platform) params.set('platform', this.filters.platform);
@@ -154,7 +160,7 @@
           this.items = data.items;
           this.total = data.total;
         } catch (err) {
-          console.error('Failed to load symbols:', err);
+          this.error = 'Failed to load symbols. Check your connection and try again.';
         }
         this.loading = false;
       },

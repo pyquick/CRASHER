@@ -1,40 +1,18 @@
 import { Router, type Request, type Response } from 'express';
-import multer from 'multer';
-import { extname } from 'path';
-import { randomBytes } from 'crypto';
 import { config } from '../config.js';
 import * as store from '../store.js';
 import { requireRole, requireApiKeyDeleteAccess } from '../middleware.js';
 import { unlink } from 'fs';
+import { detectSymbolType } from '../shared/symbol.js';
+import { getContainerScope } from '../shared/container.js';
+import { createCustomUpload } from '../shared/upload.js';
 
 const router = Router();
-
-function detectSymbolType(filename: string): string {
-  const lower = filename.toLowerCase();
-  if (lower.includes('symbolmap') || lower.endsWith('.map') || lower.endsWith('.txt')) return 'symbol_map';
-  if (lower.endsWith('.dsym') || lower.endsWith('.zip')) return 'dsym';
-  if (lower.endsWith('.so') || lower.endsWith('.sym') || lower.endsWith('.dbg')) return 'elf';
-  return 'unknown';
-}
-
-const symbolStorage = multer.diskStorage({
-  destination: config.symbolsDir,
-  filename: (_req, file, cb) => {
-    const unique = randomBytes(12).toString('hex');
-    const ext = extname(file.originalname);
-    cb(null, `${unique}${ext}`);
-  },
-});
-
-const upload = multer({
-  storage: symbolStorage,
-  limits: { fileSize: 500 * 1024 * 1024 }, // 500MB max for symbol files
-});
+const upload = createCustomUpload(config.symbolsDir, 500 * 1024 * 1024, 1);
 
 /**
  * POST /api/v1/symbols
  * Upload a symbol file.
- * Form fields: file (required), platform, build_guid
  */
 router.post(
   '/symbols',
@@ -45,10 +23,7 @@ router.post(
       try {
         const file = req.file as Express.Multer.File | undefined;
         if (!file) {
-          res.status(400).json({
-            error: 'Bad Request',
-            message: 'No file uploaded. Use field name "file".',
-          });
+          res.status(400).json({ error: 'Bad Request', message: 'No file uploaded. Use field name "file".' });
           return;
         }
 
@@ -59,14 +34,11 @@ router.post(
         const architecture = req.body?.architecture ?? '';
 
         if (!buildGuid) {
-          res.status(400).json({
-            error: 'Bad Request',
-            message: 'build_guid is required',
-          });
+          res.status(400).json({ error: 'Bad Request', message: 'build_guid is required' });
           return;
         }
 
-        const containerId = req.authUser?.role !== 'ultraadmin' ? req.authUser?.container_id ?? null : null;
+        const containerId = getContainerScope(req) ?? null;
         const symbol = store.createSymbol(
           String(platform),
           String(buildGuid),
@@ -82,10 +54,7 @@ router.post(
         res.status(201).json(symbol);
       } catch (err: any) {
         console.error('Error uploading symbol:', err);
-        res.status(500).json({
-          error: 'Internal Server Error',
-          message: err.message,
-        });
+        res.status(500).json({ error: 'Internal Server Error', message: err.message });
       }
     })();
   }
@@ -97,10 +66,8 @@ router.post(
  */
 router.get('/symbols', (req: Request, res: Response): void => {
   const q = req.query;
-  const user = req.authUser;
-  const containerId = user?.role !== 'ultraadmin' ? user?.container_id ?? null : undefined;
   const result = store.listSymbols({
-    container_id: containerId,
+    container_id: getContainerScope(req),
     page: parseInt(String(q.page), 10) || 1,
     page_size: Math.min(parseInt(String(q.page_size), 10) || 50, 200),
     platform: q.platform as string | undefined,
@@ -115,18 +82,11 @@ router.get('/symbols', (req: Request, res: Response): void => {
  */
 router.delete('/symbols/:id', requireRole('admin'), requireApiKeyDeleteAccess, (req: Request, res: Response): void => {
   const id = parseInt(String(req.params.id), 10);
-  if (isNaN(id)) {
-    res.status(400).json({ error: 'Invalid ID' });
-    return;
-  }
+  if (isNaN(id)) { res.status(400).json({ error: 'Invalid ID' }); return; }
 
   const symbol = store.getSymbolById(id);
-  if (!symbol) {
-    res.status(404).json({ error: 'Not found' });
-    return;
-  }
+  if (!symbol) { res.status(404).json({ error: 'Not found' }); return; }
 
-  // Delete file from disk
   unlink(symbol.file_path, (err) => {
     if (err && err.code !== 'ENOENT') {
       console.error('Error deleting symbol file:', err);
@@ -143,16 +103,10 @@ router.delete('/symbols/:id', requireRole('admin'), requireApiKeyDeleteAccess, (
  */
 router.get('/symbols/:id/download', requireRole('admin', 'operator'), (req: Request, res: Response): void => {
   const id = parseInt(String(req.params.id), 10);
-  if (isNaN(id)) {
-    res.status(400).json({ error: 'Invalid ID' });
-    return;
-  }
+  if (isNaN(id)) { res.status(400).json({ error: 'Invalid ID' }); return; }
 
   const symbol = store.getSymbolById(id);
-  if (!symbol) {
-    res.status(404).json({ error: 'Not found' });
-    return;
-  }
+  if (!symbol) { res.status(404).json({ error: 'Not found' }); return; }
 
   res.download(symbol.file_path, symbol.filename, (err) => {
     if (err) {

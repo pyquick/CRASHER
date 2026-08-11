@@ -1,39 +1,20 @@
 import { Router, type Request, type Response } from 'express';
-import multer from 'multer';
-import { randomBytes } from 'crypto';
-import { readFileSync, unlinkSync } from 'fs';
 import { config } from '../config.js';
 import { ingestCrash } from '../service.js';
 import * as store from '../store.js';
-import { parseDump } from '../dump/parser.js';
 import type { CrashReportInput } from '../model.js';
 import { normalizeOptionalProjectName } from '../source.js';
+import { createAttachmentUpload, cleanupUploads, getUploadedFiles, parseAttachedDumps, getClientIp, extractCrashFormFields } from '../shared/upload.js';
 
 const router = Router();
-
-// Multer setup (same as crash_report.ts)
-const attachmentStorage = multer.diskStorage({
-  destination: config.attachmentsDir,
-  filename: (_req, file, cb) => {
-    const unique = randomBytes(12).toString('hex');
-    const ext = file.originalname.split('.').pop() ?? 'bin';
-    cb(null, `${unique}.${ext}`);
-  },
-});
-
-const upload = multer({
-  storage: attachmentStorage,
-  limits: { fileSize: config.maxAttachmentSize, files: 10 },
-});
+const upload = createAttachmentUpload(10);
 
 /**
  * POST /api/v1/unity/crash-report
  * Unity-specific crash report endpoint.
  * Automatically sets runtime='unity' and maps unity_version → runtime_version.
- * Otherwise identical to the generic /crash-report endpoint.
  */
 router.post('/unity/crash-report', upload.array('attachments', 10), async (req: Request, res: Response) => {
-  // Block non-Unity clients: check User-Agent or custom header
   const ua = (req.headers['user-agent'] ?? '').toLowerCase();
   const clientTag = (req.headers['x-client-type'] as string ?? '').toLowerCase();
   if (!ua.includes('unity') && clientTag !== 'unity') {
@@ -51,12 +32,11 @@ router.post('/unity/crash-report', upload.array('attachments', 10), async (req: 
     if (req.body?.report) {
       input = typeof req.body.report === 'string' ? JSON.parse(req.body.report) : req.body.report;
     } else if (req.is('multipart/form-data')) {
-      input = extractUnityFormReport(req.body);
+      input = extractCrashFormFields(req.body ?? {}) as unknown as CrashReportInput;
     } else {
       input = req.body as CrashReportInput;
     }
 
-    // Auto-fill Unity-specific defaults
     input.runtime = 'unity';
     if (!input.runtime_version && input.unity_version) {
       input.runtime_version = input.unity_version;
@@ -82,30 +62,13 @@ router.post('/unity/crash-report', upload.array('attachments', 10), async (req: 
       input.log_text = input.log_text.substring(0, config.maxLogSize) + '\n...[truncated]';
     }
 
-    const clientIp = req.ip ?? req.socket?.remoteAddress ?? 'unknown';
+    const clientIp = getClientIp(req);
     const now = new Date().toISOString();
-
-    let dumpInfo = '';
-    const files = (req as any).files as Express.Multer.File[] | undefined;
-    const singleFile = (req as any).file as Express.Multer.File | undefined;
-    const allFiles = files || (singleFile ? [singleFile] : []);
-
-    if (allFiles.length > 0) {
-      const parsedDumps: any[] = [];
-      for (const file of allFiles) {
-        try {
-          const buffer = readFileSync(file.path);
-          const dump = parseDump(buffer, file.originalname, file.mimetype);
-          if (dump) parsedDumps.push({ source_file: file.originalname, ...dump });
-        } catch (parseErr: any) {
-          console.warn(`[unity/dump] Parse error for ${file.originalname}:`, parseErr.message);
-        }
-      }
-      if (parsedDumps.length > 0) dumpInfo = JSON.stringify(parsedDumps);
-    }
+    const dumpInfo = parseAttachedDumps(req);
 
     const result = await ingestCrash(input, clientIp, now, dumpInfo);
 
+    const allFiles = getUploadedFiles(req);
     if (allFiles.length > 0) {
       for (const file of allFiles) {
         store.createAttachment(result.report.id, file.originalname, file.mimetype, file.size, file.path);
@@ -124,39 +87,5 @@ router.post('/unity/crash-report', upload.array('attachments', 10), async (req: 
     res.status(500).json({ error: 'Internal Server Error', message: 'Could not ingest Unity crash report' });
   }
 });
-
-function cleanupUploads(req: Request): void {
-  const files = ((req as any).files ?? []) as Express.Multer.File[];
-  for (const file of files) {
-    try { unlinkSync(file.path); } catch {}
-  }
-}
-
-function extractUnityFormReport(body: Record<string, unknown>): CrashReportInput {
-  const s = (k: string) => String(body[k] ?? '');
-  return {
-    exception_type: s('exception_type'),
-    project_name: s('project_name'),
-    exception_message: s('exception_message'),
-    stack_trace: s('stack_trace'),
-    log_text: s('log_text'),
-    runtime: 'unity',
-    runtime_version: s('unity_version'),
-    framework: 'unity',
-    unity_version: s('unity_version'),
-    platform: s('platform'),
-    device_model: s('device_model'),
-    os_version: s('os_version'),
-    gpu_name: s('gpu_name'),
-    cpu_name: s('cpu_name'),
-    memory_mb: body.memory_mb ? parseInt(String(body.memory_mb), 10) || 0 : undefined,
-    app_version: s('app_version'),
-    bundle_id: s('bundle_id'),
-    scene_name: s('scene_name'),
-    custom_data: body.custom_data as any,
-    client_timestamp: s('client_timestamp'),
-    build_guid: s('build_guid'),
-  };
-}
 
 export default router;

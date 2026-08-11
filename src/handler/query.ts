@@ -1,13 +1,13 @@
 import { Router, type Request, type Response } from 'express';
 import multer from 'multer';
-import { getDb } from '../database.js';
 import * as store from '../store.js';
 import { analyzeCrash } from '../analysis/analyzer.js';
 import { createTarGz, extractTarGzFile, cleanupArchive } from '../archive.js';
-import { createReadStream, existsSync, unlinkSync, writeFileSync, readFileSync, mkdirSync, statSync } from 'fs';
-import { join } from 'path';
+import { createReadStream, existsSync, unlinkSync, readFileSync } from 'fs';
 import { config } from '../config.js';
 import { requireRole } from '../middleware.js';
+import { importCrashPackage, extractImportBuffer } from '../service/import.js';
+import { getContainerScope } from '../shared/container.js';
 import type { CrashReport, CrashAttachment } from '../model.js';
 
 /**
@@ -19,12 +19,6 @@ const importUpload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 64 * 1024 * 1024, files: 1 },
 });
-
-function getContainerScope(req: Request): number | null | undefined {
-  const user = req.authUser;
-  if (!user || user.role === 'ultraadmin') return undefined; // ultraadmin sees all (undefined = no filter)
-  return user.container_id ?? null;
-}
 
 // ── Crash group query routes ──
 
@@ -268,263 +262,22 @@ router.get('/export/group/:id', requireRole('admin', 'operator'), (req, res) => 
 
 /**
  * POST /api/v1/import
- * Import a .crashpkg (tar.gz) file. Accepts multipart/form-data with a single
- * "package" file field.
- *
- * Query params:
- *   ?confirm=true  — actually write to DB (otherwise dry-run)
+ * Import a .crashpkg (tar.gz) file.
+ * Query params: ?confirm=true — actually write to DB (otherwise dry-run)
  */
-router.post('/import', requireRole('admin', 'operator'), importUpload.single('package'), async (req, res) => {
+router.post('/import', requireRole('admin', 'operator'), importUpload.single('package'), (req, res) => {
   try {
-    // This endpoint needs raw body/multer. We handle it inline since we already
-    // have a body parser set up. Check if we got a file via multer-like interface
-    // or use a simple approach: accept base64-encoded package in JSON body, OR
-    // use a dedicated multer upload here.
-
-    // For simplicity, accept the .crashpkg as raw body (Content-Type: application/gzip
-    // or application/octet-stream), or as multipart with field "package".
-
-    // Express 5 body parsers handle this — but the simplest approach for the UI
-    // is to accept multipart. Since this route is under queryHandler which doesn't
-    // have multer, we'll handle both cases.
-
-    const confirm = req.query.confirm === 'true';
-    let pkgBuffer: Buffer | null = null;
-
-    // Check for multipart file upload (if multer was applied)
-    const files = (req as any).files as any[] | undefined;
-    const file = (req as any).file;
-    if (files?.[0]?.buffer) {
-      pkgBuffer = files[0].buffer;
-    } else if (file?.buffer) {
-      pkgBuffer = file.buffer;
-    } else if (Buffer.isBuffer((req as any).body)) {
-      // Raw binary body
-      pkgBuffer = (req as any).body;
-    } else if (typeof (req as any).body === 'string' && (req as any).body.startsWith('data:')) {
-      // Data URL (from file input via JS)
-      const b64 = (req as any).body.split(',')[1];
-      pkgBuffer = Buffer.from(b64, 'base64');
-    } else if ((req as any).body?.data) {
-      // JSON wrapper with base64 data
-      pkgBuffer = Buffer.from((req as any).body.data, 'base64');
-    }
-
+    const pkgBuffer = extractImportBuffer(req);
     if (!pkgBuffer || pkgBuffer.length === 0) {
       res.status(400).json({ error: 'Bad Request', message: 'No package data received. Send a .crashpkg file as multipart/form-data with field name "package".' });
       return;
     }
-
-    // Save to temp file for extraction
-    const tmpDir = join(config.dataDir, 'tmp');
-    mkdirSync(tmpDir, { recursive: true });
-    const tmpFile = join(tmpDir, `import-${Date.now()}.crashpkg`);
-    writeFileSync(tmpFile, pkgBuffer);
-
-    let entries;
-    try {
-      entries = extractTarGzFile(tmpFile);
-    } catch (extractErr: any) {
-      unlinkSync(tmpFile);
-      res.status(400).json({ error: 'Bad Package', message: 'Failed to extract .crashpkg: ' + extractErr.message });
-      return;
-    }
-    unlinkSync(tmpFile);
-
-    // Parse manifest
-    const manifestEntry = entries.find(e => e.name === 'manifest.json');
-    if (!manifestEntry) {
-      res.status(400).json({ error: 'Bad Package', message: 'manifest.json not found in package' });
-      return;
-    }
-
-    let manifest: any;
-    try {
-      manifest = JSON.parse(manifestEntry.data.toString('utf-8'));
-    } catch {
-      res.status(400).json({ error: 'Bad Package', message: 'manifest.json is not valid JSON' });
-      return;
-    }
-
-    if (!manifest.group || !Array.isArray(manifest.report_ids)) {
-      res.status(400).json({ error: 'Bad Package', message: 'Invalid manifest format' });
-      return;
-    }
-
-    // Check for conflicts
-    const conflicts: Array<{ type: string; detail: string }> = [];
-    const existingGroup = store.findGroupByHash(manifest.group.crash_hash);
-    if (existingGroup) {
-      conflicts.push({
-        type: 'group_hash_conflict',
-        detail: `Group hash ${manifest.group.crash_hash} already exists (id=${existingGroup.id}, type=${existingGroup.exception_type})`,
-      });
-    }
-
-    const result: any = {
-      dry_run: !confirm,
-      conflicts: conflicts.length > 0 ? conflicts : undefined,
-      new_groups: conflicts.length > 0 ? 0 : 1,
-      new_reports: manifest.report_count,
-      new_attachments: 0,
-    };
-
-    if (!confirm) {
-      // Dry-run only
-      // Count expected attachments
-      let attCount = 0;
-      for (const entry of entries) {
-        const name = entry.name;
-        if (name.match(/^reports\/\d+\/(?!attachments\.json)[^/]+$/)) {
-          attCount++;
-        }
-      }
-      result.new_attachments = attCount;
-      res.json(result);
-      return;
-    }
-
-    // ── Confirmed: write to DB ──
-    const now = new Date().toISOString();
-    const importContainerId = getContainerScope(req) ?? null;
-
-    const manifestProjectName = typeof manifest.group.project_name === 'string' ? manifest.group.project_name.trim() : '';
-    const manifestProject = manifestProjectName ? store.getOrCreateProject(manifestProjectName, now, importContainerId) : undefined;
-
-    // Map old report IDs to new report IDs for attachment linking
-    const oldToNewId = new Map<number, number>();
-
-    // Create group (skip if hash exists)
-    let groupId: number;
-    if (existingGroup) {
-      groupId = existingGroup.id;
-      result.new_groups = 0;
-    } else {
-      const newGroup = store.createGroup(
-        manifest.group.crash_hash,
-        manifest.group.exception_type,
-        manifest.group.exception_message || '',
-        now,
-        manifestProject?.id ?? null,
-        importContainerId,
-      );
-      groupId = newGroup.id;
-    }
-
-    let importedReports = 0;
-    let importedAtts = 0;
-
-    // Re-create each report
-    for (const oldId of manifest.report_ids) {
-      const reportEntry = entries.find(e => e.name === `reports/${oldId}.json`);
-      if (!reportEntry) {
-        console.warn(`[import] Report ${oldId}.json not found in package, skipping`);
-        continue;
-      }
-
-      let reportData: any;
-      try {
-        reportData = JSON.parse(reportEntry.data.toString('utf-8'));
-      } catch {
-        console.warn(`[import] Report ${oldId}.json parse error, skipping`);
-        continue;
-      }
-
-      const importProjectName = typeof reportData.project_name === 'string' ? reportData.project_name.trim() : '';
-      const importProject = importProjectName ? store.getOrCreateProject(importProjectName, now, importContainerId) : undefined;
-
-      // Create the report with the new group ID
-      const newReport = store.createReport(
-        {
-          exception_type: reportData.exception_type,
-          project_name: importProjectName,
-          exception_message: reportData.exception_message,
-          stack_trace: reportData.stack_trace,
-          log_text: reportData.log_text,
-          runtime: reportData.runtime,
-          runtime_version: reportData.runtime_version,
-          framework: reportData.framework,
-          environment: reportData.environment,
-          server_name: reportData.server_name,
-          release: reportData.release,
-          error_severity: reportData.error_severity || 'error',
-          unity_version: reportData.unity_version,
-          platform: reportData.platform,
-          device_model: reportData.device_model,
-          os_version: reportData.os_version,
-          gpu_name: reportData.gpu_name,
-          cpu_name: reportData.cpu_name,
-          memory_mb: reportData.memory_mb,
-          app_version: reportData.app_version,
-          bundle_id: reportData.bundle_id,
-          scene_name: reportData.scene_name,
-          custom_data: reportData.custom_data,
-          client_timestamp: reportData.client_timestamp,
-          build_guid: reportData.build_guid,
-        },
-        groupId,
-        reportData.client_ip || 'imported',
-        reportData.created_at || now,
-        reportData.dump_info || '',
-        importProject?.id ?? null,
-        importContainerId,
-      );
-
-      oldToNewId.set(oldId, newReport.id);
-      importedReports++;
-
-      // Also update symbolication fields if present
-      if (reportData.symbolicated_stack || reportData.symbolication_status) {
-        store.updateReportSymbolication(newReport.id, {
-          stack: reportData.symbolicated_stack || '',
-          status: reportData.symbolication_status || 'not_applicable',
-          symbol_id: undefined,
-          frames: [],
-          warnings: [],
-        });
-      }
-
-      // Restore attachments for this report
-      const attMetaEntry = entries.find(e => e.name === `reports/${oldId}/attachments.json`);
-      let attMetas: any[] = [];
-      if (attMetaEntry) {
-        try { attMetas = JSON.parse(attMetaEntry.data.toString('utf-8')); } catch {}
-      }
-
-      for (const attMeta of attMetas) {
-        const attEntry = entries.find(e =>
-          e.name === attMeta.entry_name ||
-          e.name === `reports/${oldId}/${attMeta.filename}`
-        );
-        if (!attEntry) {
-          console.warn(`[import] Attachment data for ${attMeta.filename} not found`);
-          continue;
-        }
-
-        const safeFilename = attMeta.filename.replace(/[^\w.\-]/g, '_');
-        const attPath = join(config.attachmentsDir, `imported-${newReport.id}-${safeFilename}`);
-        writeFileSync(attPath, attEntry.data);
-
-        store.createAttachment(
-          newReport.id,
-          attMeta.filename,
-          attMeta.content_type || 'application/octet-stream',
-          attEntry.data.length,
-          attPath
-        );
-        importedAtts++;
-      }
-    }
-
-    result.new_groups = existingGroup ? 0 : 1;
-    result.new_reports = importedReports;
-    result.new_attachments = importedAtts;
-    result.group_id = groupId;
-
-    res.status(201).json(result);
+    const result = importCrashPackage(pkgBuffer, req.query.confirm === 'true', getContainerScope(req) ?? null);
+    res.status(req.query.confirm === 'true' ? 201 : 200).json(result);
   } catch (err: any) {
     console.error('[import] Error:', err);
-    res.status(500).json({ error: 'Import failed', message: err.message });
+    res.status(err.message.startsWith('Failed') || err.message.startsWith('manifest') || err.message.startsWith('Invalid') ? 400 : 500)
+      .json({ error: err.message.includes('manifest') || err.message.includes('Invalid') ? 'Bad Package' : 'Import failed', message: err.message });
   }
 });
 
@@ -537,21 +290,11 @@ router.get('/projects', (req, res) => {
 });
 
 router.get('/platforms', (req, res) => {
-  const containerId = getContainerScope(req);
-  if (containerId) {
-    res.json((getDb().prepare("SELECT DISTINCT platform FROM crash_reports WHERE platform != '' AND container_id = ? ORDER BY platform").all(containerId) as any[]).map(r => r.platform));
-  } else {
-    res.json((getDb().prepare("SELECT DISTINCT platform FROM crash_reports WHERE platform != '' ORDER BY platform").all() as any[]).map(r => r.platform));
-  }
+  res.json(store.listDistinctPlatforms(getContainerScope(req)));
 });
 
 router.get('/versions', (req, res) => {
-  const containerId = getContainerScope(req);
-  if (containerId) {
-    res.json((getDb().prepare("SELECT DISTINCT app_version FROM crash_reports WHERE app_version != '' AND container_id = ? ORDER BY app_version DESC LIMIT 50").all(containerId) as any[]).map(r => r.app_version));
-  } else {
-    res.json((getDb().prepare("SELECT DISTINCT app_version FROM crash_reports WHERE app_version != '' ORDER BY app_version DESC LIMIT 50").all() as any[]).map(r => r.app_version));
-  }
+  res.json(store.listDistinctVersions(getContainerScope(req)));
 });
 
 // ── Player feedback management routes ──
@@ -670,31 +413,10 @@ router.get('/download/dump/:reportId', requireRole('admin', 'operator'), (req, r
 // ── Admin: Clear all crashes ──
 
 router.post('/clear-crashes', requireRole('admin'), (req, res) => {
-  const db = getDb();
-  const containerId = getContainerScope(req);
-  let attachmentQuery, reportQuery, groupQuery;
-  let params: unknown[] = [];
-  if (containerId) {
-    attachmentQuery = "SELECT ca.file_path FROM crash_attachments ca JOIN crash_reports cr ON cr.id = ca.crash_report_id WHERE cr.container_id = ?";
-    reportQuery = 'DELETE FROM crash_reports WHERE container_id = ?';
-    groupQuery = 'DELETE FROM crash_groups WHERE container_id = ?';
-    params = [containerId];
-  } else {
-    attachmentQuery = 'SELECT file_path FROM crash_attachments';
-    reportQuery = 'DELETE FROM crash_reports';
-    groupQuery = 'DELETE FROM crash_groups';
+  const paths = store.clearAllCrashes(getContainerScope(req));
+  for (const p of paths) {
+    try { if (existsSync(p)) unlinkSync(p); } catch {}
   }
-  const attachments = db.prepare(attachmentQuery).all(...params);
-  for (const a of attachments as { file_path: string }[]) {
-    try { if (existsSync(a.file_path)) unlinkSync(a.file_path); } catch {}
-  }
-  if (containerId) {
-    db.prepare('DELETE FROM crash_attachments WHERE crash_report_id IN (SELECT id FROM crash_reports WHERE container_id = ?)').run(containerId);
-  } else {
-    db.exec('DELETE FROM crash_attachments');
-  }
-  db.prepare(reportQuery).run(...params);
-  db.prepare(groupQuery).run(...params);
   res.json({ success: true, message: 'All crash data cleared' });
 });
 

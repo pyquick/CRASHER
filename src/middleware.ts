@@ -4,6 +4,7 @@ import { config } from './config.js';
 import * as auth from './auth.js';
 import type { AuthenticatedUser, UserRole } from './model.js';
 import { CONTAINER_TIER_LIMITS } from './model.js';
+import { setSessionCookie, clearCookie } from './shared/cookie.js';
 
 const CSRF_COOKIE = 'csrf_token';
 const MUTATING_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
@@ -79,7 +80,7 @@ export function authenticateSession(req: Request, _res: Response, next: NextFunc
 function authenticateSessionUser(req: Request): AuthenticatedUser | null {
   const token = readSession(req);
   if (!token) return null;
-  const session = auth.getValidSession(token.sessionId, new Date().toISOString());
+  const session = auth.getValidSession(token.sessionId);
   if (!session) return null;
   req.authType = 'session';
   req.authUser = session.user;
@@ -254,8 +255,8 @@ export function requireContainerAccess(req: Request, res: Response, next: NextFu
     // Clear session
     const session = readSession(req);
     if (session) auth.deleteSession(session.sessionId);
-    res.clearCookie('auth_token', { path: '/', secure: config.cookieSecure, sameSite: 'strict' });
-    res.clearCookie('csrf_token', { path: '/', secure: config.cookieSecure, sameSite: 'strict' });
+    clearCookie(res, 'auth_token');
+    clearCookie(res, 'csrf_token');
     res.status(403).json({
       error: 'Forbidden',
       message: 'Your container has been suspended. Please contact your administrator.',
@@ -320,70 +321,11 @@ export function requireCsrf(req: Request, res: Response, next: NextFunction): vo
 
 export function setCsrfCookie(res: Response): string {
   const token = randomBytes(32).toString('base64url');
-  res.cookie(CSRF_COOKIE, token, {
-    httpOnly: false,
-    secure: config.cookieSecure,
-    sameSite: 'strict',
-    maxAge: config.sessionHours * 60 * 60 * 1000,
-    path: '/',
-  });
+  setSessionCookie(res, CSRF_COOKIE, token, config.sessionHours * 60 * 60 * 1000, false);
   return token;
 }
 
-interface RateLimitEntry {
-  count: number;
-  resetAt: number;
-}
-
-export function rateLimit(options: { windowMs: number; limit: number; key?: (req: Request) => string }) {
-  const entries = new Map<string, RateLimitEntry>();
-  return (req: Request, res: Response, next: NextFunction): void => {
-    const now = Date.now();
-    const key = options.key?.(req) ?? req.ip ?? req.socket.remoteAddress ?? 'unknown';
-    const current = entries.get(key);
-    const entry = !current || current.resetAt <= now
-      ? { count: 1, resetAt: now + options.windowMs }
-      : { count: current.count + 1, resetAt: current.resetAt };
-    entries.set(key, entry);
-
-    res.setHeader('RateLimit-Limit', options.limit);
-    res.setHeader('RateLimit-Remaining', Math.max(0, options.limit - entry.count));
-    res.setHeader('RateLimit-Reset', Math.ceil(entry.resetAt / 1000));
-    if (entry.count > options.limit) {
-      res.setHeader('Retry-After', Math.max(1, Math.ceil((entry.resetAt - now) / 1000)));
-      res.status(429).json({ error: 'Too Many Requests', message: 'Rate limit exceeded' });
-      return;
-    }
-
-    if (entries.size > 10000) {
-      for (const [storedKey, stored] of entries) {
-        if (stored.resetAt <= now) entries.delete(storedKey);
-      }
-    }
-    next();
-  };
-}
-
-export function apiKeyRateLimit(windowSeconds: number, limitField: 'minute_limit' | 'daily_limit') {
-  return (req: Request, res: Response, next: NextFunction): void => {
-    const limit = req.apiKeyLimits?.[limitField] ?? 0;
-    if (req.authType !== 'api_key' || !req.apiKeyId || limit === 0) {
-      next();
-      return;
-    }
-
-    const quota = auth.consumeApiKeyQuota(req.apiKeyId, windowSeconds, limit);
-    res.setHeader('RateLimit-Limit', limit);
-    res.setHeader('RateLimit-Remaining', quota.remaining);
-    res.setHeader('RateLimit-Reset', quota.resetAt);
-    if (!quota.allowed) {
-      res.setHeader('Retry-After', Math.max(1, quota.resetAt - Math.floor(Date.now() / 1000)));
-      res.status(429).json({ error: 'Too Many Requests', message: 'API key rate limit exceeded' });
-      return;
-    }
-    next();
-  };
-}
+export { createMemoryRateLimiter as rateLimit, createApiKeyRateLimiter as apiKeyRateLimit } from './shared/rate-limit.js';
 
 export { readSession };
 
@@ -391,13 +333,7 @@ const MFA_COOKIE = 'mfa_token';
 
 export function setMfaCookie(res: Response, token?: string): string {
   const mfaToken = token || randomBytes(32).toString('base64url');
-  res.cookie(MFA_COOKIE, mfaToken, {
-    httpOnly: true,
-    secure: config.cookieSecure,
-    sameSite: 'strict',
-    maxAge: 5 * 60 * 1000, // 5 minutes
-    path: '/',
-  });
+  setSessionCookie(res, MFA_COOKIE, mfaToken, 5 * 60 * 1000);
   return mfaToken;
 }
 
@@ -406,5 +342,5 @@ export function readMfaToken(req: Request): string | undefined {
 }
 
 export function clearMfaCookie(res: Response): void {
-  res.clearCookie(MFA_COOKIE, { path: '/', secure: config.cookieSecure, sameSite: 'strict' });
+  clearCookie(res, MFA_COOKIE);
 }

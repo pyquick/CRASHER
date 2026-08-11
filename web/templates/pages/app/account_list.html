@@ -113,8 +113,9 @@
     </form>
     <p x-show="message" x-text="message" class="text-sm mb-4" :class="failed ? 'text-red-400' : 'text-green-400'"></p>
     <div class="overflow-x-auto">
-      <table class="w-full text-sm">
-        <thead class="text-gray-500 border-b border-gray-800"><tr><th class="text-left py-2">Username</th><th class="text-left">Role</th><th class="text-left">Status</th><th class="text-left">Last login</th><th class="text-right">Actions</th></tr></thead>
+      <div x-show="loading" class="text-center py-4 text-gray-400">Loading...</div>
+      <table class="data-table" x-show="!loading">
+        <thead><tr><th>Username</th><th>Role</th><th>Status</th><th>Last login</th><th class="text-right">Actions</th></tr></thead>
         <tbody>
           <template x-for="user in users" :key="user.id">
             <tr class="border-b border-gray-800/60">
