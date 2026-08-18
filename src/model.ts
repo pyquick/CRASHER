@@ -11,6 +11,23 @@ export const CONTAINER_TIER_LIMITS: Record<ContainerTier, number> = {
   5: 1024 * 1024 * 1024 * 1024, // 1 TB
 };
 
+export interface SourceUploadLimits {
+  maxFiles: number;
+  maxBytes: number;
+}
+
+/**
+ * Per-container-tier limits for source snapshot uploads (POST /api/v1/project-sources).
+ * null means no tier-level limit (T4/T5) — only the server-wide config caps apply.
+ */
+export const CONTAINER_SOURCE_LIMITS: Record<ContainerTier, SourceUploadLimits | null> = {
+  1: { maxFiles: 10, maxBytes: 2 * 1024 * 1024 },
+  2: { maxFiles: 500, maxBytes: 200 * 1024 * 1024 },
+  3: { maxFiles: 50000, maxBytes: 5 * 1024 * 1024 * 1024 },
+  4: null,
+  5: null,
+};
+
 export interface Container {
   id: number;
   name: string;
@@ -26,6 +43,7 @@ export interface Container {
 export interface ContainerStatus {
   container: Container;
   storage_bytes: number;
+  source_bytes: number;
   limit_bytes: number;
   usage_percent: number;
   is_over_limit: boolean;

@@ -1,0 +1,5 @@
+Unhandled exception:
+NoSuchMethodError: The method 'render' was called on null.
+#0      GameRenderer.render (package:my_game/src/renderer.dart:42:7)
+#1      GameLoop.tick (package:my_game/src/loop.dart:18:12)
+#2      _RootZone.runUnary (dart:async/zone.dart:1650:54)

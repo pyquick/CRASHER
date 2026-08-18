@@ -1,0 +1,2 @@
+/lib/x86_64/libunity.so(+0x12345) [0x7f8a2b3c4d5e]
+/app/game(+0xabcde) [0x7f8a2b3c4d6f]

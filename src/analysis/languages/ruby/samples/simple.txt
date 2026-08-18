@@ -1,0 +1,2 @@
+/app/lib/job.rb:42:in `run'
+/app/lib/job.rb:10:in `block in run'

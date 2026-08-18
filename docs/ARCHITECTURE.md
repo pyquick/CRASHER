@@ -75,7 +75,11 @@ src/
 │   ├── import.ts                   #   崩溃包导入
 │   └── notification.ts            #   邮件/Webhook 通知
 │
-├── analysis/                       # 崩溃分析引擎
+├── analysis/                       # 崩溃分析引擎(按语言拆分)
+│   ├── parser.ts / registry.ts     #   语言检测与解析分发(profile 注册表)
+│   ├── analyzer.ts                 #   analyzeCrash 编排
+│   ├── common/                     #   通用逻辑(路径/severity/树/摘要/源码分析)
+│   └── languages/<lang>/           #   每语言:parser + profile 分析表 + samples
 ├── dump/                           # 原生 Dump 解析（Android/iOS/Windows/Unity）
 ├── symbolication/                  # Unity IL2CPP 符号化
 ├── archive/                        # tar.gz 打包/解包

@@ -1,0 +1,7 @@
+PHP Fatal error:  Uncaught Exception: Division by zero error in /var/www/html/app/Calculator.php:42
+Stack trace:
+#0 /var/www/html/app/Calculator.php(42): App\Calculator->divide(10, 0)
+#1 /var/www/html/app/Controllers/ReportController.php(87): App\Calculator->divide(10, 0)
+#2 /var/www/html/vendor/symfony/http-kernel/HttpKernel.php(79): App\Controllers\ReportController->generate()
+#3 /var/www/html/index.php(55): require_once('/var/www/html/v...')
+  thrown in /var/www/html/app/Calculator.php on line 42

@@ -50,6 +50,8 @@ X-CSRF-Token: yyy  (修改操作必须)
 |------|------|------|------|
 | POST | `/project-sources` | API Key | 上传源码快照 (.tar.gz 或散文件) |
 
+按容器 Tier 限制：T1 10 文件 / 2 MB，T2 500 文件 / 200 MB，T3 50000 文件 / 5 GB，T4/T5 无 Tier 限制（仅受 `MAX_SOURCE_FILES` / `MAX_SOURCE_ARCHIVE_SIZE` 服务器全局上限约束）。
+
 ### 玩家反馈
 
 | 方法 | 路径 | 鉴权 | 说明 |

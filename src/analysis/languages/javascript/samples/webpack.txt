@@ -1,0 +1,3 @@
+TypeError: e.map is not a function
+    at https://cdn.example.com/static/js/chunk-vendors.js:1:1234
+    at renderList (https://cdn.example.com/static/js/app.js:42:7)

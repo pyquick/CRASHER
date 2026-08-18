@@ -1,0 +1,7 @@
+Exception in thread "main" java.lang.NullPointerException: Cannot invoke "String.length()" because "name" is null
+	at com.example.service.UserService.getDisplayName(UserService.java:42)
+	at com.example.controller.UserController.list(UserController.java:18)
+	at java.base/jdk.internal.reflect.NativeMethodAccessorImpl.invoke0(Native Method)
+	at org.springframework.web.method.support.InvocableHandlerMethod.invokeForRequest(InvocableHandlerMethod.java:150)
+Caused by: java.lang.IllegalStateException: user not initialized
+	... 23 more

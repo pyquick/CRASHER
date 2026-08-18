@@ -1,0 +1,3 @@
+kotlin.UninitializedPropertyAccessException: lateinit property config has not been initialized
+	at com.example.app.MainActivity.onCreate(MainActivity.kt:25)
+	at android.app.Activity.performCreate(Activity.java:8180)

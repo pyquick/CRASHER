@@ -130,3 +130,48 @@ export interface CrashAnalysis {
   /** Source-code evidence, when a project source snapshot is available */
   source_analysis?: SourceAnalysis;
 }
+
+/** An uploaded source file in a project source snapshot. */
+export interface AnalysisSourceFile {
+  relative_path: string;
+  language: string;
+  content: string;
+}
+
+/** A project source snapshot uploaded for source-code analysis. */
+export interface AnalysisSourceSnapshot {
+  project_name: string;
+  requested_release: string;
+  snapshot_release: string;
+  snapshot_id: number;
+  match_type: 'exact' | 'latest';
+  files: AnalysisSourceFile[];
+}
+
+/**
+ * Per-language analysis table (分析表) — everything a single language family
+ * needs for detection, frame classification, advice, and log extraction.
+ * Each languages/<lang>/profile.ts exports one of these.
+ */
+export interface LanguageProfile {
+  /** Language ids covered by this profile (e.g. ['javascript','typescript','node','browser']) */
+  ids: string[];
+  /** Display label per id */
+  labels: Record<string, string>;
+  /** Lowercased runtime hint string → detected id */
+  runtimeHints: Record<string, string>;
+  /** Detect the language from stack trace content; returns an id or null */
+  detect: (stackTrace: string) => string | null;
+  /** Framework-code patterns per id, used by severity classification */
+  frameworkPatterns: Record<string, RegExp[]>;
+  /** Exception-type → advice per id */
+  advice: Record<string, Record<string, string>>;
+  /** Default advice per id */
+  defaultAdvice: Record<string, string>;
+  /** Function declaration regex per source-file language (source analysis) */
+  functionDeclarations: Record<string, RegExp>;
+  /** Definition regex factory per source-file language (source analysis) */
+  definitionPatterns: Record<string, (name: string) => RegExp>;
+  /** Extract a stack trace from raw log text for an id; '' when not found */
+  extractFromLog: (logText: string, id: string) => string;
+}

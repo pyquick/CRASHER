@@ -1,0 +1,5 @@
+stack traceback:
+	[C]: in function 'error'
+	/usr/share/lua/5.1/modules/game.lua:42: in function 'update'
+	/app/src/main.lua:15: in main chunk
+	[C]: in ?

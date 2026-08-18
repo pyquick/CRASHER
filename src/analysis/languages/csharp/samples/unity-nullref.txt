@@ -1,0 +1,5 @@
+NullReferenceException: Object reference not set to an instance of an object
+  at PlayerController.Update () [0x0001f] in <8f2c3a1d4b5e6f7a8b9c0d1e2f3a4b5c>:0
+  at UnityEngine.Component.SendMessage (System.String methodName, System.Object value) [0x00000] in <00000000000000000000000000000000>:0
+  at GameManager.SpawnEnemy (System.Int32 count) [0x0002a] in C:\build\Assets\Scripts\GameManager.cs:line 145
+  at GameManager.Start () [0x00010] in C:\build\Assets\Scripts\GameManager.cs:line 30

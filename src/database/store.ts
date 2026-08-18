@@ -65,10 +65,10 @@ export function listProjects(containerId?: number | null): Array<Project & { cra
   `).all() as Array<Project & { crash_count: number }>;
 }
 
-export function createSourceSnapshot(projectId: number, release: string, now: string): SourceSnapshot {
+export function createSourceSnapshot(projectId: number, release: string, now: string, containerId?: number | null): SourceSnapshot {
   const result = getDb().prepare(
-    'INSERT INTO source_snapshots (project_id, release, created_at) VALUES (?, ?, ?)'
-  ).run(projectId, release, now);
+    'INSERT INTO source_snapshots (project_id, release, container_id, created_at) VALUES (?, ?, ?, ?)'
+  ).run(projectId, release, containerId ?? null, now);
   return getDb().prepare('SELECT * FROM source_snapshots WHERE id = ?')
     .get(Number(result.lastInsertRowid)) as SourceSnapshot;
 }

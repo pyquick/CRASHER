@@ -90,11 +90,13 @@ export function getContainerStatus(containerId: number): ContainerStatus | null 
   if (!container) return null;
 
   const storageBytes = getContainerStorageSize(containerId);
+  const sourceBytes = store.sumSourceSize(containerId);
   const limitBytes = CONTAINER_TIER_LIMITS[container.tier as ContainerTier];
 
   return {
     container,
     storage_bytes: storageBytes,
+    source_bytes: sourceBytes,
     limit_bytes: limitBytes,
     usage_percent: limitBytes > 0 ? (storageBytes / limitBytes) * 100 : 0,
     is_over_limit: storageBytes > limitBytes,

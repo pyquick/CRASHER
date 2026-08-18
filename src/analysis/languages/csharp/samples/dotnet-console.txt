@@ -1,0 +1,4 @@
+System.NullReferenceException: Object reference not set to an instance of an object.
+   at MyApp.Program.ProcessData(String input) in /home/runner/work/app/src/Program.cs:line 42
+   at MyApp.Program.Main(String[] args) in /home/runner/work/app/src/Program.cs:line 15
+   at System.RuntimeMethodHandle.InvokeMethod(Object target, Void** arguments, Signature sig, Boolean isConstructor)

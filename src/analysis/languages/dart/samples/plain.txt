@@ -1,0 +1,2 @@
+package:my_app/src/screens/home.dart 42:7  HomeScreen.build
+package:flutter/src/widgets/framework.dart 5244:19  ComponentElement.performRebuild

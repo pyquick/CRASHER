@@ -1,0 +1,4 @@
+** (ArgumentError) argument error
+    (elixir 1.15.0) lib/enum.ex:2510: Enum.reduce/3
+    (my_app 0.1.0) lib/my_app/workers/pipeline.ex:42: MyApp.Workers.Pipeline.process/1
+    (stdlib 4.2) lists.erl:1462: :lists.do_map/2

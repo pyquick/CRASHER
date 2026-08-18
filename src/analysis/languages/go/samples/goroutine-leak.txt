@@ -1,0 +1,5 @@
+goroutine 18 [chan receive]:
+main.worker()
+	/app/src/worker.go:87 +0x8c
+created by main.main
+	/app/src/main.go:30 +0x3f

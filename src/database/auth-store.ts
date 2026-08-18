@@ -260,6 +260,12 @@ export function sumSymbolSize(containerId: number): number {
   return (getDb().prepare('SELECT COALESCE(SUM(file_size), 0) AS c FROM symbols WHERE container_id = ?').get(containerId) as { c: number }).c;
 }
 
+export function sumSourceSize(containerId: number): number {
+  return (getDb().prepare(
+    'SELECT COALESCE(SUM(sf.file_size), 0) AS c FROM source_files sf JOIN source_snapshots ss ON ss.id = sf.snapshot_id JOIN projects p ON p.id = ss.project_id WHERE p.container_id = ?'
+  ).get(containerId) as { c: number }).c;
+}
+
 export function countUsersInContainer(containerId: number): number {
   return (getDb().prepare("SELECT COUNT(*) AS c FROM users WHERE container_id = ? AND role != 'ultraadmin'").get(containerId) as { c: number }).c;
 }

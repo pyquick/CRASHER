@@ -208,14 +208,22 @@ multipart 字段：
 |---|---|---|
 | `project_name` | 是 | 1–100 字符，与崩溃上报使用相同名称 |
 | `release` | 否 | 最多 200 字符；建议与崩溃报告完全一致 |
-| `files` | 二选一 | 可重复提交的散装源码文件，单次最多 100 个 |
+| `files` | 二选一 | 可重复提交的散装源码文件，数量受 Tier 限制 |
 | `archive` | 二选一 | 一个 `.tar.gz` 或 `.tgz` 项目包 |
 
-散装文件与压缩包可以同时上传。每次成功请求创建一个不可变快照。默认限制：
+散装文件与压缩包可以同时上传。每次成功请求创建一个不可变快照。按容器 Tier 限制：
 
-- 单源码文件最大 2 MiB
-- 上传/解包后总量最大 64 MiB
-- 快照最多 5000 个受支持文本源码文件
+| Tier | 文件数上限 | 总大小上限 |
+|------|-----------|-----------|
+| T1 | 10 | 2 MB |
+| T2 | 500 | 200 MB |
+| T3 | 50000 | 5 GB |
+| T4 / T5 | 无 Tier 限制 | 无 Tier 限制 |
+
+T4/T5 仅受服务器全局配置上限约束（`MAX_SOURCE_FILES`、`MAX_SOURCE_ARCHIVE_SIZE`）。通用限制：
+
+- 任意文本文件均可上传（不限扩展名、不限语言；非 Unity 项目同样支持），未知扩展名标记为 `text`
+- 单源码文件最大 2 MiB（`MAX_SOURCE_FILE_SIZE`）
 - 拒绝绝对路径、`..` 路径、NUL 和二进制内容
 - 只读取源码文本，不执行或编译上传代码
 
@@ -251,7 +259,7 @@ curl -X POST http://localhost:8080/api/v1/project-sources \
     { "path": "src/service.ts", "file_size": 2048, "language": "typescript" }
   ],
   "skipped": [
-    { "path": "assets/logo.png", "reason": "unsupported extension" }
+    { "path": "assets/logo.png", "reason": "binary content" }
   ]
 }
 ```
@@ -496,8 +504,8 @@ GET  /health
 | `MAX_LOG_SIZE` | `10485760` | stack/log 最大字符数，超出截断 |
 | `MAX_ATTACHMENT_SIZE` | `20971520` | 单附件最大字节数 |
 | `MAX_SOURCE_FILE_SIZE` | `2097152` | 单源码文件最大字节数 |
-| `MAX_SOURCE_ARCHIVE_SIZE` | `67108864` | 源码上传及解包总上限 |
-| `MAX_SOURCE_FILES` | `5000` | 单快照最大源码文件数 |
+| `MAX_SOURCE_ARCHIVE_SIZE` | `5368709120` | 源码上传及解包总上限（T4/T5 及无 Tier 容器的硬上限） |
+| `MAX_SOURCE_FILES` | `50000` | 单快照最大源码文件数（T4/T5 及无 Tier 容器的硬上限） |
 | `MAX_JSON_BODY_SIZE` | `12582912` | JSON body 最大字节数 |
 | `COOKIE_SECURE` | 生产环境 `true` | 认证 Cookie 是否仅 HTTPS |
 | `SESSION_HOURS` | `12` | Session 有效期 |

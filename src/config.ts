@@ -72,8 +72,10 @@ function loadConfig(): Config {
   const maxLogSize = envInt('MAX_LOG_SIZE', 10 * 1024 * 1024);
   const maxAttachmentSize = envInt('MAX_ATTACHMENT_SIZE', 20 * 1024 * 1024);
   const maxSourceFileSize = envInt('MAX_SOURCE_FILE_SIZE', 2 * 1024 * 1024);
-  const maxSourceArchiveSize = envInt('MAX_SOURCE_ARCHIVE_SIZE', 64 * 1024 * 1024);
-  const maxSourceFiles = Math.max(1, envInt('MAX_SOURCE_FILES', 5000));
+  // Server-wide caps for source uploads. Tier-limited containers (T1-T3) use their own
+  // per-tier limits; T4/T5 have no tier limit and are bounded only by these caps.
+  const maxSourceArchiveSize = envInt('MAX_SOURCE_ARCHIVE_SIZE', 5 * 1024 * 1024 * 1024);
+  const maxSourceFiles = Math.max(1, envInt('MAX_SOURCE_FILES', 50000));
   const maxJsonBodySize = envInt('MAX_JSON_BODY_SIZE', 12 * 1024 * 1024);
   const corsOrigins = env('CORS_ORIGINS', '').split(',').map(value => value.trim()).filter(Boolean);
   const nodeEnv = env('NODE_ENV', 'development').toLowerCase();

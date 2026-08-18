@@ -127,10 +127,24 @@ src/
 │   ├── notification.ts        #   邮件/短信/Webhook 通知
 │   └── import.ts              #   崩溃包导入
 │
-├── analysis/                  # 崩溃分析
-│   ├── analyzer.ts
-│   ├── parser.ts
-│   └── types.ts
+├── analysis/                  # 崩溃分析(按语言拆分,通用逻辑在 common/)
+│   ├── index.ts               #   公开导出
+│   ├── types.ts               #   共享类型 + LanguageProfile 分析表接口
+│   ├── parser.ts              #   薄入口:语言检测 + 解析分发
+│   ├── registry.ts            #   语言 profile + parser 注册表
+│   ├── analyzer.ts            #   analyzeCrash 编排
+│   ├── README.md              #   语言汇总分析表
+│   ├── common/                #   通用逻辑(语言无关)
+│   │   ├── paths.ts           #     路径归一化 / 模块名提取
+│   │   ├── severity.ts        #     严重度分类
+│   │   ├── tree.ts            #     崩溃文件树
+│   │   ├── summary.ts         #     触发点 / 摘要 / 建议
+│   │   ├── source.ts          #     源码快照关联分析
+│   │   ├── generic.ts         #     通用回退解析
+│   │   └── __tests__/         #     单元测试
+│   └── languages/             # 每语言一个文件夹(13 个)
+│       └── <lang>/            #   parser.ts + profile.ts(分析表)
+│                              #   + samples/ + parser.test.ts + README.md
 │
 ├── dump/                      # 原生 dump 解析
 │   ├── parser.ts

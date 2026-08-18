@@ -1,0 +1,4 @@
+NoMethodError: undefined method `process' for nil:NilClass
+  from /app/lib/workers/job_worker.rb:42:in `perform'
+  from /app/lib/workers/job_worker.rb:18:in `block in run'
+  from /usr/lib/ruby/3.2.0/gems/rake-13.0.6/lib/rake/task.rb:281:in `block in execute'

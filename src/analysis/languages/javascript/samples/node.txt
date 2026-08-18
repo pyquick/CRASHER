@@ -1,0 +1,4 @@
+TypeError: Cannot read properties of undefined (reading 'map')
+    at OrderService.processOrders (/app/src/services/order.js:42:15)
+    at async OrderController.list (/app/src/controllers/order.js:18:9)
+    at processTicksAndRejections (node:internal/process/task_queues:95:5)

@@ -229,8 +229,8 @@ curl -b cookies.txt -c cookies.txt http://localhost:8080/api/v1/auth/csrf</code>
     <section id="sources" class="section-card mb-6">
       <h2 class="text-xl font-semibold mb-4"><span class="method-badge bg-green-600 text-white mr-3">POST</span>/api/v1/project-sources</h2>
       <p class="text-gray-400 mb-3">上传项目源码快照，用于 Crash Analysis 定位崩溃行、函数定义和可能的调用位置。源码只作为文本检索，不会被执行或编译。</p>
-      <p class="text-sm text-gray-400 mb-2">multipart 字段：<code>project_name</code> 必填（1–100 字符）；<code>release</code> 可选（最多 200 字符）；可重复提交 <code>files</code>（单次最多 100 个散装文件），或通过 <code>archive</code> 上传一个 <code>.tar.gz/.tgz</code> 项目包，两者可同时使用。成功上传会创建不可变源码快照。</p>
-      <p class="text-sm text-gray-400 mb-2">分析时先按 <code>project_name + release</code> 精确匹配；没有对应 release 时回退该项目最新快照。默认限制：单源码文件 2 MiB、上传/解包总量 64 MiB、快照最多 5000 个受支持的文本源码文件。</p>
+      <p class="text-sm text-gray-400 mb-2">multipart 字段：<code>project_name</code> 必填（1–100 字符）；<code>release</code> 可选（最多 200 字符）；可重复提交 <code>files</code> 散装文件，或通过 <code>archive</code> 上传一个 <code>.tar.gz/.tgz</code> 项目包，两者可同时使用。成功上传会创建不可变源码快照。</p>
+      <p class="text-sm text-gray-400 mb-2">分析时先按 <code>project_name + release</code> 精确匹配；没有对应 release 时回退该项目最新快照。按容器 Tier 限制：T1 10 文件/2 MB，T2 500 文件/200 MB，T3 50000 文件/5 GB，T4/T5 无 Tier 限制；单源码文件最大 2 MiB。</p>
       <pre><code>curl -X POST http://localhost:8080/api/v1/project-sources \\
   -H "X-API-Key: &lt;key&gt;" \\
   -F "project_name=api-gateway" \\
@@ -250,9 +250,9 @@ curl -X POST http://localhost:8080/api/v1/project-sources \\
   "release": "abc1234",
   "snapshot_id": 9,
   "accepted": [{ "path": "src/app.ts", "file_size": 2048, "language": "typescript" }],
-  "skipped": [{ "path": "assets/logo.png", "reason": "unsupported extension" }]
+  "skipped": [{ "path": "assets/logo.png", "reason": "binary content" }]
 }</code></pre>
-      <p class="text-xs text-gray-500 mt-2">仅接收支持语言的文本源码；拒绝绝对路径、<code>..</code> 路径、二进制、超大文件和超限解包内容。</p>
+      <p class="text-xs text-gray-500 mt-2">任意文本文件均可上传（不限扩展名，非 Unity 项目同样支持）；拒绝绝对路径、<code>..</code> 路径、二进制、超大文件和超限解包内容。</p>
     </section>
 
     <!-- ============================================================ -->

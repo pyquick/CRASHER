@@ -1,0 +1,3 @@
+IndexOutOfRangeException: Index was outside the bounds of the array.
+  at EnemySpawner.Update ()
+  at GameManager.Update ()

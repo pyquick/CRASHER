@@ -132,20 +132,20 @@ export function extractTarGzFile(filePath: string): ExtractedEntry[] {
 /**
  * Extract a .tar.gz buffer and return the list of entries.
  */
-export function extractTarGz(buffer: Buffer, maxArchiveSize: number = 256 * 1024 * 1024): ExtractedEntry[] {
+export function extractTarGz(buffer: Buffer, maxArchiveSize: number = 256 * 1024 * 1024, maxEntries: number = 10000): ExtractedEntry[] {
   const decompressed = gunzipSync(buffer, { maxOutputLength: maxArchiveSize });
-  return parseTar(decompressed);
+  return parseTar(decompressed, maxEntries);
 }
 
 /**
  * Parse a tar archive into { name, data } entries.
  */
-function parseTar(buffer: Buffer): ExtractedEntry[] {
+function parseTar(buffer: Buffer, maxEntries: number = 10000): ExtractedEntry[] {
   const entries: ExtractedEntry[] = [];
   let offset = 0;
 
   while (offset < buffer.length) {
-    if (entries.length >= 10000) throw new Error('Archive contains too many entries');
+    if (entries.length >= maxEntries) throw new Error(`Archive contains more than ${maxEntries} entries`);
     if (offset + 512 > buffer.length) throw new Error('Truncated tar header');
     // Each tar header is 512 bytes
     const header = buffer.subarray(offset, offset + 512);

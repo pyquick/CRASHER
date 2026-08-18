@@ -75,7 +75,8 @@ CMD ["node", "dist/main.js"]
 | `MAX_ATTACHMENT_SIZE` | 20 MB | 崩溃附件单文件最大 |
 | `MAX_FEEDBACK_ATTACH_SIZE` | 10 MB | 反馈附件单文件最大 |
 | `MAX_SOURCE_FILE_SIZE` | 2 MB | 源码单文件最大 |
-| `MAX_SOURCE_ARCHIVE_SIZE` | 64 MB | 源码归档最大 |
+| `MAX_SOURCE_ARCHIVE_SIZE` | 5 GB | 源码归档最大（T4/T5 及无 Tier 容器的硬上限） |
+| `MAX_SOURCE_FILES` | 50000 | 单快照源码文件数（T4/T5 及无 Tier 容器的硬上限） |
 | `MAX_SYMBOL_SIZE` | 500 MB | 符号文件最大 |
 
 ### 安全
