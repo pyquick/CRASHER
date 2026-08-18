@@ -86,7 +86,9 @@ export function analyzeCrash(report: {
     runtime,
     runtime_version,
   };
-  if (sourceSnapshot) analysis.source_analysis = analyzeSourceCode(sourceSnapshot, frames, triggerPoint);
+  if (sourceSnapshot) {
+    analysis.source_analysis = analyzeSourceCode(sourceSnapshot, frames, triggerPoint, { exception_type, exception_message });
+  }
   return analysis;
 }
 
@@ -129,7 +131,7 @@ function createMinimalAnalysis(
 
 /**
  * Try to extract a stack trace from log text when stack_trace is empty.
- * Language-specific extraction comes from each language's profile (分析表);
+ * Language-specific extraction comes from each language's profile;
  * falls back to generic frame-pattern extraction.
  */
 function extractStackFromLog(logText: string, lang: string): string {

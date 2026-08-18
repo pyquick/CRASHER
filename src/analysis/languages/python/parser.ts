@@ -50,15 +50,15 @@ export function parse(lines: string[]): StackFrame[] {
     }
   }
 
-  // Python tracebacks are printed from outermost to innermost, so reverse
-  frames.reverse();
+  // Standard Python tracebacks are printed innermost (crash) first — keep
+  // that order so frames[0] is always the crash frame.
   frames.forEach((f, i) => { f.index = i; });
 
-  // Store exception info on the last frame (crash point)
+  // Store exception info on the first frame (the crash point)
   if (frames.length > 0) {
-    const lastFrame = frames[frames.length - 1];
-    if (exceptionType && !lastFrame.raw_line.includes(exceptionType)) {
-      lastFrame.raw_line = `${exceptionType}: ${exceptionMsg}\n  ${lastFrame.raw_line}`;
+    const crashFrame = frames[0];
+    if (exceptionType && !crashFrame.raw_line.includes(exceptionType)) {
+      crashFrame.raw_line = `${exceptionType}: ${exceptionMsg}\n  ${crashFrame.raw_line}`;
     }
   }
 

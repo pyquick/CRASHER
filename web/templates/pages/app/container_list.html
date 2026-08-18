@@ -39,7 +39,7 @@
                   <div class="w-24 bg-gray-800 rounded-full h-2">
                     <div class="h-2 rounded-full" :class="usageColor(c.usage_percent)" :style="'width:' + Math.min(c.usage_percent, 100) + '%'"></div>
                   </div>
-                  <span class="text-xs" x-text="formatSize(c.storage_bytes) + ' 数据 + ' + formatSize(c.source_bytes ?? 0) + ' 源码 / ' + formatSize(c.limit_bytes)"></span>
+                  <span class="text-xs" x-text="formatSize(c.storage_bytes) + ' data + ' + formatSize(c.source_bytes ?? 0) + ' source / ' + formatSize(c.limit_bytes)"></span>
                 </div>
               </td>
               <td>
@@ -80,11 +80,11 @@
         <div>
           <label class="block text-xs text-gray-500 mb-1">Tier</label>
           <select x-model="newContainer.tier" class="fc w-full">
-            <option value="1">Tier 1 — 50 MB · 源码 10 文件/2 MB</option>
-            <option value="2">Tier 2 — 200 MB · 源码 500 文件/200 MB</option>
-            <option value="3">Tier 3 — 500 MB · 源码 50000 文件/5 GB</option>
-            <option value="4">Tier 4 — 5 GB · 源码不限</option>
-            <option value="5">Tier 5 — 1 TB · 源码不限</option>
+            <option value="1">Tier 1 — 50 MB · source 10 files/2 MB</option>
+            <option value="2">Tier 2 — 200 MB · source 500 files/200 MB</option>
+            <option value="3">Tier 3 — 500 MB · source 50000 files/5 GB</option>
+            <option value="4">Tier 4 — 5 GB · source unlimited</option>
+            <option value="5">Tier 5 — 1 TB · source unlimited</option>
           </select>
         </div>
         <div class="border-t border-gray-800 pt-3 mt-1">

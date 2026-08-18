@@ -1,6 +1,6 @@
 // ── Trigger Point & Summary Builder ──
 // Language-independent crash trigger point and summary construction;
-// language labels and advice come from each language's profile (分析表).
+// language labels and advice come from each language's profile.
 
 import type { CrashAnalysis, StackFrame } from '../types.js';
 import { profileFor } from '../registry.js';

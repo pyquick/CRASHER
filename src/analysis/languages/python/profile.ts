@@ -1,4 +1,4 @@
-// ── Python 分析表 ──
+// ── Python profile ──
 // Detection rules, framework patterns, exception advice, and log extraction
 // for Python stack traces.
 
@@ -11,31 +11,31 @@ export const profile: LanguageProfile = {
     python: 'Python',
   },
 
-  // runtime 字符串(小写)→ 检测出的语言 id
+  // runtime hint strings (lowercase) → detected language id
   runtimeHints: {
     python: 'python',
     python3: 'python',
   },
 
-  // 按栈内容自动检测
+  // Auto-detect from stack trace content
   detect: (stackTrace: string): string | null => {
     if (stackTrace.startsWith('Traceback') || stackTrace.match(/File\s+".+?",\s+line\s+\d+,\s+in\s+/m)) return 'python';
     return null;
   },
 
-  // 框架代码识别(severity 分类)
+  // Framework code recognition (severity classification)
   frameworkPatterns: {
     python: [/^site-packages/, /^lib\/python/, /\/python\d[\d.]*\//, /<frozen/, /<built-in/],
   },
 
-  // 异常类型 → 修复建议
+  // Exception type → advice
   advice: {
     python: {
-      AttributeError: '对象没有该属性。使用 hasattr() 或 try/except 进行防护。Check if the attribute exists before accessing it.',
-      KeyError: '字典中缺少该键。使用 dict.get() 安全访问或 in 操作符检查。Use dict.get() instead of direct key access.',
-      IndexError: '列表/元组索引越界。检查索引是否在有效范围内。Verify the index is within the valid list/tuple bounds.',
-      ValueError: '传入的值类型正确但值不合理。添加输入验证。Add input validation for the problematic value.',
-      TypeError: '对不兼容的类型执行了操作。检查变量类型，使用 isinstance() 或类型注解。Check variable types before performing operations.',
+      AttributeError: 'The object does not have this attribute. Use hasattr() or try/except to guard access.',
+      KeyError: 'The key is missing from the dictionary. Use dict.get() for safe access or check with the in operator.',
+      IndexError: 'List/tuple index out of bounds. Verify the index is within the valid list/tuple bounds.',
+      ValueError: 'The value has the correct type but is invalid. Add input validation for the problematic value.',
+      TypeError: 'An operation was performed on incompatible types. Check variable types with isinstance() or type annotations.',
     },
   },
 
@@ -43,7 +43,7 @@ export const profile: LanguageProfile = {
     python: 'Add try/except blocks around the crash site. Use pdb or a debugger to step through the code at the crash point.',
   },
 
-  // 源码分析:函数声明 / 定义正则
+  // Source analysis: function declaration / definition regex
   functionDeclarations: {
     python: /^\s*(?:async\s+)?def\s+([A-Za-z_$][\w$]*)\s*\(/,
   },
@@ -51,7 +51,7 @@ export const profile: LanguageProfile = {
     python: (name: string) => new RegExp(`^\\s*(?:async\\s+)?def\\s+${name}\\s*\\(`),
   },
 
-  // 从日志文本提取栈
+  // Extract stack trace from log text
   extractFromLog: (logText: string): string => {
     const lines = logText.split('\n');
     const tbStart = lines.findIndex(l => l.trim().startsWith('Traceback'));

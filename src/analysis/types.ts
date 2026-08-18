@@ -89,6 +89,49 @@ export interface SourceAnalysis {
   related_functions: RelatedFunction[];
   related_files: RelatedSourceFile[];
   warnings: string[];
+  // Python deep analysis (optional — populated only when the crash language
+  // is Python and the snapshot contains Python sources).
+  root_cause_candidates?: RootCauseCandidate[];
+  fixes?: FixSuggestion[];
+  dependency_summary?: DependencySummary;
+}
+
+export type RootCauseKind =
+  | 'none-return'
+  | 'missing-attribute'
+  | 'missing-key'
+  | 'out-of-range'
+  | 'type-mismatch'
+  | 'undefined-name'
+  | 'import-failure'
+  | 'recursion'
+  | 'generic';
+
+export interface RootCauseCandidate {
+  file_path: string;
+  line_number: number | null;
+  function_name: string;
+  reason: string;
+  confidence: number; // 0..1
+  kind: RootCauseKind;
+  evidence: string[];
+}
+
+export interface FixSuggestion {
+  candidate_index: number;
+  title: string;
+  description: string;
+  crash_site_snippet: string;
+  fix_site_snippet: string;
+  code_before: string;
+  code_after: string;
+  confidence: number;
+}
+
+export interface DependencySummary {
+  callers: SourceLocation[];
+  subclass_chain: string[];
+  variable_definitions: SourceLocation[];
 }
 
 /**
@@ -149,7 +192,7 @@ export interface AnalysisSourceSnapshot {
 }
 
 /**
- * Per-language analysis table (分析表) — everything a single language family
+ * Per-language profile — everything a single language family
  * needs for detection, frame classification, advice, and log extraction.
  * Each languages/<lang>/profile.ts exports one of these.
  */

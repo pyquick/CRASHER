@@ -1,4 +1,4 @@
-// ── Elixir / Erlang 分析表 ──
+// ── Elixir / Erlang profile ──
 // Detection rules, framework patterns, exception advice, and log extraction
 // for Elixir/Erlang (BEAM) stack traces.
 
@@ -12,7 +12,7 @@ export const profile: LanguageProfile = {
     erlang: 'Erlang',
   },
 
-  // runtime 字符串(小写)→ 检测出的语言 id
+  // runtime hint strings (lowercase) → detected language id
   runtimeHints: {
     elixir: 'elixir',
     exs: 'elixir',
@@ -20,19 +20,19 @@ export const profile: LanguageProfile = {
     erl: 'erlang',
   },
 
-  // 按栈内容自动检测
+  // Auto-detect from stack trace content
   detect: (stackTrace: string): string | null => {
     if (stackTrace.match(/^\s*\([\w.]+\)\s+\w+\/\d+\s/m) || stackTrace.match(/@\w+\/\d+\s+in\s+/m)) return 'elixir';
     return null;
   },
 
-  // 框架代码识别(severity 分类)
+  // Framework code recognition (severity classification)
   frameworkPatterns: {
     elixir: [/^\(elixir\s/, /^\(stdlib\s/, /^\(kernel\s/, /^\(mix\s/, /^\:erlang\./],
     erlang: [/^\(stdlib\s/, /^\(kernel\s/, /^\(erts\s/],
   },
 
-  // 异常类型 → 修复建议(无专属建议,仅默认)
+  // Exception type → advice (no language-specific advice; default only)
   advice: {},
 
   defaultAdvice: {
@@ -40,7 +40,7 @@ export const profile: LanguageProfile = {
     erlang: 'Use :debugger.start() or dbg module for tracing. Check the Erlang stack trace for module:function/arity.',
   },
 
-  // 源码分析:函数声明 / 定义正则
+  // Source analysis: function declaration / definition regex
   functionDeclarations: {
     elixir: /^\s*defp?\s+([A-Za-z_$][\w$]*[!?]?)\s*\(/,
   },
@@ -48,6 +48,6 @@ export const profile: LanguageProfile = {
     elixir: (name: string) => new RegExp(`^\\s*defp?\\s+${name}\\s*\\(`),
   },
 
-  // 从日志文本提取栈(无专属分支,直接走通用提取)
+  // Extract stack trace from log text (no language-specific branch; falls back to generic extraction)
   extractFromLog: (): string => '',
 };

@@ -1,7 +1,7 @@
 // ── Uploaded Source Analysis ──
 // Language-independent source snapshot analysis. Function declaration and
-// definition regexes per source language come from each language's profile
-// (分析表); the generic fallback patterns live here.
+// definition regexes per source language come from each language's profile;
+// the generic fallback patterns live here.
 
 import type {
   AnalysisSourceFile,
@@ -16,11 +16,13 @@ import type {
 } from '../types.js';
 import { pathsMatch } from '../../source.js';
 import { LANGUAGE_PROFILES } from '../registry.js';
+import { analyzePythonDeep } from '../languages/python/index.js';
 
 export function analyzeSourceCode(
   snapshot: AnalysisSourceSnapshot,
   frames: StackFrame[],
-  triggerPoint: CrashAnalysis['trigger_point']
+  triggerPoint: CrashAnalysis['trigger_point'],
+  context?: { exception_type?: string; exception_message?: string }
 ): SourceAnalysis {
   const warnings: string[] = [];
   const sourceAnalysis: SourceAnalysis = {
@@ -70,6 +72,7 @@ export function analyzeSourceCode(
 
   const functionName = cleanFunctionName(triggerPoint.function_name || triggerFrame?.function_name || '');
   if (!functionName) {
+    runPythonDeepAnalysis(sourceAnalysis, snapshot, frames, context, warnings);
     warnings.push('No searchable crash function name was found');
     sourceAnalysis.related_files = buildRelatedFiles(sourceAnalysis, snapshot.files);
     return sourceAnalysis;
@@ -159,7 +162,36 @@ export function analyzeSourceCode(
   if (!sourceAnalysis.function_definition) warnings.push(`No likely definition found for ${functionName}`);
   if (sourceAnalysis.references.length === 20) warnings.push('Reference results were limited to the first 20 matches');
   sourceAnalysis.related_files = buildRelatedFiles(sourceAnalysis, snapshot.files);
+  runPythonDeepAnalysis(sourceAnalysis, snapshot, frames, context, warnings);
   return sourceAnalysis;
+}
+
+/**
+ * Run the Python deep analysis (code model → dependencies → root cause →
+ * fixes) when the crash language is Python, merging results into the
+ * SourceAnalysis. Failures degrade to warnings and never throw.
+ */
+function runPythonDeepAnalysis(
+  sourceAnalysis: SourceAnalysis,
+  snapshot: AnalysisSourceSnapshot,
+  frames: StackFrame[],
+  context: { exception_type?: string; exception_message?: string } | undefined,
+  warnings: string[]
+): void {
+  const triggerFrame = frames.find(frame => frame.file_path && frame.line_number) ?? frames[0];
+  if ((triggerFrame?.language ?? '') !== 'python') return;
+  try {
+    const deep = analyzePythonDeep(snapshot, frames, {
+      type: context?.exception_type ?? '',
+      message: context?.exception_message ?? '',
+    });
+    sourceAnalysis.root_cause_candidates = deep.root_cause_candidates;
+    sourceAnalysis.fixes = deep.fixes;
+    sourceAnalysis.dependency_summary = deep.dependency_summary;
+    warnings.push(...deep.warnings);
+  } catch (err) {
+    warnings.push(`Python deep analysis failed: ${(err as Error).message}`);
+  }
 }
 
 type IndexedDefinition = {

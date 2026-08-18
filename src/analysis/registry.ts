@@ -1,5 +1,5 @@
 // ── Language Registry ──
-// Aggregates every language's parser and profile (分析表) into ordered
+// Aggregates every language's parser and profile into ordered
 // lookup tables. Profile order matters: detectLanguage checks runtime hints
 // and content patterns in this exact order.
 
@@ -19,7 +19,7 @@ import * as elixir from './languages/elixir/index.js';
 import * as lua from './languages/lua/index.js';
 
 /**
- * Ordered language profiles (分析表). Content auto-detection iterates in
+ * Ordered language profiles. Content auto-detection iterates in
  * this exact order (must match the legacy detectLanguage priority chain).
  * Runtime-hint keys are globally unique, so hint order is unaffected.
  */

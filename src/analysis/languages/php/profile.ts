@@ -1,4 +1,4 @@
-// ── PHP 分析表 ──
+// ── PHP profile ──
 // Detection rules, framework patterns, exception advice, and log extraction
 // for PHP stack traces.
 
@@ -11,28 +11,28 @@ export const profile: LanguageProfile = {
     php: 'PHP',
   },
 
-  // runtime 字符串(小写)→ 检测出的语言 id
+  // runtime hint strings (lowercase) → detected language id
   runtimeHints: {
     php: 'php',
   },
 
-  // 按栈内容自动检测
+  // Auto-detect from stack trace content
   detect: (stackTrace: string): string | null => {
     if (stackTrace.match(/^#\d+\s+\/.+\.php\(\d+\)/) || stackTrace.match(/^(?:PHP\s+)?(?:Fatal|Parse|Warning|Notice)\s+error:/m)) return 'php';
     return null;
   },
 
-  // 框架代码识别(severity 分类)
+  // Framework code recognition (severity classification)
   frameworkPatterns: {
     php: [/^\/vendor\//, /^\/var\/www/, /^\[internal/, /^(?:require|include|eval|spl_autoload)/],
   },
 
-  // 异常类型 → 修复建议
+  // Exception type → advice
   advice: {
     php: {
-      'Fatal error': '致命错误，通常由未定义的类、函数或语法错误导致。检查类名前缀和函数拼写。Check class namespacing and function spelling.',
-      'Uncaught Error': '未捕获的错误。使用 try/catch 块包裹可能出错的代码。Wrap the crash site in a try/catch block.',
-      'Uncaught Exception': '未捕获的异常。添加 try/catch 处理或确保上层调用者有异常处理。Add exception handling around the reported location.',
+      'Fatal error': 'A fatal error, usually caused by an undefined class, function, or syntax error. Check class namespacing and function spelling.',
+      'Uncaught Error': 'Uncaught error. Wrap the code that may fail in a try/catch block.',
+      'Uncaught Exception': 'Uncaught exception. Add exception handling around the reported location, or ensure callers handle the exception.',
     },
   },
 
@@ -40,7 +40,7 @@ export const profile: LanguageProfile = {
     php: 'Enable xdebug for detailed stack traces. Check the file and line reported in the stack trace for the error.',
   },
 
-  // 源码分析:函数声明 / 定义正则
+  // Source analysis: function declaration / definition regex
   functionDeclarations: {
     php: /^\s*(?:(?:public|protected|private|static|final|abstract)\s+)*function\s+([A-Za-z_$][\w$]*)\s*\(/i,
   },
@@ -48,7 +48,7 @@ export const profile: LanguageProfile = {
     php: (name: string) => new RegExp(`^\\s*(?:(?:public|protected|private|static|final|abstract)\\s+)*function\\s+${name}\\s*\\(`, 'i'),
   },
 
-  // 从日志文本提取栈
+  // Extract stack trace from log text
   extractFromLog: (logText: string): string => {
     const lines = logText.split('\n');
     const stStart = lines.findIndex(l => l.includes('Stack trace:') || l.match(/^#\d+\s+\S+\.php/));

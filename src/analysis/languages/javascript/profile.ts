@@ -1,4 +1,4 @@
-// ── JavaScript / TypeScript / Node.js / Browser 分析表 ──
+// ── JavaScript / TypeScript / Node.js / Browser profile ──
 // Detection rules, framework patterns, exception advice, and log extraction
 // for JS-family stack traces.
 
@@ -14,7 +14,7 @@ export const profile: LanguageProfile = {
     browser: 'Browser JavaScript',
   },
 
-  // runtime 字符串(小写)→ 检测出的语言 id
+  // runtime hint strings (lowercase) → detected language id
   runtimeHints: {
     node: 'node',
     nodejs: 'node',
@@ -30,7 +30,7 @@ export const profile: LanguageProfile = {
     ts: 'typescript',
   },
 
-  // 按栈内容自动检测
+  // Auto-detect from stack trace content
   detect: (stackTrace: string): string | null => {
     if (stackTrace.match(/^\s*at\s+.+\(.+:\d+:\d+\)/m) || stackTrace.match(/^\s*at\s+.+:\d+:\d+$/m)) {
       const jsFileMatch = stackTrace.match(/\.(?:js|mjs|cjs|ts|jsx|tsx|mts|cts):\d+/);
@@ -42,24 +42,24 @@ export const profile: LanguageProfile = {
     return null;
   },
 
-  // 框架代码识别(severity 分类)
+  // Framework code recognition (severity classification)
   frameworkPatterns: {
     javascript: [/node:internal/, /node_modules/, /<anonymous>/, /processTicksAndRejections/, /^internal\//],
     node: [/node:internal/, /node_modules/, /<anonymous>/, /processTicksAndRejections/, /^internal\//],
     browser: [/^webpack/, /^__webpack/, /^\(index\)/, /^new\s+<anonymous>/, /@chrome-extension/],
   },
 
-  // 异常类型 → 修复建议
+  // Exception type → advice
   advice: {
     javascript: {
-      TypeError: '类型错误，通常是对 null/undefined 访问属性或调用方法。使用可选链操作符 (?.) 或增加空值检查。Use optional chaining (?.) or guard against null/undefined.',
-      ReferenceError: '引用了未定义的变量或标识符。检查变量是否在作用域内声明。Check if the variable is declared in the current scope.',
-      SyntaxError: '代码语法错误。检查括号匹配、引号闭合和逗号是否正确。Review syntax around the reported location.',
-      RangeError: '值超出有效范围，通常发生在数组长度、递归调用或数字转换。Check for infinite recursion or invalid array lengths.',
+      TypeError: 'Type error, usually caused by accessing a property or calling a method on null/undefined. Use optional chaining (?.) or add null checks.',
+      ReferenceError: 'An undefined variable or identifier was referenced. Check if the variable is declared in the current scope.',
+      SyntaxError: 'Code syntax error. Check that brackets match, quotes are closed, and commas are correct. Review syntax around the reported location.',
+      RangeError: 'A value exceeded its valid range, usually caused by array length, recursion depth, or numeric conversion. Check for infinite recursion or invalid array lengths.',
     },
     node: {
-      TypeError: '类型错误，通常是对 null/undefined 访问属性或调用方法。使用可选链操作符 (?.) 或增加空值检查。Use optional chaining (?.) or guard against null/undefined.',
-      ReferenceError: '引用了未定义的变量或标识符。检查变量是否在作用域内声明。Check if the variable is declared in the current scope.',
+      TypeError: 'Type error, usually caused by accessing a property or calling a method on null/undefined. Use optional chaining (?.) or add null checks.',
+      ReferenceError: 'An undefined variable or identifier was referenced. Check if the variable is declared in the current scope.',
     },
   },
 
@@ -70,14 +70,14 @@ export const profile: LanguageProfile = {
     typescript: 'Check the stack trace for the exact source location. Use ts-node --inspect or source-map-support for accurate line numbers.',
   },
 
-  // 源码分析:函数声明 / 定义正则(箭头函数)
+  // Source analysis: function declaration / definition regex (arrow functions)
   functionDeclarations: {
     javascript: /^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>/,
     typescript: /^\s*(?:export\s+)?(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=\s*(?:async\s*)?(?:\([^)]*\)|[A-Za-z_$][\w$]*)\s*=>/,
   },
   definitionPatterns: {},
 
-  // 从日志文本提取栈
+  // Extract stack trace from log text
   extractFromLog: (logText: string): string => {
     const lines = logText.split('\n');
     const jsLines = lines.filter(l => l.trim().match(/^\s*at\s+/));

@@ -1,5 +1,5 @@
 // ── Stack Trace Parser (Entry) ──
-// Thin dispatcher: detects the language (via the registry 分析表) and
+// Thin dispatcher: detects the language (via the registry) and
 // delegates frame parsing to the matching language folder. The generic
 // fallback and severity classification live in common/.
 

@@ -304,6 +304,106 @@
                   <p class="mt-2 text-xs text-gray-500">Inspect the function declaration and nearby implementation.</p>
                 </button>
               </section>
+
+              <!-- Python deep analysis: root cause candidates -->
+              <section class="overflow-hidden rounded-lg border border-gray-800 bg-surface-950" x-show="analysis?.source_analysis?.root_cause_candidates?.length">
+                <div class="border-b border-gray-800 px-4 py-3">
+                  <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500">Root cause candidates</h3>
+                  <p class="mt-1 text-[11px] text-gray-600">The crashing line is not always the culprit — these sites most likely caused the failure.</p>
+                </div>
+                <div class="divide-y divide-gray-800/70">
+                  <template x-for="candidate in (analysis?.source_analysis?.root_cause_candidates || [])" :key="candidate.kind + candidate.file_path + candidate.line_number">
+                    <div class="px-4 py-3">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <span class="pill" :class="rootCauseClass(candidate.kind)" x-text="rootCauseLabel(candidate.kind)"></span>
+                        <code class="font-mono text-xs text-gray-200" x-text="sourceLocationLabel(candidate)"></code>
+                        <span class="font-mono text-[11px] text-gray-500" x-text="candidate.function_name"></span>
+                        <span class="ml-auto text-[11px] text-gray-500" x-text="Math.round(candidate.confidence * 100) + '% confidence'"></span>
+                      </div>
+                      <div class="mt-2 h-1.5 w-full rounded-full bg-gray-800">
+                        <div class="h-1.5 rounded-full bg-yellow-500" :style="'width:' + Math.round(candidate.confidence * 100) + '%'"></div>
+                      </div>
+                      <p class="mt-2 text-xs leading-relaxed text-gray-300" x-text="candidate.reason"></p>
+                      <details class="mt-2" x-show="candidate.evidence?.length > 1">
+                        <summary class="cursor-pointer text-[11px] text-gray-600">Supporting evidence</summary>
+                        <ul class="mt-1 list-disc space-y-1 pl-4 text-[11px] text-gray-500">
+                          <template x-for="item in candidate.evidence" :key="item"><li x-text="item"></li></template>
+                        </ul>
+                      </details>
+                    </div>
+                  </template>
+                </div>
+              </section>
+
+              <!-- Python deep analysis: suggested fixes -->
+              <section class="overflow-hidden rounded-lg border border-gray-800 bg-surface-950" x-show="analysis?.source_analysis?.fixes?.length">
+                <div class="border-b border-gray-800 px-4 py-3">
+                  <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500">Suggested fixes</h3>
+                </div>
+                <div class="divide-y divide-gray-800/70">
+                  <template x-for="fix in (analysis?.source_analysis?.fixes || [])" :key="fix.candidate_index + fix.title">
+                    <div class="px-4 py-3">
+                      <div class="flex flex-wrap items-center gap-2">
+                        <h4 class="text-sm font-medium text-gray-200" x-text="fix.title"></h4>
+                        <span class="ml-auto text-[11px] text-gray-500" x-text="Math.round(fix.confidence * 100) + '% confidence'"></span>
+                      </div>
+                      <p class="mt-1 text-xs leading-relaxed text-gray-400" x-text="fix.description"></p>
+                      <div class="mt-3 grid gap-2 lg:grid-cols-2">
+                        <div>
+                          <p class="mb-1 text-[10px] font-semibold uppercase tracking-widest text-gray-600">Before</p>
+                          <pre class="overflow-x-auto rounded-md bg-surface-900 p-2 font-mono text-[11px] leading-relaxed text-red-300" x-text="fix.code_before"></pre>
+                        </div>
+                        <div>
+                          <p class="mb-1 text-[10px] font-semibold uppercase tracking-widest text-gray-600">After</p>
+                          <pre class="overflow-x-auto rounded-md bg-surface-900 p-2 font-mono text-[11px] leading-relaxed text-green-300" x-text="fix.code_after"></pre>
+                        </div>
+                      </div>
+                      <details class="mt-2">
+                        <summary class="cursor-pointer text-[11px] text-gray-600">Fix site context</summary>
+                        <pre class="mt-1 overflow-x-auto rounded-md bg-surface-900 p-2 font-mono text-[11px] text-gray-400" x-text="fix.fix_site_snippet"></pre>
+                      </details>
+                    </div>
+                  </template>
+                </div>
+              </section>
+
+              <!-- Python deep analysis: dependency summary -->
+              <section class="overflow-hidden rounded-lg border border-gray-800 bg-surface-950"
+                       x-show="analysis?.source_analysis?.dependency_summary && (analysis?.source_analysis?.dependency_summary?.callers?.length || analysis?.source_analysis?.dependency_summary?.variable_definitions?.length || analysis?.source_analysis?.dependency_summary?.subclass_chain?.length)">
+                <div class="border-b border-gray-800 px-4 py-3">
+                  <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500">Code dependencies</h3>
+                </div>
+                <div class="space-y-4 px-4 py-3">
+                  <div x-show="analysis?.source_analysis?.dependency_summary?.variable_definitions?.length">
+                    <p class="mb-2 text-[10px] font-semibold uppercase tracking-widest text-gray-600">Variable definitions</p>
+                    <div class="space-y-2">
+                      <template x-for="definition in (analysis?.source_analysis?.dependency_summary?.variable_definitions || [])" :key="definition.file_path + definition.line_number">
+                        <div class="rounded-md bg-surface-900 p-2">
+                          <p class="font-mono text-[11px] text-gray-300" x-text="sourceLocationLabel(definition) + ' — ' + definition.function_name"></p>
+                          <pre class="mt-1 overflow-x-auto font-mono text-[11px] text-gray-500" x-text="definition.snippet"></pre>
+                        </div>
+                      </template>
+                    </div>
+                  </div>
+                  <div x-show="analysis?.source_analysis?.dependency_summary?.callers?.length">
+                    <p class="mb-2 text-[10px] font-semibold uppercase tracking-widest text-gray-600">Callers of the crash function</p>
+                    <div class="flex flex-wrap gap-1">
+                      <template x-for="caller in (analysis?.source_analysis?.dependency_summary?.callers || [])" :key="caller.file_path + caller.line_number">
+                        <span class="pill bg-gray-800 text-gray-300" x-text="caller.function_name + ' (' + sourceLocationLabel(caller) + ')'"></span>
+                      </template>
+                    </div>
+                  </div>
+                  <div x-show="analysis?.source_analysis?.dependency_summary?.subclass_chain?.length">
+                    <p class="mb-2 text-[10px] font-semibold uppercase tracking-widest text-gray-600">Class hierarchy</p>
+                    <div class="flex flex-wrap items-center gap-1">
+                      <template x-for="(cls, i) in (analysis?.source_analysis?.dependency_summary?.subclass_chain || [])" :key="cls">
+                        <template x-if="i > 0"><span class="text-[11px] text-gray-600">←</span></template>
+                        <span class="pill bg-gray-800 text-gray-300" x-text="cls"></span>
+                      </template>
+                    </div>
+                  </div>
+                </div>
+              </section>
             </div>
           </div>
 
@@ -1042,6 +1142,34 @@
           callee: 'bg-cyan-900/50 text-cyan-300',
           stack: 'bg-purple-900/50 text-purple-300',
         }[relationship] || 'bg-gray-800 text-gray-400';
+      },
+
+      rootCauseLabel(kind) {
+        return {
+          'none-return': 'None return',
+          'missing-attribute': 'Missing attribute',
+          'missing-key': 'Missing key',
+          'out-of-range': 'Out of range',
+          'type-mismatch': 'Type mismatch',
+          'undefined-name': 'Undefined name',
+          'import-failure': 'Import failure',
+          'recursion': 'Recursion',
+          'generic': 'Possible cause',
+        }[kind] || kind;
+      },
+
+      rootCauseClass(kind) {
+        return {
+          'none-return': 'bg-red-900/50 text-red-300',
+          'missing-attribute': 'bg-orange-900/50 text-orange-300',
+          'missing-key': 'bg-amber-900/50 text-amber-300',
+          'out-of-range': 'bg-yellow-900/50 text-yellow-300',
+          'type-mismatch': 'bg-orange-900/50 text-orange-300',
+          'undefined-name': 'bg-purple-900/50 text-purple-300',
+          'import-failure': 'bg-cyan-900/50 text-cyan-300',
+          'recursion': 'bg-pink-900/50 text-pink-300',
+          'generic': 'bg-gray-800 text-gray-400',
+        }[kind] || 'bg-gray-800 text-gray-400';
       },
 
       symbolicationWarnings(info) {

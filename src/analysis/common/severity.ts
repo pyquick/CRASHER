@@ -1,6 +1,6 @@
 // ── Severity Classification ──
 // Language-independent severity classification; the framework-code patterns
-// for each language come from that language's profile (分析表).
+// for each language come from that language's profile.
 
 import type { StackFrame } from '../types.js';
 import { profileFor } from '../registry.js';
