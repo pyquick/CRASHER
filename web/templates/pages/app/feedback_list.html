@@ -34,12 +34,13 @@
     <div x-show="error" class="bg-red-900/20 border border-red-800 text-red-400 rounded-lg p-4 mb-4">
       <span x-text="error"></span><button class="btn btn-gray btn-sm ml-3" @click="load()">Retry</button>
     </div>
+    <div class="overflow-x-auto">
     <table class="data-table" x-show="items.length > 0">
       <thead><tr><th>Feedback</th><th class="hidden md:table-cell">Player / Device</th><th class="hidden sm:table-cell">Submitted</th><th>Status</th></tr></thead>
       <tbody>
         <template x-for="item in items" :key="item.id">
           <tr class="border-b border-gray-800/50 hover:bg-gray-800/30 cursor-pointer transition-colors" @click="open(item.id)">
-            <td class="px-4 py-3"><div class="flex items-center gap-2"><span class="text-xs px-2 py-0.5 rounded" :class="categoryClass(item.category)" x-text="item.category"></span><p class="font-medium text-gray-200" x-text="item.title"></p></div><p class="text-xs text-gray-500 mt-1 truncate max-w-xl" x-text="item.description"></p></td>
+            <td class="px-4 py-3"><div class="flex items-center gap-2"><span class="text-xs px-2 py-0.5 rounded shrink-0" :class="categoryClass(item.category)" x-text="item.category"></span><p class="font-medium text-gray-200 break-words min-w-0" x-text="item.title"></p></div><p class="text-xs text-gray-500 mt-1 break-words" x-text="item.description"></p></td>
             <td class="px-4 py-3 text-gray-400 hidden md:table-cell"><p x-text="item.player_name || item.player_id || '-' "></p><p class="text-xs text-gray-600 mt-1" x-text="[item.platform, item.device_model, item.app_version].filter(Boolean).join(' · ') || '-' "></p></td>
             <td class="px-4 py-3 text-gray-400 hidden sm:table-cell" x-text="formatDate(item.created_at)"></td>
             <td class="px-4 py-3"><span class="text-xs px-2 py-0.5 rounded" :class="statusClass(item.status)" x-text="item.status.replace('_', ' ')"></span></td>
@@ -47,6 +48,7 @@
         </template>
       </tbody>
     </table>
+    </div>
     <div x-show="!loading && items.length === 0" class="text-center py-16 text-gray-600">No player feedback found</div>
     <div x-show="loading" class="text-center py-16"><div class="inline-block w-6 h-6 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></div></div>
   </div>

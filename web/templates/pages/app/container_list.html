@@ -29,7 +29,7 @@
           <template x-for="c in containers" :key="c.container.id">
             <tr class="border-b border-gray-800/60" :class="c.container.is_banned ? 'opacity-50' : ''">
               <td class="py-3">
-                <span x-text="c.container.name" class="font-medium"></span>
+                <span x-text="c.container.name" class="font-medium break-words"></span>
               </td>
               <td>
                 <span class="text-xs px-1.5 py-0.5 rounded" :class="tierClass(c.container.tier)" x-text="'T' + c.container.tier"></span>

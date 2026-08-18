@@ -94,6 +94,7 @@
 
   <!-- Table -->
   <div class="bg-surface-900 rounded-xl border border-gray-800 overflow-hidden" :class="{ loading }">
+    <div class="overflow-x-auto">
     <table class="data-table" x-show="items.length > 0">
       <thead>
         <tr>
@@ -109,10 +110,10 @@
       <tbody>
         <template x-for="item in items" :key="item.id">
           <tr class="border-b border-gray-800/50 hover:bg-gray-800/30 transition-colors">
-            <td class="px-4 py-3 font-medium text-gray-200" x-text="item.filename"></td>
+            <td class="px-4 py-3 font-medium text-gray-200 break-words" x-text="item.filename"></td>
             <td class="px-4 py-3 text-gray-400" x-text="item.platform"></td>
             <td class="px-4 py-3 text-gray-400 text-xs hidden sm:table-cell" x-text="item.symbol_type || 'unknown'"></td>
-            <td class="px-4 py-3 text-gray-500 font-mono text-xs hidden sm:table-cell" x-text="item.build_guid"></td>
+            <td class="px-4 py-3 text-gray-500 font-mono text-xs hidden sm:table-cell break-all" x-text="item.build_guid"></td>
             <td class="px-4 py-3 text-gray-400 hidden md:table-cell" x-text="formatSize(item.file_size)"></td>
             <td class="px-4 py-3 text-gray-400 hidden md:table-cell" x-text="formatDate(item.uploaded_at)"></td>
             <td class="px-4 py-3">
@@ -123,6 +124,7 @@
         </template>
       </tbody>
     </table>
+    </div>
     <div x-show="items.length === 0 && !loading" class="text-center py-16">
       <p class="text-gray-600">No symbol files uploaded yet</p>
     </div>

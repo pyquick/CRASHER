@@ -4,7 +4,7 @@
     <a href="/web/crashes" class="text-gray-500 hover:text-gray-300 transition-colors">← Back to list</a>
     <template x-if="group">
       <div class="flex items-center gap-3">
-        <h1 class="text-xl font-semibold" x-text="group.exception_type"></h1>
+        <h1 class="text-xl font-semibold break-all" x-text="group.exception_type"></h1>
         <span class="badge"
               :class="{
                 'badge-open': group.status === 'open',
@@ -37,13 +37,13 @@
               <span class="text-xs text-gray-500" x-text="dump.source_file"></span>
             </div>
 
-            <p class="text-sm text-gray-300" x-show="dump.summary" x-text="dump.summary"></p>
+            <p class="text-sm text-gray-300 break-words" x-show="dump.summary" x-text="dump.summary"></p>
 
             <!-- Crash reason -->
             <div class="mt-2 space-y-1 text-sm" x-show="dump.crash_reason || dump.signal || dump.fault_address">
               <div class="flex gap-3" x-show="dump.crash_reason">
                 <span class="text-gray-500 w-24 shrink-0">Crash:</span>
-                <span class="text-red-300" x-text="dump.crash_reason"></span>
+                <span class="text-red-300 break-words" x-text="dump.crash_reason"></span>
               </div>
               <div class="flex gap-3" x-show="dump.signal">
                 <span class="text-gray-500 w-24 shrink-0">Signal:</span>
@@ -85,7 +85,7 @@
                   <tbody>
                     <template x-for="m in (dump.loaded_modules || []).slice(0, 50)" :key="m.name">
                       <tr class="text-gray-400 border-t border-gray-800/50">
-                        <td class="py-1 pr-2 font-mono truncate max-w-[120px]" x-text="m.name"></td>
+                        <td class="py-1 pr-2 font-mono break-all" x-text="m.name"></td>
                         <td class="py-1 pr-2 font-mono" x-text="m.base"></td>
                         <td class="py-1 font-mono" x-text="m.size"></td>
                       </tr>
@@ -168,11 +168,11 @@
           <div class="rounded-lg border border-gray-800 bg-surface-950 p-4">
             <p class="mb-2 text-[10px] font-semibold uppercase tracking-widest text-gray-600">Exception</p>
             <code class="block break-all text-sm font-semibold text-red-300" x-text="analysis?.exception_type || 'Unknown exception'"></code>
-            <p class="mt-2 whitespace-pre-wrap text-sm leading-relaxed text-gray-400" x-text="analysis?.exception_message || 'No exception message was reported.'"></p>
+            <p class="mt-2 whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-400" x-text="analysis?.exception_message || 'No exception message was reported.'"></p>
           </div>
           <div class="rounded-lg border border-gray-800 bg-surface-950 p-4">
             <p class="mb-2 text-[10px] font-semibold uppercase tracking-widest text-gray-600">Analysis summary</p>
-            <p class="whitespace-pre-wrap text-sm leading-relaxed text-gray-400" x-text="plainAnalysisSummary()"></p>
+            <p class="whitespace-pre-wrap break-words text-sm leading-relaxed text-gray-400" x-text="plainAnalysisSummary()"></p>
           </div>
         </div>
 
@@ -190,7 +190,7 @@
             </div>
             <div class="flex items-start gap-2" x-show="analysis?.trigger_point?.function_name">
               <span class="text-gray-500 text-xs w-20 shrink-0">Function:</span>
-              <code class="text-red-300 font-mono text-sm" x-text="analysis?.trigger_point?.function_name"></code>
+              <code class="text-red-300 font-mono text-sm break-all" x-text="analysis?.trigger_point?.function_name"></code>
             </div>
             <div class="flex items-start gap-2" x-show="analysis?.trigger_point?.message">
               <span class="text-gray-500 text-xs w-20 shrink-0">Detail:</span>
@@ -245,8 +245,8 @@
                         <span class="pill" :class="sourceRelationshipClass(item.relationship)" x-text="sourceRelationshipLabel(item.relationship)"></span>
                         <span class="text-[10px] text-gray-600" x-text="item.language || ''"></span>
                       </div>
-                      <p class="mt-2 truncate font-mono text-xs text-gray-300" x-text="item.function_name || '(source location)'"></p>
-                      <p class="mt-1 truncate text-[10px] text-gray-600" x-text="sourceLocationLabel(item)"></p>
+                      <p class="mt-2 break-words font-mono text-xs text-gray-300" x-text="item.function_name || '(source location)'"></p>
+                      <p class="mt-1 break-all text-[10px] text-gray-600" x-text="sourceLocationLabel(item)"></p>
                     </button>
                   </template>
                   <p x-show="filteredSourceItems().length === 0" class="py-6 text-center text-xs text-gray-600">No matches for this relationship.</p>
@@ -260,7 +260,7 @@
                     <button type="button" @click="selectSourceItem(sourceItemForFile(file))"
                             class="block w-full rounded-md bg-surface-900 px-3 py-2 text-left transition-colors hover:bg-gray-800"
                             :disabled="!sourceItemForFile(file)">
-                      <p class="truncate font-mono text-[11px] text-gray-300" :title="file.file_path" x-text="file.file_path"></p>
+                      <p class="break-all font-mono text-[11px] text-gray-300" x-text="file.file_path"></p>
                       <div class="mt-1 flex flex-wrap items-center gap-1">
                         <template x-for="relationship in file.relationships" :key="relationship">
                           <span class="pill" :class="sourceRelationshipClass(relationship)" x-text="sourceRelationshipLabel(relationship)"></span>
@@ -279,9 +279,9 @@
                   <div class="min-w-0">
                     <div class="flex flex-wrap items-center gap-2">
                       <span class="pill" :class="sourceRelationshipClass(selectedSourceItem()?.relationship)" x-text="sourceRelationshipLabel(selectedSourceItem()?.relationship)"></span>
-                      <code class="truncate text-sm font-semibold text-gray-200" x-text="selectedSourceItem()?.function_name || 'Source preview'"></code>
+                      <code class="break-words text-sm font-semibold text-gray-200" x-text="selectedSourceItem()?.function_name || 'Source preview'"></code>
                     </div>
-                    <p class="mt-1 truncate font-mono text-[11px] text-gray-500" x-text="sourceLocationLabel(selectedSourceItem())"></p>
+                    <p class="mt-1 break-all font-mono text-[11px] text-gray-500" x-text="sourceLocationLabel(selectedSourceItem())"></p>
                   </div>
                   <div class="flex shrink-0 items-center gap-2">
                     <button type="button" @click="sourcePreviewExpanded = !sourcePreviewExpanded" class="btn btn-gray btn-sm" x-text="sourcePreviewExpanded ? 'Compact preview' : 'Expand preview'"></button>
@@ -295,12 +295,12 @@
               <section class="grid gap-3 md:grid-cols-2" x-show="analysis?.source_analysis?.crash_source && analysis?.source_analysis?.function_definition">
                 <button type="button" @click="selectSourceItem(sourcePrimaryItems()[0])" class="rounded-lg border border-red-900/40 bg-red-950/20 p-4 text-left hover:border-red-700">
                   <p class="text-[10px] font-semibold uppercase tracking-widest text-red-400">Crash line</p>
-                  <p class="mt-2 truncate font-mono text-xs text-red-200" x-text="sourceLocationLabel(analysis?.source_analysis?.crash_source)"></p>
+                  <p class="mt-2 break-all font-mono text-xs text-red-200" x-text="sourceLocationLabel(analysis?.source_analysis?.crash_source)"></p>
                   <p class="mt-2 text-xs text-gray-500">Open the wider source window around the reported line.</p>
                 </button>
                 <button type="button" @click="selectSourceItem(sourcePrimaryItems()[1])" class="rounded-lg border border-blue-900/40 bg-blue-950/20 p-4 text-left hover:border-blue-700">
                   <p class="text-[10px] font-semibold uppercase tracking-widest text-blue-400">Function definition</p>
-                  <p class="mt-2 truncate font-mono text-xs text-blue-200" x-text="sourceLocationLabel(analysis?.source_analysis?.function_definition)"></p>
+                  <p class="mt-2 break-all font-mono text-xs text-blue-200" x-text="sourceLocationLabel(analysis?.source_analysis?.function_definition)"></p>
                   <p class="mt-2 text-xs text-gray-500">Inspect the function declaration and nearby implementation.</p>
                 </button>
               </section>
@@ -315,10 +315,10 @@
                   <template x-for="candidate in (analysis?.source_analysis?.root_cause_candidates || [])" :key="candidate.kind + candidate.file_path + candidate.line_number">
                     <div class="px-4 py-3">
                       <div class="flex flex-wrap items-center gap-2">
-                        <span class="pill" :class="rootCauseClass(candidate.kind)" x-text="rootCauseLabel(candidate.kind)"></span>
-                        <code class="font-mono text-xs text-gray-200" x-text="sourceLocationLabel(candidate)"></code>
-                        <span class="font-mono text-[11px] text-gray-500" x-text="candidate.function_name"></span>
-                        <span class="ml-auto text-[11px] text-gray-500" x-text="Math.round(candidate.confidence * 100) + '% confidence'"></span>
+                        <span class="pill shrink-0" :class="rootCauseClass(candidate.kind)" x-text="rootCauseLabel(candidate.kind)"></span>
+                        <code class="font-mono text-xs text-gray-200 break-all min-w-0" x-text="sourceLocationLabel(candidate)"></code>
+                        <span class="font-mono text-[11px] text-gray-500 break-all" x-text="candidate.function_name"></span>
+                        <span class="ml-auto text-[11px] text-gray-500 shrink-0" x-text="Math.round(candidate.confidence * 100) + '% confidence'"></span>
                       </div>
                       <div class="mt-2 h-1.5 w-full rounded-full bg-gray-800">
                         <div class="h-1.5 rounded-full bg-yellow-500" :style="'width:' + Math.round(candidate.confidence * 100) + '%'"></div>
@@ -379,7 +379,7 @@
                     <div class="space-y-2">
                       <template x-for="definition in (analysis?.source_analysis?.dependency_summary?.variable_definitions || [])" :key="definition.file_path + definition.line_number">
                         <div class="rounded-md bg-surface-900 p-2">
-                          <p class="font-mono text-[11px] text-gray-300" x-text="sourceLocationLabel(definition) + ' — ' + definition.function_name"></p>
+                          <p class="font-mono text-[11px] text-gray-300 break-all" x-text="sourceLocationLabel(definition) + ' — ' + definition.function_name"></p>
                           <pre class="mt-1 overflow-x-auto font-mono text-[11px] text-gray-500" x-text="definition.snippet"></pre>
                         </div>
                       </template>
@@ -389,7 +389,7 @@
                     <p class="mb-2 text-[10px] font-semibold uppercase tracking-widest text-gray-600">Callers of the crash function</p>
                     <div class="flex flex-wrap gap-1">
                       <template x-for="caller in (analysis?.source_analysis?.dependency_summary?.callers || [])" :key="caller.file_path + caller.line_number">
-                        <span class="pill bg-gray-800 text-gray-300" x-text="caller.function_name + ' (' + sourceLocationLabel(caller) + ')'"></span>
+                        <span class="pill bg-gray-800 text-gray-300 break-all" x-text="caller.function_name + ' (' + sourceLocationLabel(caller) + ')'"></span>
                       </template>
                     </div>
                   </div>
@@ -469,7 +469,7 @@
                 <div class="min-w-0 flex-1">
                   <!-- Function + file:line -->
                   <div class="flex flex-wrap items-baseline gap-x-2">
-                    <span class="font-mono text-sm"
+                    <span class="font-mono text-sm break-all"
                           :class="{
                             'text-red-300 font-semibold': frame.severity === 'trigger',
                             'text-orange-200': frame.severity === 'propagation',
@@ -480,7 +480,7 @@
                       <span x-show="frame.module_name" x-text="frame.module_name + '.'"></span>
                       <span x-text="frame.function_name || '(unknown)'"></span>
                     </span>
-                    <span class="font-mono text-xs"
+                    <span class="font-mono text-xs break-all"
                           :class="{
                             'text-red-400': frame.severity === 'trigger',
                             'text-orange-400': frame.severity === 'propagation',
@@ -493,10 +493,10 @@
                       <span x-show="frame.line_number" x-text="':' + frame.line_number"></span>
                     </span>
                   </div>
-                  <!-- Raw line (truncated) -->
-                  <div class="text-xs text-gray-600 truncate mt-0.5"
+                  <!-- Raw line -->
+                  <p class="text-xs text-gray-600 break-words mt-0.5"
                        x-show="frame.raw_line && frame.raw_line !== (frame.function_name || '')"
-                       x-text="frame.raw_line.substring(0, 150)"></div>
+                       x-text="frame.raw_line"></p>
                 </div>
                 <!-- Severity label -->
                 <span class="text-[10px] px-1.5 py-0.5 rounded shrink-0 font-medium"
@@ -538,7 +538,7 @@
                 }"
                 x-text="latestReport?.symbolication_status"></span>
         </div>
-        <pre class="stack-trace text-cyan-200 bg-surface-950 rounded-lg p-4 overflow-x-auto"
+        <pre class="stack-trace text-cyan-200 bg-surface-950 rounded-lg p-4 max-h-96 overflow-auto"
              x-show="latestReport?.symbolicated_stack"
              x-text="latestReport?.symbolicated_stack"></pre>
         <p class="text-sm text-gray-500" x-show="!latestReport?.symbolicated_stack">
@@ -560,7 +560,7 @@
           </a>
         </div>
         <template x-if="latestReport?.stack_trace">
-          <pre class="stack-trace text-gray-400 bg-surface-950 rounded-lg p-4 overflow-x-auto" x-text="latestReport.stack_trace"></pre>
+          <pre class="stack-trace text-gray-400 bg-surface-950 rounded-lg p-4 max-h-96 overflow-auto" x-text="latestReport.stack_trace"></pre>
         </template>
         <p class="text-sm text-gray-600" x-show="!latestReport?.stack_trace">No stack trace available</p>
       </section>
@@ -619,7 +619,7 @@
           <template x-for="a in attachments" :key="a.id">
             <div class="flex items-center justify-between bg-surface-950 rounded-lg p-3 hover:bg-gray-800/50 transition-colors">
               <div class="flex items-center gap-3 min-w-0">
-                <span class="text-gray-300 text-sm truncate" x-text="a.filename"></span>
+                <span class="text-gray-300 text-sm break-words" x-text="a.filename"></span>
                 <span class="text-xs text-gray-600" x-text="formatSize(a.file_size)"></span>
                 <span class="text-xs text-gray-700" x-show="a.content_type" x-text="a.content_type"></span>
               </div>
@@ -673,24 +673,24 @@
         <h2 class="text-sm font-semibold text-gray-300 mb-3">ℹ️ Info</h2>
         <dl class="space-y-2 text-sm">
           <div class="flex justify-between">
-            <dt class="text-gray-500">Project</dt>
-            <dd class="text-gray-300" x-text="group?.project_name || 'Unassigned'"></dd>
+            <dt class="text-gray-500 shrink-0">Project</dt>
+            <dd class="text-gray-300 min-w-0 break-words text-right" x-text="group?.project_name || 'Unassigned'"></dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-gray-500">First Seen</dt>
-            <dd class="text-gray-300" x-text="group ? formatDate(group.first_seen) : '-'"></dd>
+            <dt class="text-gray-500 shrink-0">First Seen</dt>
+            <dd class="text-gray-300 min-w-0 break-words text-right" x-text="group ? formatDate(group.first_seen) : '-'"></dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-gray-500">Last Seen</dt>
-            <dd class="text-gray-300" x-text="group ? formatDate(group.last_seen) : '-'"></dd>
+            <dt class="text-gray-500 shrink-0">Last Seen</dt>
+            <dd class="text-gray-300 min-w-0 break-words text-right" x-text="group ? formatDate(group.last_seen) : '-'"></dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-gray-500">Total Count</dt>
-            <dd class="text-gray-300 font-mono" x-text="group?.total_count ?? '-'"></dd>
+            <dt class="text-gray-500 shrink-0">Total Count</dt>
+            <dd class="text-gray-300 font-mono min-w-0 break-words text-right" x-text="group?.total_count ?? '-'"></dd>
           </div>
           <div class="flex justify-between" x-show="group?.resolved_version">
-            <dt class="text-gray-500">Resolved In</dt>
-            <dd class="text-green-400" x-text="group?.resolved_version"></dd>
+            <dt class="text-gray-500 shrink-0">Resolved In</dt>
+            <dd class="text-green-400 min-w-0 break-words text-right" x-text="group?.resolved_version"></dd>
           </div>
         </dl>
       </section>
@@ -717,7 +717,7 @@
           <template x-for="a in (attachments || [])" :key="'dl-' + a.id">
             <a :href="'/api/v1/download/attachment/' + a.id"
                class="flex items-center justify-between text-sm text-blue-400 hover:text-blue-300 hover:bg-gray-800 rounded-lg px-3 py-2 transition-colors">
-              <span class="truncate" x-text="a.filename"></span>
+              <span class="break-words" x-text="a.filename"></span>
               <span class="text-xs text-gray-600 ml-2" x-text="formatSize(a.file_size)"></span>
             </a>
           </template>
@@ -762,36 +762,36 @@
         <h2 class="text-sm font-semibold text-gray-300 mb-3">🖥️ Device</h2>
         <dl class="space-y-2 text-sm">
           <div class="flex justify-between">
-            <dt class="text-gray-500">Platform</dt>
-            <dd class="text-gray-300" x-text="latestReport?.platform || '-'"></dd>
+            <dt class="text-gray-500 shrink-0">Platform</dt>
+            <dd class="text-gray-300 min-w-0 break-words text-right" x-text="latestReport?.platform || '-'"></dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-gray-500">Device</dt>
-            <dd class="text-gray-300" x-text="latestReport?.device_model || '-'"></dd>
+            <dt class="text-gray-500 shrink-0">Device</dt>
+            <dd class="text-gray-300 min-w-0 break-words text-right" x-text="latestReport?.device_model || '-'"></dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-gray-500">OS</dt>
-            <dd class="text-gray-300" x-text="latestReport?.os_version || '-'"></dd>
+            <dt class="text-gray-500 shrink-0">OS</dt>
+            <dd class="text-gray-300 min-w-0 break-words text-right" x-text="latestReport?.os_version || '-'"></dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-gray-500">GPU</dt>
-            <dd class="text-gray-300" x-text="latestReport?.gpu_name || '-'"></dd>
+            <dt class="text-gray-500 shrink-0">GPU</dt>
+            <dd class="text-gray-300 min-w-0 break-words text-right" x-text="latestReport?.gpu_name || '-'"></dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-gray-500">Memory</dt>
-            <dd class="text-gray-300" x-text="latestReport?.memory_mb ? latestReport.memory_mb + ' MB' : '-'"></dd>
+            <dt class="text-gray-500 shrink-0">Memory</dt>
+            <dd class="text-gray-300 min-w-0 break-words text-right" x-text="latestReport?.memory_mb ? latestReport.memory_mb + ' MB' : '-'"></dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-gray-500">Unity</dt>
-            <dd class="text-gray-300" x-text="latestReport?.unity_version || '-'"></dd>
+            <dt class="text-gray-500 shrink-0">Unity</dt>
+            <dd class="text-gray-300 min-w-0 break-words text-right" x-text="latestReport?.unity_version || '-'"></dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-gray-500">App Version</dt>
-            <dd class="text-gray-300" x-text="latestReport?.app_version || '-'"></dd>
+            <dt class="text-gray-500 shrink-0">App Version</dt>
+            <dd class="text-gray-300 min-w-0 break-words text-right" x-text="latestReport?.app_version || '-'"></dd>
           </div>
           <div class="flex justify-between">
-            <dt class="text-gray-500">Scene</dt>
-            <dd class="text-gray-300" x-text="latestReport?.scene_name || '-'"></dd>
+            <dt class="text-gray-500 shrink-0">Scene</dt>
+            <dd class="text-gray-300 min-w-0 break-words text-right" x-text="latestReport?.scene_name || '-'"></dd>
           </div>
         </dl>
       </section>

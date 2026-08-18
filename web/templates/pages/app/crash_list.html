@@ -62,6 +62,7 @@
 
   <!-- Table -->
   <div class="bg-surface-900 rounded-xl border border-gray-800 overflow-hidden" :class="{ loading }">
+    <div class="overflow-x-auto">
     <table class="data-table" x-show="items.length > 0">
       <thead>
         <tr>
@@ -80,8 +81,8 @@
           <tr class="hover:bg-surface-800 cursor-pointer transition-colors"
               @click="window.location.href = '/web/crashes/' + item.id">
             <td>
-              <p class="font-medium text-gray-200" x-text="item.exception_type"></p>
-              <p class="text-xs text-gray-500 mt-0.5 truncate max-w-xs" x-text="item.exception_message || 'No message'"></p>
+              <p class="font-medium text-gray-200 break-words" x-text="item.exception_type"></p>
+              <p class="text-xs text-gray-500 mt-0.5 break-words" x-text="item.exception_message || 'No message'"></p>
             </td>
             <td class="hidden md:table-cell">
               <span class="pill" x-text="item.project_name || 'Unassigned'"></span>
@@ -115,6 +116,7 @@
         </template>
       </tbody>
     </table>
+    </div>
 
     <!-- Empty state -->
     <div x-show="items.length === 0 && !loading" class="text-center py-16 text-gray-500">

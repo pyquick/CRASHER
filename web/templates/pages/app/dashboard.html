@@ -63,8 +63,8 @@
              class="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-800 transition-colors">
             <span class="text-xs font-mono text-gray-600 w-5" x-text="'#' + (i + 1)"></span>
             <div class="flex-1 min-w-0">
-              <p class="text-sm font-medium truncate" x-text="crash.exception_type"></p>
-              <p class="text-xs text-gray-500 truncate mt-0.5" x-text="crash.exception_message || 'No message'"></p>
+              <p class="text-sm font-medium break-words" x-text="crash.exception_type"></p>
+              <p class="text-xs text-gray-500 break-words mt-0.5" x-text="crash.exception_message || 'No message'"></p>
             </div>
             <span class="badge badge-open" x-text="crash.count"></span>
           </a>
