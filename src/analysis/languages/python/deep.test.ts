@@ -114,11 +114,22 @@ test('non-Python crashes are unaffected by the deep analysis', () => {
 
 test('analyzeCrash builds a crash path flow ending at the root cause', () => {
   const sourceFiles: Record<string, string> = {
-    'sys_patch/constants.py': ['class Constants:', "    audio_type = 'VoodooHDA'"].join('\n'),
+    'sys_patch/patchsets/hardware/audio/constants.py': [
+      'class Constants:',
+      '    voodoo_patch_already = True',
+    ].join('\n'),
+    'sys_patch/constants.py': [
+      'import plistlib',
+      'from Foundation import NSObject',
+      'class Constants:',
+      "    audio_type = 'VoodooHDA'",
+    ].join('\n'),
     'sys_patch/patchsets/hardware/audio/voodoo_audio.py': [
+      'from sys_patch.constants import Constants as AppConstants',
+      '',
       'class VoodooAudio:',
       '    def __init__(self, constants):',
-      '        self._constants = Constants(constants)',
+      '        self._constants = AppConstants(constants)',
       '',
       '    def present(self):',
       '        return self._constants.audio_type=="VoodooHDA" and not self._constants.voodoo_patch_already',
@@ -165,7 +176,7 @@ test('analyzeCrash builds a crash path flow ending at the root cause', () => {
       '    self._detect()',
       '  File "sys_patch/patchsets/detect.py", line 6, in _detect',
       '    if VoodooAudio(None).present() is False:',
-      '  File "sys_patch/patchsets/hardware/audio/voodoo_audio.py", line 6, in present',
+      '  File "sys_patch/patchsets/hardware/audio/voodoo_audio.py", line 8, in present',
       '    return self._constants.audio_type=="VoodooHDA" and not self._constants.voodoo_patch_already',
       "AttributeError: 'Constants' object has no attribute 'voodoo_patch_already'",
     ].join('\n'),
@@ -178,7 +189,16 @@ test('analyzeCrash builds a crash path flow ending at the root cause', () => {
   assert.ok(candidates.length > 0, 'root cause candidates present');
   assert.equal(candidates[0].kind, 'missing-attribute');
   assert.equal(candidates[0].file_path, 'sys_patch/constants.py');
-  assert.equal(candidates[0].line_number, 1);
+  assert.equal(candidates[0].line_number, 3);
+  assert.equal(candidates[0].function_name, 'Constants');
+  assert.equal(candidates[0].is_conclusive, true);
+  assert.equal(candidates[0].definition_kind, 'class');
+  assert.equal(candidates[0].definition_module, 'sys_patch.constants');
+  assert.deepEqual(candidates[0].imported_packages, ['plistlib', 'Foundation']);
+  assert.ok(candidates[0].reason.includes('direct cause'), `reason: ${candidates[0].reason}`);
+  assert.ok(candidates[0].reason.includes('caused the crash'), `reason: ${candidates[0].reason}`);
+  assert.ok(analysis?.summary.includes('**Root Cause**'), 'summary names the direct root cause');
+  assert.deepEqual(analysis?.source_analysis?.fixes, [], 'terminal diagnosis ends without speculative fixes');
 
   const path = analysis?.source_analysis?.crash_path ?? [];
   assert.equal(path.length, 5, '4 frames + terminal root-cause node');
@@ -189,7 +209,7 @@ test('analyzeCrash builds a crash path flow ending at the root cause', () => {
   assert.equal(path[3].function_name, 'present');
   assert.equal(path[4].role, 'root-cause');
   assert.equal(path[4].file_path, 'sys_patch/constants.py');
-  assert.equal(path[4].line_number, 1);
+  assert.equal(path[4].line_number, 3);
   assert.equal(path[4].kind, 'missing-attribute');
   assert.ok(path[4].label.includes('Constants'), `label: ${path[4].label}`);
   assert.ok(path[4].label.includes('voodoo_patch_already'), `label: ${path[4].label}`);

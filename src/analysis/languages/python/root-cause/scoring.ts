@@ -52,7 +52,9 @@ export function scoreEvidence(
 
   const scored = evidence.map(item => ({
     item,
-    confidence: clamp(proximityFor(item, crashFunc, model, frames, edges) * (0.4 + 0.2 * item.weight), 0.05, 0.95),
+    confidence: item.is_conclusive
+      ? 1
+      : clamp(proximityFor(item, crashFunc, model, frames, edges) * (0.4 + 0.2 * item.weight), 0.05, 0.95),
   }));
 
   // Group by (file, line, kind): merge reasons, keep the highest confidence.
@@ -64,6 +66,10 @@ export function scoreEvidence(
       if (!existing.evidence.includes(item.reason)) existing.evidence.push(item.reason);
       existing.confidence = Math.max(existing.confidence, confidence);
       existing.reason = existing.evidence[0];
+      if (item.is_conclusive) existing.is_conclusive = true;
+      existing.definition_kind ??= item.definition_kind;
+      existing.definition_module ??= item.definition_module;
+      existing.imported_packages ??= item.imported_packages;
     } else {
       grouped.set(key, {
         file_path: item.file_path,
@@ -73,6 +79,10 @@ export function scoreEvidence(
         confidence,
         kind: item.kind,
         evidence: [item.reason],
+        ...(item.is_conclusive ? { is_conclusive: true } : {}),
+        ...(item.definition_kind ? { definition_kind: item.definition_kind } : {}),
+        ...(item.definition_module ? { definition_module: item.definition_module } : {}),
+        ...(item.imported_packages ? { imported_packages: item.imported_packages } : {}),
       });
     }
   }

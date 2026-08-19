@@ -226,6 +226,41 @@ test("AttributeError names the class in the message and points at its definition
   assert.ok(top.reason.includes('Constants'), `reason: ${top.reason}`);
 });
 
+test("targeted Constants AttributeError also resolves a function definition and stops", () => {
+  const model = buildSnapshotModel(snapshotOf({
+    'factory.py': [
+      'import json',
+      'def Constants(value):',
+      "    return type('Constants', (), {})()",
+    ].join('\n'),
+    'crash.py': [
+      'from factory import Constants',
+      '',
+      'def run():',
+      '    constants = Constants(None)',
+      '    return constants.voodoo_patch_already',
+    ].join('\n'),
+  }));
+  const candidates = analyzePythonRootCause(model, [frame('crash.py', 5, 'run')], {
+    type: 'AttributeError',
+    message: "'Constants' object has no attribute 'voodoo_patch_already'",
+  });
+
+  assert.equal(candidates.length, 1, 'resolved definition is the terminal cause');
+  const top = candidates[0];
+  assert.equal(top.kind, 'missing-attribute');
+  assert.equal(top.file_path, 'factory.py');
+  assert.equal(top.line_number, 2);
+  assert.equal(top.function_name, 'Constants');
+  assert.equal(top.definition_kind, 'function');
+  assert.equal(top.definition_module, 'factory');
+  assert.deepEqual(top.imported_packages, ['json']);
+  assert.equal(top.is_conclusive, true);
+  assert.equal(top.confidence, 1);
+  assert.ok(top.reason.includes('function Constants'), `reason: ${top.reason}`);
+  assert.ok(top.reason.includes('caused the crash'), `reason: ${top.reason}`);
+});
+
 test('falls back to resolving self.<attr> chains to the constructor class', () => {
   const model = buildSnapshotModel(snapshotOf(AUDIO_SNAPSHOT_FILES));
   // Class name in the message is wrong/unknown → the self._constants chain

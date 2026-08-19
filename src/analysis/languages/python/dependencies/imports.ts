@@ -32,13 +32,123 @@ function normalizePath(path: string): string {
  * Find the file whose relative path corresponds to a dotted module path
  * (e.g. 'services.user_service' → 'services/user_service.py').
  */
-function fileForModule(model: PySnapshotModel, module: string): PyFileModel | undefined {
-  const modulePath = normalizePath(module).replace(/\./g, '/');
-  for (const file of model.files) {
-    const normalized = normalizePath(file.file_path).replace(/\.py$/, '');
-    if (normalized === modulePath || normalized.endsWith('/' + modulePath)) return file;
+export function fileForModule(
+  model: PySnapshotModel,
+  module: string,
+  importingFilePath = ''
+): PyFileModel | undefined {
+  const leadingDots = module.match(/^\.+/)?.[0].length ?? 0;
+  const moduleName = module.slice(leadingDots).replace(/\./g, '/');
+  const candidates: string[] = [];
+
+  if (leadingDots > 0 && importingFilePath) {
+    const packageParts = normalizePath(importingFilePath).split('/').slice(0, -1);
+    const baseParts = packageParts.slice(0, Math.max(0, packageParts.length - (leadingDots - 1)));
+    candidates.push([...baseParts, ...moduleName.split('/').filter(Boolean)].join('/'));
+  }
+  if (moduleName) candidates.push(moduleName);
+
+  for (const candidate of candidates) {
+    const normalizedCandidate = normalizePath(candidate);
+    for (const file of model.files) {
+      const normalized = normalizePath(file.file_path).replace(/\.py$/, '');
+      if (normalized === normalizedCandidate || normalized.endsWith('/' + normalizedCandidate)) return file;
+      if (normalized === normalizedCandidate + '/__init__' || normalized.endsWith('/' + normalizedCandidate + '/__init__')) return file;
+    }
   }
   return undefined;
+}
+
+export interface PyNamedDefinition {
+  kind: 'class' | 'function';
+  qualified_name: string;
+  line: number;
+  file: PyFileModel;
+  cls?: PyClass;
+}
+
+function definitionsInFile(file: PyFileModel, name: string): PyNamedDefinition[] {
+  const key = name.toLowerCase();
+  const definitions: PyNamedDefinition[] = [];
+  for (const cls of file.classes) {
+    if (cls.name.toLowerCase() !== key) continue;
+    definitions.push({
+      kind: 'class',
+      qualified_name: cls.qualified_name,
+      line: cls.line,
+      file,
+      cls,
+    });
+  }
+  for (const func of file.functions) {
+    if (func.name.toLowerCase() !== key) continue;
+    definitions.push({
+      kind: 'function',
+      qualified_name: func.qualified_name,
+      line: func.line,
+      file,
+    });
+  }
+  return definitions;
+}
+
+/** Scan every indexed Python file for a class or function with this name. */
+export function namedDefinitions(model: PySnapshotModel, name: string): PyNamedDefinition[] {
+  return model.files.flatMap(file => definitionsInFile(file, name));
+}
+
+/**
+ * Resolve a class/function reference through local definitions and imports.
+ * `expectedName` is the runtime type from the exception and lets aliases such
+ * as `Constants as AppConstants` resolve back to the original definition.
+ */
+export function resolveNamedDefinition(
+  model: PySnapshotModel,
+  contextFile: PyFileModel,
+  referenceName: string,
+  expectedName: string
+): PyNamedDefinition | null {
+  const parts = referenceName.split('.').filter(Boolean);
+  if (parts.length === 0) return null;
+  const boundName = parts[0].toLowerCase();
+  const expectedKey = expectedName.toLowerCase();
+
+  if (parts.length === 1 && referenceName.toLowerCase() === expectedKey) {
+    const local = definitionsInFile(contextFile, referenceName)[0];
+    if (local) return local;
+  }
+
+  const binding = contextFile.imports.find(item => item.name.toLowerCase() === boundName);
+  if (binding) {
+    const targetName = binding.is_from
+      ? (parts.length > 1 ? parts[parts.length - 1] : binding.imported_name)
+      : (parts.length > 1 ? parts[parts.length - 1] : expectedName);
+    const moduleCandidates = [binding.module];
+    if (binding.is_from) {
+      moduleCandidates.push(`${binding.module}${binding.module.endsWith('.') ? '' : '.'}${binding.imported_name}`);
+    }
+
+    for (const moduleName of moduleCandidates) {
+      const targetFile = fileForModule(model, moduleName, contextFile.file_path);
+      if (!targetFile) continue;
+      const target = targetName.toLowerCase() === expectedKey
+        ? definitionsInFile(targetFile, targetName)[0]
+        : definitionsInFile(targetFile, expectedName)[0];
+      if (target) return target;
+    }
+  }
+
+  if (parts.length > 1) {
+    const moduleName = parts.slice(0, -1).join('.');
+    const targetFile = fileForModule(model, moduleName, contextFile.file_path);
+    const targetName = parts[parts.length - 1];
+    const target = targetFile && targetName.toLowerCase() === expectedKey
+      ? definitionsInFile(targetFile, targetName)[0]
+      : undefined;
+    if (target) return target;
+  }
+
+  return null;
 }
 
 export function enclosingClass(model: PySnapshotModel, func?: PyFunction): PyClass | undefined {
@@ -91,11 +201,12 @@ export function resolveName(
   // Import bindings in this file: from X import name / import X as name.
   const binding = context.file.imports.find(item => item.name.toLowerCase() === key);
   if (binding) {
-    const moduleFile = fileForModule(model, binding.module);
+    const moduleFile = fileForModule(model, binding.module, context.file.file_path);
     if (moduleFile) {
-      const importedFunc = moduleFile.functions.find(func => func.name.toLowerCase() === key);
+      const importedKey = (binding.imported_name || binding.name).toLowerCase();
+      const importedFunc = moduleFile.functions.find(func => func.name.toLowerCase() === importedKey);
       if (importedFunc) return { kind: 'import', func: importedFunc, import: binding };
-      const importedClass = moduleFile.classes.find(cls => cls.name.toLowerCase() === key);
+      const importedClass = moduleFile.classes.find(cls => cls.name.toLowerCase() === importedKey);
       if (importedClass) {
         const init = importedClass.methods.find(method => method.name === '__init__');
         if (init) return { kind: 'import', func: init, cls: importedClass, import: binding };

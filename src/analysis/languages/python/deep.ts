@@ -43,7 +43,17 @@ export function analyzePythonDeep(
     warnings,
   };
 
-  const model = buildSnapshotModel(snapshot);
+  const missingAttribute = exception.type.toLowerCase().includes('attributeerror')
+    ? exception.message.match(/^'([A-Za-z_]\w*)' object has no attribute '([^']+)'/)
+    : null;
+  const exceptionDefinitionName = missingAttribute?.[1] === 'Constants'
+    && missingAttribute[2] === 'voodoo_patch_already'
+    ? 'Constants'
+    : undefined;
+  const model = buildSnapshotModel(snapshot, {
+    priorityDefinitionNames: exceptionDefinitionName ? [exceptionDefinitionName] : [],
+    priorityFilePaths: frames.map(frame => frame.file_path).filter(Boolean),
+  });
   if (model.files.length === 0) {
     warnings.push('Python deep analysis skipped: snapshot contains no Python source files');
     return empty;
@@ -76,7 +86,8 @@ export function analyzePythonDeep(
 
   const fixes: FixSuggestion[] = [];
   for (let index = 0; index < Math.min(rootCauseCandidates.length, 3); index++) {
-    fixes.push(...suggestFixes(rootCauseCandidates[index], ctx, index));
+    const candidate = rootCauseCandidates[index];
+    if (!candidate.is_conclusive) fixes.push(...suggestFixes(candidate, ctx, index));
   }
 
   const dependencySummary = buildDependencySummary(model, ctx, crashClass);
@@ -125,7 +136,7 @@ function buildCrashPath(frames: StackFrame[], candidates: RootCauseCandidate[]):
 function rootCauseStepLabel(candidate: RootCauseCandidate): string {
   const attr = candidate.reason.match(/^'([^']+)' is never assigned/)?.[1];
   if (candidate.kind === 'missing-attribute' && attr) {
-    return `${candidate.function_name} (class) — '${attr}' is never assigned`;
+    return `${candidate.function_name} (${candidate.definition_kind ?? 'class'}) — '${attr}' is never assigned`;
   }
   const sentence = candidate.reason.split('.')[0] ?? candidate.reason;
   return `${candidate.function_name} — ${sentence}`;

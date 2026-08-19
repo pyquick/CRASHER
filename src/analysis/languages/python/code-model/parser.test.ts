@@ -39,6 +39,38 @@ test('parses imports and from-imports with aliases', () => {
   assert.equal(getter.module, 'services.user_service');
 });
 
+test('preserves import aliases, qualified bindings, and relative modules', () => {
+  const model = parsePythonSource('pkg/consumer.py', [
+    'from .constants import Constants as AppConstants',
+    'from . import helpers',
+    'from pkg.tools import (Runner as ToolRunner, helper)',
+    'import vendor.constants',
+    'import vendor.helpers as vendor_helpers',
+  ].join('\n'));
+
+  const appConstants = model.imports.find(item => item.name === 'AppConstants');
+  assert.ok(appConstants);
+  assert.equal(appConstants.module, '.constants');
+  assert.equal(appConstants.imported_name, 'Constants');
+
+  const helpers = model.imports.find(item => item.module === '.' && item.name === 'helpers');
+  assert.ok(helpers, 'relative package import parsed');
+  assert.equal(helpers.imported_name, 'helpers');
+
+  const toolRunner = model.imports.find(item => item.name === 'ToolRunner');
+  assert.ok(toolRunner, 'parenthesized from-import parsed');
+  assert.equal(toolRunner.imported_name, 'Runner');
+
+  const vendor = model.imports.find(item => item.module === 'vendor.constants');
+  assert.ok(vendor);
+  assert.equal(vendor.name, 'vendor', 'plain dotted import binds the top-level package');
+  assert.equal(vendor.imported_name, 'vendor.constants');
+
+  const vendorHelpers = model.imports.find(item => item.name === 'vendor_helpers');
+  assert.ok(vendorHelpers);
+  assert.equal(vendorHelpers.imported_name, 'vendor.helpers');
+});
+
 test('parses module-level assignments and functions', () => {
   const model = parseFixture('app.py');
   assert.ok(model.name_defs.has('service'), 'module assignment recorded in name_defs');
@@ -200,6 +232,25 @@ test('caps very large snapshots at the model limits', () => {
   assert.equal(model.files.length, 300);
   assert.equal(model.skipped_files, 5);
   assert.equal(model.truncated, true);
+});
+
+test('prioritizes an exception-named definition beyond the snapshot parse cap', () => {
+  const ordinary = Array.from({ length: 305 }, (_, i) => ({
+    relative_path: `pkg/mod${i}.py`,
+    content: 'def ordinary():\n    return 1\n',
+  }));
+  const definition = {
+    relative_path: 'late/constants.py',
+    content: 'class Constants:\n    audio_type = "VoodooHDA"\n',
+  };
+  const model = buildSnapshotModel(snapshotOfFiles([...ordinary, definition]), {
+    priorityDefinitionNames: ['Constants'],
+  });
+
+  assert.equal(model.files.length, 300);
+  assert.equal(model.skipped_files, 6);
+  assert.ok(model.by_path.has('late/constants.py'), 'definition found by scanning all files before capping');
+  assert.ok(model.classes_by_name.has('constants'));
 });
 
 test('builds snapshot model with cross-file maps', () => {

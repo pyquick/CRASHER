@@ -88,8 +88,21 @@ export function analyzeCrash(report: {
   };
   if (sourceSnapshot) {
     analysis.source_analysis = analyzeSourceCode(sourceSnapshot, frames, triggerPoint, { exception_type, exception_message });
+    const conclusive = analysis.source_analysis.root_cause_candidates?.find(candidate => candidate.is_conclusive);
+    if (conclusive) analysis.summary = withConclusiveRootCause(analysis.summary, conclusive.reason);
   }
   return analysis;
+}
+
+function withConclusiveRootCause(summary: string, reason: string): string {
+  const terminalCause = `**Root Cause**: ${reason}\n\n`;
+  const sourceSection = /\*\*Likely Root Cause\*\*:[\s\S]*?(?=\n\n\*\*Stack Depth\*\*:)/;
+  if (sourceSection.test(summary)) return summary.replace(sourceSection, terminalCause.trimEnd());
+  const stackDepth = '**Stack Depth**:';
+  const index = summary.indexOf(stackDepth);
+  return index >= 0
+    ? summary.slice(0, index) + terminalCause + summary.slice(index)
+    : summary + `\n\n${terminalCause.trimEnd()}`;
 }
 
 // ── Minimal Analysis (fallback when no stack trace) ──

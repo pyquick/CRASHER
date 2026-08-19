@@ -16,10 +16,11 @@ export interface PyNameDef extends PyLocation {
 export interface PyImport {
   file_path: string;
   line: number;
-  module: string;   // full module path, e.g. 'services.user_service'
-  name: string;     // bound name (alias if aliased, else the imported name)
-  alias?: string;   // 'as' alias, when present
-  is_from: boolean; // true for 'from X import Y', false for 'import X'
+  module: string;        // full module path, e.g. 'services.user_service'
+  imported_name: string; // original imported name before an optional alias
+  name: string;          // bound name (alias if aliased, else the imported name)
+  alias?: string;        // 'as' alias, when present
+  is_from: boolean;      // true for 'from X import Y', false for 'import X'
 }
 
 export interface PyCall {
@@ -54,6 +55,8 @@ export type PyFunctionKind = 'function' | 'method' | 'async_function' | 'async_m
 export interface PyFunction {
   name: string;
   qualified_name: string; // 'func', 'Class.method', 'outer.inner'
+  /** 1-based line of the `def`/`async def` statement itself. */
+  line: number;
   kind: PyFunctionKind;
   params: string[];
   decorators: string[];

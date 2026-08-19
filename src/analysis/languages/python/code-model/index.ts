@@ -3,6 +3,7 @@
 // lookup maps (functions, classes, imports, class edges).
 
 import type { AnalysisSourceFile, AnalysisSourceSnapshot } from '../../../types.js';
+import { pathsMatch } from '../../../../source.js';
 import type { PyClass, PyFileModel, PySnapshotModel } from './types.js';
 import { parsePythonFile } from './parser.js';
 
@@ -13,7 +14,22 @@ export * from './types.js';
 // so very large snapshots are partially indexed instead of exhausting time.
 export const MODEL_LIMITS = { maxFiles: 300, maxFunctions: 2000 } as const;
 
-export function buildSnapshotModel(snapshot: AnalysisSourceSnapshot): PySnapshotModel {
+export interface BuildSnapshotModelOptions {
+  /** Definition names to locate across the whole snapshot before applying the file cap. */
+  priorityDefinitionNames?: string[];
+  /** Stack/source paths that must be indexed before unrelated files. */
+  priorityFilePaths?: string[];
+}
+
+function definitionPattern(name: string): RegExp {
+  const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return new RegExp(`^\\s*(?:class|(?:async\\s+)?def)\\s+${escaped}\\b`, 'mi');
+}
+
+export function buildSnapshotModel(
+  snapshot: AnalysisSourceSnapshot,
+  options: BuildSnapshotModelOptions = {}
+): PySnapshotModel {
   const pythonFiles: AnalysisSourceFile[] = snapshot.files.filter(file => file.language === 'python');
 
   const model: PySnapshotModel = {
@@ -64,7 +80,35 @@ export function buildSnapshotModel(snapshot: AnalysisSourceSnapshot): PySnapshot
     }
   };
 
-  const indexed = pythonFiles.slice(0, MODEL_LIMITS.maxFiles);
+  const orderedFiles: AnalysisSourceFile[] = [];
+  const includedFiles = new Set<AnalysisSourceFile>();
+  const addFile = (file: AnalysisSourceFile): void => {
+    if (includedFiles.has(file)) return;
+    includedFiles.add(file);
+    orderedFiles.push(file);
+  };
+
+  // This deliberately scans every Python file before applying the parse cap:
+  // exception-named definitions must not disappear merely because a large
+  // snapshot listed their files after MODEL_LIMITS.maxFiles.
+  const patterns = [...new Set(options.priorityDefinitionNames ?? [])]
+    .filter(Boolean)
+    .map(definitionPattern);
+  if (patterns.length > 0) {
+    for (const file of pythonFiles) {
+      if (patterns.some(pattern => pattern.test(file.content))) addFile(file);
+    }
+  }
+
+  for (const priorityPath of options.priorityFilePaths ?? []) {
+    for (const file of pythonFiles) {
+      if (pathsMatch(file.relative_path, priorityPath)) addFile(file);
+    }
+  }
+
+  for (const file of pythonFiles) addFile(file);
+
+  const indexed = orderedFiles.slice(0, MODEL_LIMITS.maxFiles);
   model.skipped_files = pythonFiles.length - indexed.length;
   if (model.skipped_files > 0) model.truncated = true;
 

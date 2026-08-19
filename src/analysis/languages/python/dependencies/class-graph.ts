@@ -100,18 +100,14 @@ export function attributeDefinitionSites(
   return sites;
 }
 
-function normalizePath(path: string): string {
-  return path.replace(/\\/g, '/').toLowerCase();
-}
-
 /** Prefer the class living in the same directory family as the crash file. */
 function preferSameDirectoryFamily(candidates: PyClass[], model: PySnapshotModel, crashFilePath: string): PyClass | null {
   if (candidates.length <= 1) return candidates[0] ?? null;
-  const dir = normalizePath(crashFilePath).split('/').slice(0, -1).join('/');
+  const dir = crashFilePath.replace(/\\/g, '/').toLowerCase().split('/').slice(0, -1).join('/');
   for (const cls of candidates) {
     const file = fileOfClass(cls, model);
     if (!file) continue;
-    const clsDir = normalizePath(file.file_path).split('/').slice(0, -1).join('/');
+    const clsDir = file.file_path.replace(/\\/g, '/').toLowerCase().split('/').slice(0, -1).join('/');
     if (clsDir === dir || dir.startsWith(clsDir + '/') || clsDir.startsWith(dir + '/')) return cls;
   }
   return candidates[0];

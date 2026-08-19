@@ -121,6 +121,14 @@ export interface RootCauseCandidate {
   confidence: number; // 0..1
   kind: RootCauseKind;
   evidence: string[];
+  /** True when the analysis has resolved a definitive definition site. */
+  is_conclusive?: boolean;
+  /** Declaration shape at the resolved definition site. */
+  definition_kind?: 'class' | 'function';
+  /** Python module containing the resolved definition. */
+  definition_module?: string;
+  /** Modules imported by the file that contains the resolved definition. */
+  imported_packages?: string[];
 }
 
 /**

@@ -34,7 +34,7 @@ interface Scope {
 const DEF_RE = /^(?:async\s+)?def\s+([A-Za-z_]\w*)\s*\(([^)]*)\)\s*(?:->\s*[^:]*?)?\s*(?::\s*(.*))?$/;
 const CLASS_RE = /^class\s+([A-Za-z_]\w*)\s*(?:\(([^)]*)\))?\s*(?::\s*(.*))?$/;
 const IMPORT_RE = /^import\s+(.+)$/;
-const FROM_IMPORT_RE = /^from\s+([\w.]+)\s+import\s+(.+)$/;
+const FROM_IMPORT_RE = /^from\s+(\.*[\w.]*)\s+import\s+(.+)$/;
 const DECORATOR_RE = /^@(.+)$/;
 const RETURN_RE = /^return(?:\s+(.*))?$/;
 const RAISE_RE = /^raise\s+([A-Za-z_]\w*)/;
@@ -103,16 +103,19 @@ function splitTopLevel(value: string): string[] {
 
 function parseImportStatement(rest: string, filePath: string, line: number, isFrom: boolean, module: string): PyImport[] {
   const imports: PyImport[] = [];
-  for (const item of splitTopLevel(rest)) {
+  const unwrapped = rest.trim().replace(/^\((.*)\)$/, '$1');
+  for (const item of splitTopLevel(unwrapped)) {
     const match = item.match(/^([\w.]+)(?:\s+as\s+([A-Za-z_]\w*))?$/);
     if (!match) continue;
     const imported = match[1];
     const alias = match[2];
+    const parts = imported.split('.');
     imports.push({
       file_path: filePath,
       line,
       module: isFrom ? module : imported,
-      name: alias ?? imported.split('.').pop()!,
+      imported_name: isFrom ? parts[parts.length - 1] : imported,
+      name: alias ?? (isFrom ? parts[parts.length - 1] : parts[0]),
       ...(alias ? { alias } : {}),
       is_from: isFrom,
     });
@@ -287,6 +290,7 @@ export function parsePythonSource(relativePath: string, content: string): PyFile
       const func: PyFunction = {
         name: defMatch[1],
         qualified_name: parentQName ? `${parentQName}.${defMatch[1]}` : defMatch[1],
+        line: logical.line,
         kind: isAsync ? (isMethod ? 'async_method' : 'async_function') : (isMethod ? 'method' : 'function'),
         params: splitTopLevel(defMatch[2]).map(param => param.trim()).filter(Boolean),
         decorators: pendingDecorators,

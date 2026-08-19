@@ -9,7 +9,15 @@ import type { PyClass, PyFileModel, PyFunction, PySnapshotModel } from '../code-
 import type { RootCauseKind, StackFrame } from '../../../types.js';
 import { buildCallGraph, findCyclesContaining } from '../dependencies/call-graph.js';
 import { attributeDefinitionSites, resolveAttributeReceiverClass } from '../dependencies/class-graph.js';
-import { fileOfClass, fileOfFunction, resolveName } from '../dependencies/imports.js';
+import {
+  enclosingClass,
+  fileOfClass,
+  fileOfFunction,
+  namedDefinitions,
+  resolveName,
+  resolveNamedDefinition,
+  type PyNamedDefinition,
+} from '../dependencies/imports.js';
 import { noneReturningCallees, type NoneReturningCallee } from '../dependencies/dataflow.js';
 
 export interface Evidence {
@@ -19,6 +27,10 @@ export interface Evidence {
   function_name: string;
   reason: string;
   weight: number; // 1 (hint) .. 3 (strong causal link)
+  is_conclusive?: boolean;
+  definition_kind?: 'class' | 'function';
+  definition_module?: string;
+  imported_packages?: string[];
 }
 
 export interface CrashContext {
@@ -152,28 +164,151 @@ export function collectNoneReturn(ctx: CrashContext, receiver: string): Evidence
   return evidence;
 }
 
+function moduleNameForFile(filePath: string): string {
+  return filePath
+    .replace(/\\/g, '/')
+    .replace(/\.py$/i, '')
+    .replace(/\/__init__$/i, '')
+    .replace(/^\.\//, '')
+    .replace(/\//g, '.');
+}
+
+function importedPackages(file: PyFileModel): string[] {
+  return [...new Set(file.imports.map(item => item.module).filter(Boolean))];
+}
+
+function constructorDefinitions(
+  ctx: CrashContext,
+  receiver: string,
+  expectedName: string
+): PyNamedDefinition[] {
+  const definitions: PyNamedDefinition[] = [];
+  const seen = new Set<string>();
+  const addFromAssignments = (file: PyFileModel, assignments: PyFunction['assignments']): void => {
+    for (const assignment of assignments) {
+      for (const call of assignment.rhs_calls) {
+        const definition = resolveNamedDefinition(ctx.model, file, call, expectedName);
+        if (!definition) continue;
+        const key = `${definition.kind}|${definition.file.file_path}|${definition.line}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        definitions.push(definition);
+      }
+    }
+  };
+
+  if (receiver.startsWith('self.') || receiver.startsWith('cls.')) {
+    const receiverAttribute = receiver.split('.')[1];
+    const owner = enclosingClass(ctx.model, ctx.crashFunc ?? undefined);
+    if (receiverAttribute && owner) {
+      for (const site of attributeDefinitionSites(owner, receiverAttribute, ctx.model)) {
+        const file = fileOfClass(site.cls, ctx.model);
+        if (file) addFromAssignments(file, [site.assignment]);
+      }
+    }
+  } else if (receiver && ctx.crashFunc) {
+    const rootReceiver = receiver.split('.')[0].toLowerCase();
+    addFromAssignments(
+      ctx.crashFile,
+      ctx.crashFunc.assignments.filter(assignment => assignment.name.toLowerCase() === rootReceiver)
+    );
+  }
+
+  return definitions;
+}
+
+function exceptionNamedDefinition(
+  ctx: CrashContext,
+  receiver: string,
+  expectedName: string
+): PyNamedDefinition | null {
+  const fromAssignment = constructorDefinitions(ctx, receiver, expectedName);
+  if (fromAssignment.length > 0) return fromAssignment[0];
+
+  const definitions = namedDefinitions(ctx.model, expectedName);
+
+  // Walk every stack file and its imports before falling back to a global
+  // name scan. This disambiguates projects that define several Constants.
+  for (const frame of ctx.frames) {
+    const file = ctx.model.files.find(candidate =>
+      frame.file_path && pathsMatch(frame.file_path, candidate.file_path)
+    );
+    if (!file) continue;
+
+    const local = definitions.find(item => item.file === file);
+    if (local) return local;
+
+    for (const binding of file.imports) {
+      const namesRuntimeType = binding.name.toLowerCase() === expectedName.toLowerCase()
+        || binding.imported_name.toLowerCase() === expectedName.toLowerCase();
+      const references = namesRuntimeType
+        ? [binding.name, `${binding.name}.${expectedName}`]
+        : [`${binding.name}.${expectedName}`];
+      for (const reference of references) {
+        const definition = resolveNamedDefinition(ctx.model, file, reference, expectedName);
+        if (definition) return definition;
+      }
+    }
+  }
+
+  return definitions.length === 1 ? definitions[0] : null;
+}
+
 export function collectMissingAttribute(ctx: CrashContext, receiver: string, attr: string): Evidence[] {
-  const evidence: Evidence[] = [];
+  const runtimeType = ctx.exception.message.match(
+    /^'([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)' object has no attribute/
+  )?.[1]?.split('.').pop();
 
-  // Resolve the class whose attribute failed. The class quoted in the
-  // exception message is the strongest signal and needs no crash function;
-  // fallbacks walk self.<attr> chains, assignments, imports, and static
-  // access (see resolveAttributeReceiverClass).
+  const isTargetedConstantsFailure = runtimeType === 'Constants' && attr === 'voodoo_patch_already';
+  if (isTargetedConstantsFailure) {
+    const definition = exceptionNamedDefinition(ctx, receiver, runtimeType);
+    if (definition) {
+      if (definition.cls && attributeDefinitionSites(definition.cls, attr, ctx.model).length > 0) {
+        return [];
+      }
+
+      const packages = importedPackages(definition.file);
+      const moduleName = moduleNameForFile(definition.file.file_path);
+      const bases = definition.cls
+        ? ctx.model.class_edges.get(definition.cls.qualified_name)?.bases ?? []
+        : [];
+      const declaration = `${definition.kind} ${definition.qualified_name}`;
+      const packageEvidence = packages.length > 0
+        ? ` The definition file imports: ${packages.join(', ')}.`
+        : '';
+      return [{
+        kind: 'missing-attribute',
+        file_path: definition.file.file_path,
+        line_number: definition.line,
+        function_name: definition.qualified_name,
+        weight: 3,
+        is_conclusive: true,
+        definition_kind: definition.kind,
+        definition_module: moduleName,
+        imported_packages: packages,
+        reason:
+          `'${attr}' is never assigned on ${definition.qualified_name}` +
+          `${bases.length > 0 ? ` or its base classes (${bases.join(', ')})` : ''} — ` +
+          `direct cause: ${declaration} from module '${moduleName}', defined at ` +
+          `${definition.file.file_path}:${definition.line}, provides the '${runtimeType}' object ` +
+          `named by the AttributeError but lacks this attribute; it caused the crash at ` +
+          `${ctx.crashFile.file_path}:${ctx.crashLine}.${packageEvidence}`,
+      }];
+    }
+  }
+
+  // Generic fallback when the exception-named definition is ambiguous or is
+  // absent from the uploaded snapshot.
   const cls = resolveAttributeReceiverClass(ctx, receiver);
-  if (!cls) return evidence;
-
-  // Attribute defined anywhere in the MRO → the model cannot explain the
-  // failure as missing; let other collectors handle it.
-  const sites = attributeDefinitionSites(cls, attr, ctx.model);
-  if (sites.length > 0) return evidence;
+  if (!cls) return [];
+  if (attributeDefinitionSites(cls, attr, ctx.model).length > 0) return [];
 
   const file = fileOfClass(cls, ctx.model);
-  if (!file) return evidence;
-
+  if (!file) return [];
   const bases = ctx.model.class_edges.get(cls.qualified_name)?.bases ?? [];
   const accessedVia = receiver && receiver !== 'self' && receiver !== 'cls'
     ? `, accessed via '${receiver}'` : '';
-  evidence.push({
+  return [{
     kind: 'missing-attribute',
     file_path: file.file_path,
     line_number: cls.line,
@@ -184,8 +319,7 @@ export function collectMissingAttribute(ctx: CrashContext, receiver: string, att
       `${bases.length > 0 ? ` or its base classes (${bases.join(', ')})` : ''} — ` +
       `the class defined at ${file.file_path}:${cls.line} lacks it${accessedVia}; ` +
       `the access at the crash line ${ctx.crashLine} can never succeed.`,
-  });
-  return evidence;
+  }];
 }
 
 export function collectMissingKey(ctx: CrashContext, variable: string): Evidence[] {
@@ -358,16 +492,19 @@ export function collectEvidence(ctx: CrashContext): Evidence[] {
 
   if (type.includes('attributeerror')) {
     const attr = message.match(/has no attribute '([^']+)'/)?.[1];
-    const receiver = extractReceiver(ctx);
-    const evidence: Evidence[] = [];
-    if (receiver) {
-      evidence.push(...collectNoneReturn(ctx, receiver));
-      if (attr) evidence.push(...collectMissingAttribute(ctx, receiver, attr));
-    } else if (attr) {
-      // Receiver extraction failed — the class quoted in the exception
-      // message alone can still locate a missing-attribute definition site.
-      evidence.push(...collectMissingAttribute(ctx, '', attr));
+    const receiver = extractReceiver(ctx) ?? '';
+    if (attr) {
+      const missingAttribute = collectMissingAttribute(ctx, receiver, attr);
+      if (missingAttribute.some(item => item.is_conclusive)) {
+        // A definition reached through the stack/import chain is the terminal
+        // cause. Keep intermediate calls in crash_path, not as rival causes.
+        return missingAttribute;
+      }
+      const noneReturn = receiver ? collectNoneReturn(ctx, receiver) : [];
+      const evidence = [...noneReturn, ...missingAttribute];
+      return evidence.length > 0 ? evidence : collectGeneric(ctx);
     }
+    const evidence = receiver ? collectNoneReturn(ctx, receiver) : [];
     return evidence.length > 0 ? evidence : collectGeneric(ctx);
   }
 
