@@ -188,6 +188,7 @@ function runPythonDeepAnalysis(
     sourceAnalysis.root_cause_candidates = deep.root_cause_candidates;
     sourceAnalysis.fixes = deep.fixes;
     sourceAnalysis.dependency_summary = deep.dependency_summary;
+    sourceAnalysis.crash_path = deep.crash_path;
     warnings.push(...deep.warnings);
   } catch (err) {
     warnings.push(`Python deep analysis failed: ${(err as Error).message}`);

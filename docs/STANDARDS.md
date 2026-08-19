@@ -101,19 +101,30 @@ src/
 │   ├── index.ts               #   公开导出
 │   ├── password.ts            #   密码哈希与验证
 │   ├── session.ts             #   会话管理
-│   ├── two-factor.ts          #   2FA 通用引擎（TOTP + 邮件/短信验证码）
+│   ├── email/                 #   邮箱管理 + 登录邮箱验证
+│   │   ├── index.ts
+│   │   ├── manage.ts          #     邮箱添加/验证/重发/设为主要/删除 + 登录验证开关
+│   │   └── login-verification.ts  # 登录邮箱验证会话（身份校验，admin 可选）
+│   ├── 2fa/                   #   两步验证
+│   │   ├── index.ts
+│   │   ├── totp.ts            #     TOTP 引擎（RFC 6238）+ 登录临时令牌
+│   │   ├── operation.ts       #     账户操作 2FA 会话（TOTP/邮箱/短信）
+│   │   ├── mfa.ts             #     MFA 会话 + 可用方法
+│   │   └── phone.ts           #     手机管理（SMS 2FA）
 │   ├── api-key.ts             #   API 密钥管理
 │   ├── user.ts                #   用户 CRUD
-│   ├── email.ts               #   邮箱管理
-│   ├── phone.ts               #   手机管理
-│   ├── totp.ts                #   TOTP 设置
 │   ├── password-reset.ts      #   密码重置流程
 │   ├── container.ts           #   容器 CRUD、存储统计
 │   ├── audit.ts               #   审计日志写入
 │   └── middleware.ts           #   Auth 中间件（会话认证、API 密钥认证、角色检查）
 │
 ├── handler/                   # 路由处理器（仅处理 HTTP 请求/响应）
-│   ├── auth.ts                #   认证相关路由
+│   ├── auth.ts                #   认证核心路由（初始化/登录/登出/me）
+│   ├── auth-common.ts         #   登录步骤链 + 操作 2FA 挑战共享逻辑
+│   ├── auth-email.ts          #   邮箱管理路由
+│   ├── auth-2fa.ts            #   2FA/TOTP/手机路由
+│   ├── auth-password.ts       #   密码重置路由
+│   ├── auth-admin.ts          #   用户/API 密钥/容器管理路由
 │   ├── crash-report.ts        #   崩溃报告接收
 │   ├── unity.ts               #   Unity 专用崩溃接收
 │   ├── feedback.ts            #   玩家反馈接收
@@ -200,6 +211,7 @@ web/
 │   │       └── api-doc.html
 │   └── partials/              #   可复用 HTML 片段
 │       ├── head.html
+│       ├── auth.html          #     邮箱验证 + 2FA 浮层组件（登录页与 accounts 共用）
 │       ├── sidebar.html
 │       ├── modal.html
 │       └── pagination.html
@@ -463,12 +475,14 @@ existsXxx()    — 检查存在性（如 existsUserByUsername）
 |------|------|
 | `password.ts` | PBKDF2 哈希、scrypt 验证（兼容旧密码）、密码强度验证 |
 | `session.ts` | 会话创建/验证/销毁/清理、会话 Cookie 管理 |
-| `two-factor.ts` | **统一** 2FA 引擎：生成验证码、SHA-256 哈希、TTL 管理、冷却控制。一个通用实现替代 6 个重复存储 |
+| `email/manage.ts` | 邮箱添加/验证/重发/设为主要/删除 + 登录邮箱验证开关 |
+| `email/login-verification.ts` | 登录邮箱验证会话（身份校验，向主邮箱发码，仅 admin 且开启开关） |
+| `2fa/totp.ts` | TOTP 设置/验证/禁用（RFC 6238）+ 登录临时令牌 |
+| `2fa/operation.ts` | 账户操作 2FA 会话（TOTP/邮箱/短信验证码 + 待执行请求体） |
+| `2fa/mfa.ts` | MFA 会话（2FA 验证后的短期 cookie）+ 可用方法列表 |
+| `2fa/phone.ts` | 手机添加/验证/重发/设为主要/删除（SMS 2FA） |
 | `api-key.ts` | API 密钥创建/列表/撤销/认证/层级/权限检查 |
 | `user.ts` | 用户 CRUD、角色管理、激活管理员保护 |
-| `email.ts` | 邮箱添加/验证/重发/设为主要/删除 |
-| `phone.ts` | 手机添加/验证/重发/设为主要/删除 |
-| `totp.ts` | TOTP 设置/验证/禁用（RFC 6238） |
 | `password-reset.ts` | 忘记密码 → 审批 → 重置 完整流程 |
 | `container.ts` | 容器 CRUD、封禁/解封、删除级联、存储使用统计 |
 | `audit.ts` | 审计日志写入（统一接口，所有敏感操作调用） |

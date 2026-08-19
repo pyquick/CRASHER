@@ -7,7 +7,7 @@ import { getUserById } from './user.js';
 import { hashPassword, verifyPassword, validatePassword, generateInitialPassword } from './password.js';
 import { nowSqlDateTimePlusHours } from '../shared/date.js';
 import { writeAuditLog } from './audit.js';
-import { getPrimaryEmail } from './email.js';
+import { getPrimaryEmail } from './email/manage.js';
 
 const RESET_REQUEST_EXPIRY_HOURS = 24;
 const RESET_TOKEN_LENGTH = 32;

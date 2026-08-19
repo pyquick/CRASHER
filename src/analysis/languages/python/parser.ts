@@ -50,8 +50,10 @@ export function parse(lines: string[]): StackFrame[] {
     }
   }
 
-  // Standard Python tracebacks are printed innermost (crash) first — keep
-  // that order so frames[0] is always the crash frame.
+  // Standard Python tracebacks print frames outermost-first, with the crash
+  // frame last (right before the exception line). Reverse so frames[0] is
+  // always the crash frame — the convention the rest of the pipeline uses.
+  frames.reverse();
   frames.forEach((f, i) => { f.index = i; });
 
   // Store exception info on the first frame (the crash point)

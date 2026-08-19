@@ -99,14 +99,19 @@ export function suggestFixes(candidate: RootCauseCandidate, ctx: CrashContext, c
       break;
     }
     case 'missing-attribute': {
+      const attr = candidate.reason.match(/^'([^']+)' is never assigned/)?.[1];
+      const attrRef = attr ?? '<attr>';
+      const classBodyIndent = site.indent ? `${site.indent}    ` : '    ';
       suggestions.push(fix(
         candidate, index,
-        'Define the missing attribute in __init__',
-        `Assign self.<attr> in the class __init__ (or the attribute is misspelled at the crash line).`,
+        'Define the missing attribute on the class',
+        attr
+          ? `'${attr}' is not defined on the class or its base classes. Add it to the class body here (or assign self.${attr} in __init__); alternatively the attribute name is misspelled at the crash line.`
+          : `The accessed attribute is not defined on the class or its base classes. Add it to the class body (or assign it in __init__); alternatively the attribute name is misspelled at the crash line.`,
         snippetAround(crashFile, crashLine),
         snippetAround(siteFile, candidate.line_number),
-        crash.text,
-        `${crash.indent}${crash.text}  # define the attribute in __init__: self.<attr> = <value>`
+        site.text,
+        `${site.text}\n${classBodyIndent}${attrRef} = <default_value>`
       ));
       break;
     }

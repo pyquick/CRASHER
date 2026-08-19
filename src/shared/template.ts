@@ -21,6 +21,17 @@ export function templateToRoute(name: string): string {
 }
 
 /**
+ * Replace {{INCLUDE:name}} tokens with the content of partial templates.
+ * Partials may include other partials (depth-limited to prevent cycles).
+ */
+function processIncludes(html: string, depth = 0): string {
+  if (depth > 5) return html;
+  return html.replace(/\{\{INCLUDE:([\w./-]+)\}\}/g, (_match, name: string) => {
+    return processIncludes(loadPartial(name), depth + 1);
+  });
+}
+
+/**
  * Load a partial template file.
  */
 export function loadPartial(name: string): string {
@@ -44,12 +55,12 @@ export function renderTemplate(templatePath: string, title: string): string {
 
     const headPartial = loadPartial('head.html').replace('__TITLE__', title);
 
-    return layout
+    return processIncludes(layout
       .replace('{{HEAD}}', headPartial)
       .replace('{{TITLE}}', title)
       .replace('{{SUBTITLE}}', title)
       .replace('{{CONTENT}}', templateToRoute(templatePath))
-      .replace('{{BODY}}', body);
+      .replace('{{BODY}}', body));
   } catch (err) {
     return `<!DOCTYPE html><html><body><h1>Error: Template not found: ${templatePath}</h1><pre>${err}</pre></body></html>`;
   }
@@ -63,7 +74,7 @@ export function renderStandalone(templatePath: string, title: string): string {
   try {
     const page = readFileSync(resolve(templatesDir, templatePath), 'utf-8');
     const headPartial = loadPartial('head.html').replace('__TITLE__', title);
-    return page.replace('{{HEAD}}', headPartial);
+    return processIncludes(page.replace('{{HEAD}}', headPartial));
   } catch {
     return `<!DOCTYPE html><html><body><h1>Error: Template not found: ${templatePath}</h1></body></html>`;
   }

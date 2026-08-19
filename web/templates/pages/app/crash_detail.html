@@ -305,6 +305,32 @@
                 </button>
               </section>
 
+              <!-- Python deep analysis: crash path flow chart -->
+              <section class="overflow-hidden rounded-lg border border-gray-800 bg-surface-950" x-show="analysis?.source_analysis?.crash_path?.length">
+                <div class="border-b border-gray-800 px-4 py-3">
+                  <h3 class="text-xs font-semibold uppercase tracking-wider text-gray-500">Crash path</h3>
+                  <p class="mt-1 text-[11px] text-gray-600">From the entry point to the crash site, then the root cause the analysis points at — the last frame is not necessarily the culprit.</p>
+                </div>
+                <div class="overflow-x-auto px-4 py-3">
+                  <div class="flex min-w-max items-stretch">
+                    <template x-for="(step, i) in (analysis?.source_analysis?.crash_path || [])" :key="i">
+                      <div class="flex shrink-0 items-center">
+                        <span class="mx-1 text-sm text-gray-600" x-show="i > 0">→</span>
+                        <div class="max-w-[280px] rounded-md border px-2.5 py-1.5" :class="crashPathStepClass(step)">
+                          <div class="flex items-center gap-1.5">
+                            <span class="font-mono text-[11px] font-medium leading-tight break-all" x-text="step.label"></span>
+                            <span class="shrink-0 text-[9px] px-1 py-0.5 rounded uppercase tracking-wide"
+                                  :class="step.role === 'root-cause' ? 'bg-purple-900/60 text-purple-300' : 'bg-black/30 text-gray-400'"
+                                  x-text="step.role === 'root-cause' ? 'root cause' : (step.severity || 'frame')"></span>
+                          </div>
+                          <p class="mt-0.5 font-mono text-[10px] opacity-70 break-all" x-text="step.file_path + (step.line_number ? ':' + step.line_number : '')"></p>
+                        </div>
+                      </div>
+                    </template>
+                  </div>
+                </div>
+              </section>
+
               <!-- Python deep analysis: root cause candidates -->
               <section class="overflow-hidden rounded-lg border border-gray-800 bg-surface-950" x-show="analysis?.source_analysis?.root_cause_candidates?.length">
                 <div class="border-b border-gray-800 px-4 py-3">
@@ -1170,6 +1196,19 @@
           'recursion': 'bg-pink-900/50 text-pink-300',
           'generic': 'bg-gray-800 text-gray-400',
         }[kind] || 'bg-gray-800 text-gray-400';
+      },
+
+      crashPathStepClass(step) {
+        if (!step || step.role === 'root-cause') {
+          return 'border-purple-700 bg-purple-950/40 text-purple-200';
+        }
+        return {
+          trigger: 'border-red-800 bg-red-950/40 text-red-200',
+          propagation: 'border-orange-800 bg-orange-950/40 text-orange-200',
+          source: 'border-yellow-800 bg-yellow-950/40 text-yellow-200',
+          framework: 'border-gray-700 bg-gray-900 text-gray-400',
+          unknown: 'border-gray-800 bg-surface-900 text-gray-400',
+        }[step.severity] || 'border-gray-800 bg-surface-900 text-gray-400';
       },
 
       symbolicationWarnings(info) {

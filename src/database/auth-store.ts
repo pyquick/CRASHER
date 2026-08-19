@@ -88,6 +88,10 @@ export function updateUserTwoFactorMethod(userId: number, method: string): void 
   getDb().prepare("UPDATE users SET two_factor_method = ?, updated_at = datetime('now') WHERE id = ?").run(method, userId);
 }
 
+export function setUserVerifyEmailOnLogin(userId: number, enabled: number): void {
+  getDb().prepare("UPDATE users SET verify_email_on_login = ?, updated_at = datetime('now') WHERE id = ?").run(enabled, userId);
+}
+
 // ── Sessions ──
 
 export function insertSession(idHash: string, userId: number, sessionVersion: number, expiresAtSql: string): void {

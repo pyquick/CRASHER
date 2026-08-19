@@ -41,7 +41,7 @@ function fileForModule(model: PySnapshotModel, module: string): PyFileModel | un
   return undefined;
 }
 
-function enclosingClass(model: PySnapshotModel, func?: PyFunction): PyClass | undefined {
+export function enclosingClass(model: PySnapshotModel, func?: PyFunction): PyClass | undefined {
   if (!func) return undefined;
   const parts = func.qualified_name.split('.');
   if (parts.length < 2) return undefined;
@@ -122,6 +122,13 @@ export function resolveName(
 export function fileOfFunction(func: PyFunction, model: PySnapshotModel): PyFileModel | undefined {
   for (const file of model.files) {
     if (file.functions.includes(func) || file.classes.some(cls => cls.methods.includes(func))) return file;
+  }
+  return undefined;
+}
+
+export function fileOfClass(cls: PyClass, model: PySnapshotModel): PyFileModel | undefined {
+  for (const file of model.files) {
+    if (file.classes.includes(cls)) return file;
   }
   return undefined;
 }

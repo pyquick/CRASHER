@@ -132,6 +132,36 @@ test('walks class hierarchy for methods and attribute definitions', () => {
   assert.deepEqual(transitiveSubclasses(userService, model), []);
 });
 
+test('attributeDefinitionSites finds class-body assignments and returns the assignment', () => {
+  const source = [
+    'class Base:',
+    '    shared = 1',
+    '',
+    'class Derived(Base):',
+    '    def __init__(self):',
+    '        self.own = 2',
+  ].join('\n');
+  const model = buildSnapshotModel({
+    project_name: 'attrs_app',
+    requested_release: '',
+    snapshot_release: '',
+    snapshot_id: 1,
+    match_type: 'exact',
+    files: [{ relative_path: 'attrs.py', language: 'python', content: source }],
+  });
+  const derived = model.classes_by_name.get('derived')![0];
+
+  const classLevel = attributeDefinitionSites(derived, 'shared', model);
+  assert.equal(classLevel.length, 1);
+  assert.equal(classLevel[0].method_name, null, 'class-body site has no method');
+  assert.equal(classLevel[0].cls.qualified_name, 'Base', 'walks into the base class');
+  assert.equal(classLevel[0].assignment.name, 'shared');
+
+  const inInit = attributeDefinitionSites(derived, 'own', model);
+  assert.equal(inInit.length, 1);
+  assert.equal(inInit[0].method_name, '__init__');
+});
+
 test('tracks variable reads and None-returning callees', () => {
   const { model } = loadSampleApp();
   const main = model.qualified_functions.get('main')!;

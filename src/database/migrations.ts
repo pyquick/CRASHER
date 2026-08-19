@@ -163,6 +163,25 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 13,
+    description: 'Add verify_email_on_login to users and reset TOTP for non-admins',
+    up: (db) => {
+      addColumn(db, 'users', 'verify_email_on_login', 'INTEGER NOT NULL DEFAULT 0');
+      // Two-step verification is admin-only: TOTP data of other roles is no longer used.
+      db.exec("UPDATE users SET totp_enabled = 0, totp_secret = NULL WHERE role != 'admin'");
+    },
+  },
+  {
+    version: 14,
+    description: 'Repair: ensure verify_email_on_login exists on users (idempotent)',
+    up: (db) => {
+      // Re-asserts the v13 schema change for databases where v13 was recorded
+      // without its DDL persisting. Idempotent: skips if the column exists.
+      addColumn(db, 'users', 'verify_email_on_login', 'INTEGER NOT NULL DEFAULT 0');
+      db.exec("UPDATE users SET totp_enabled = 0, totp_secret = NULL WHERE role != 'admin'");
+    },
+  },
 ];
 
 function addColumn(db: Database.Database, table: string, column: string, definition: string): void {
@@ -170,12 +189,14 @@ function addColumn(db: Database.Database, table: string, column: string, definit
     .prepare(`SELECT COUNT(*) as c FROM pragma_table_info('${table}') WHERE name = ?`)
     .get(column) as { c: number };
   if (exists.c === 0) {
-    try {
-      db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
-    } catch (err: any) {
-      if (!err.message?.includes('duplicate column')) {
-        throw err;
-      }
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+    // Verify the DDL actually persisted; if not, throw so the migration
+    // transaction rolls back and the version is NOT recorded.
+    const after = db
+      .prepare(`SELECT COUNT(*) as c FROM pragma_table_info('${table}') WHERE name = ?`)
+      .get(column) as { c: number };
+    if (after.c === 0) {
+      throw new Error(`Migration failed: column ${table}.${column} was not added`);
     }
   }
 }
@@ -189,12 +210,16 @@ export function runMigrations(db: Database.Database): void {
   // Apply base schema first
   applySchema(db);
 
-  // Apply pending migrations in order
+  // Apply pending migrations in order. Each migration runs in its own
+  // transaction together with its version record, so a failed or partial
+  // migration never marks itself as applied (it retries on the next boot).
   for (const migration of migrations) {
     if (migration.version > current) {
       console.log(`[migration] v${migration.version}: ${migration.description}`);
-      migration.up(db);
-      db.prepare('INSERT INTO schema_version (version) VALUES (?)').run(migration.version);
+      db.transaction(() => {
+        migration.up(db);
+        db.prepare('INSERT INTO schema_version (version) VALUES (?)').run(migration.version);
+      })();
     }
   }
 }

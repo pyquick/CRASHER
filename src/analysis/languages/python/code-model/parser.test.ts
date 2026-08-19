@@ -147,6 +147,41 @@ test('ignores def-like text inside strings and comments', () => {
   assert.deepEqual(names, ['real'], 'only the real def is parsed');
 });
 
+test('records class definition line and class-level assignments', () => {
+  const source = [
+    'class Constants:',
+    "    audio_type = 'VoodooHDA'",
+    '    voodoo_patch_already = False',
+    '',
+    'class VoodooAudio:',
+    '    def __init__(self, constants):',
+    '        self._constants = Constants(constants)',
+    '',
+    '    def present(self):',
+    '        return not self._constants.voodoo_patch_already',
+  ].join('\n');
+  const model = parsePythonSource('audio.py', source);
+
+  const constants = model.classes.find(cls => cls.name === 'Constants');
+  assert.ok(constants, 'Constants class found');
+  assert.equal(constants.line, 1, 'class definition line recorded');
+  assert.deepEqual(constants.assignments.map(a => a.name), ['audio_type', 'voodoo_patch_already']);
+  assert.equal(
+    constants.assignments.find(a => a.name === 'voodoo_patch_already')?.rhs_kind,
+    'literal',
+    'class-level literals classified'
+  );
+
+  const audio = model.classes.find(cls => cls.name === 'VoodooAudio');
+  assert.ok(audio, 'VoodooAudio class found');
+  assert.equal(audio.line, 5);
+  const init = audio.methods.find(m => m.name === '__init__');
+  assert.ok(init, '__init__ found');
+  const binding = init.assignments.find(a => a.name === 'self._constants');
+  assert.ok(binding, 'self._constants assignment recorded');
+  assert.deepEqual(binding.rhs_calls, ['Constants'], 'constructor call recorded');
+});
+
 test('parses one-line function bodies and annotated assignments', () => {
   const model = parsePythonSource('oneliners.py', 'def f(): return 1\nx: int = 5\ny += 1\n');
   const f = model.functions.find(func => func.name === 'f');

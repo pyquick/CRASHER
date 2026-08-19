@@ -21,6 +21,11 @@ function proximityFor(
   frames: StackFrame[],
   edges: ReturnType<typeof buildCallGraph>
 ): number {
+  // Definition-site evidence on a class (e.g. missing-attribute): the
+  // exception message directly implicates the class, so proximity is 1.
+  const evidenceClassName = evidence.function_name.split('.').pop()?.toLowerCase() ?? '';
+  if (evidenceClassName && model.classes_by_name.has(evidenceClassName)) return 1;
+
   const evidenceFunc = model.qualified_functions.get(evidence.function_name);
   if (evidenceFunc && crashFunc && evidenceFunc !== crashFunc) {
     const chains = findDependencyChain(edges, crashFunc, evidenceFunc, 4, 1);

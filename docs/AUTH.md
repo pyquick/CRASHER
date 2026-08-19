@@ -45,31 +45,43 @@ fetch('/api/v1/crash-report?api_key=crs_xxx')  // ❌ 密钥泄露在日志中
 
 ## 两步验证 (2FA)
 
+### 登录两步验证（仅 admin 角色）
+
+登录链：密码校验 → （可选）邮箱身份验证 → （可选）TOTP → 创建会话。两个步骤均为**开关控制**，仅 `admin` 角色可用；其他角色（含 ultraadmin）为纯密码登录。
+
+| 步骤 | 开关（Accounts 页） | 开启条件 | 说明 |
+|------|--------------------|----------|------|
+| 邮箱验证 | Verify email on every login | 至少一个已验证邮箱 | 验证码发到主邮箱，证明登录者掌控邮箱 |
+| 2FA | Authenticator app 开关 | — | 手机扫描 TOTP（RFC 6238），与原有实现一致 |
+
+登录响应返回下一步骤：`{ email_verification: {...} }`、`{ two_factor: { method: 'totp', ... } }` 或直接创建会话。邮箱验证完成后继续走 2FA 步骤（`/login/verify-email` → 下一步响应）。
+
+### 账户操作 2FA（所有角色）
+
+敏感操作（创建用户、API 密钥管理、邮箱/手机变更等）通过 `resolve2FA` 包裹：有可用方法且无有效 MFA cookie 时返回 `403 { requires_2fa, temp_token, method, ... }`，前端弹出 2FA 浮层，验证通过后设置 MFA cookie 并重试原请求。
+
 ### 2FA 实现标准
 
 #### ✅ 正确：使用统一的 2FA 存储引擎
 
 ```typescript
-// src/auth/two-factor.ts
-const store = new Map<string, { codeHash: string; expires: number; ... }>();
+// src/shared/verification.ts —— createVerificationStore / createTokenStore
+// src/auth/2fa/operation.ts
+const store = createVerificationStore<Operation2FAData>(5 * 60 * 1000, 60_000, 5);
 
-export function createChallenge(userId: number) {
-  const code = generateCode();        // 6 位数字
-  const token = randomBytes(32).toString('base64url');
-  store.set(token, {
-    codeHash: sha256(code),           // ✅ SHA-256 哈希存储
-    expires: Date.now() + 10 * 60 * 1000,  // ✅ 10 分钟过期
-    attempts: 0,
-    maxAttempts: 5,                   // ✅ 最多 5 次尝试
-  });
-  return { token, code };
+export function createOperation2FASession(userId, method, action, bodyPayload) {
+  const { token, code } = store.createWithCode({ userId, method, action, bodyPayload: JSON.stringify(bodyPayload) });
+  // code: 6 位数字, SHA-256 哈希存储, 10 分钟过期, 最多 5 次尝试, 60s 重发冷却
+  return { tempToken: token, code, ... };
 }
 
-export function verifyChallenge(token: string, code: string): boolean {
-  const session = store.get(token);
-  if (!session || session.expires < Date.now()) return false;  // ✅ 过期检查
-  session.attempts++;
-  return sha256(code) === session.codeHash;  // ✅ 恒定时间比较
+export function consumeOperation2FASession(tempToken, code) {
+  const data = store.get(tempToken);
+  if (!data) return null;                                 // ✅ 过期检查
+  const valid = data.method === 'totp' ? verifyTotp(data.userId, code) : store.verify(tempToken, code);
+  if (!valid) return null;
+  store.consume(tempToken);
+  return data;
 }
 ```
 
@@ -83,7 +95,7 @@ store.set(token, { code: '123456' });  // ❌ 应使用 SHA-256 哈希
 store.set(token, { codeHash: '...' });  // ❌ 缺少过期时间
 
 // ❌ 禁止 —— 无限重试
-// ❌ 禁止 —— 6 个独立的 2FA 存储（应使用统一的通用实现）
+// ❌ 禁止 —— 多个独立的 2FA 存储（应使用统一通用实现）
 ```
 
 ---

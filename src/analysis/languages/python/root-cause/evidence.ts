@@ -8,8 +8,8 @@ import { tokenizeLine } from '../code-model/tokenizer.js';
 import type { PyClass, PyFileModel, PyFunction, PySnapshotModel } from '../code-model/types.js';
 import type { RootCauseKind, StackFrame } from '../../../types.js';
 import { buildCallGraph, findCyclesContaining } from '../dependencies/call-graph.js';
-import { attributeDefinitionSites, methodResolution } from '../dependencies/class-graph.js';
-import { fileOfFunction, resolveName } from '../dependencies/imports.js';
+import { attributeDefinitionSites, resolveAttributeReceiverClass } from '../dependencies/class-graph.js';
+import { fileOfClass, fileOfFunction, resolveName } from '../dependencies/imports.js';
 import { noneReturningCallees, type NoneReturningCallee } from '../dependencies/dataflow.js';
 
 export interface Evidence {
@@ -154,41 +154,37 @@ export function collectNoneReturn(ctx: CrashContext, receiver: string): Evidence
 
 export function collectMissingAttribute(ctx: CrashContext, receiver: string, attr: string): Evidence[] {
   const evidence: Evidence[] = [];
-  if (!ctx.crashFunc) return evidence;
 
-  // Resolve the receiver's class: 'self' → enclosing class; otherwise look at
-  // the receiver's assignment sites for a constructor call.
-  let cls: PyClass | null = null;
-  if (receiver === 'self' || receiver === 'cls') {
-    cls = ctx.crashFunc.qualified_name.includes('.')
-      ? ctx.model.classes_by_name.get(ctx.crashFunc.qualified_name.split('.')[0].toLowerCase())?.[0] ?? null
-      : null;
-  } else {
-    for (const assignment of ctx.crashFunc.assignments) {
-      if (assignment.name.toLowerCase() !== receiver.toLowerCase()) continue;
-      for (const call of assignment.rhs_calls) {
-        const simple = call.split('.').pop()!.toLowerCase();
-        const candidates = ctx.model.classes_by_name.get(simple);
-        if (candidates?.length) cls = candidates[0];
-      }
-    }
-  }
+  // Resolve the class whose attribute failed. The class quoted in the
+  // exception message is the strongest signal and needs no crash function;
+  // fallbacks walk self.<attr> chains, assignments, imports, and static
+  // access (see resolveAttributeReceiverClass).
+  const cls = resolveAttributeReceiverClass(ctx, receiver);
   if (!cls) return evidence;
 
+  // Attribute defined anywhere in the MRO → the model cannot explain the
+  // failure as missing; let other collectors handle it.
   const sites = attributeDefinitionSites(cls, attr, ctx.model);
-  if (sites.length === 0) {
-    evidence.push({
-      kind: 'missing-attribute',
-      file_path: ctx.crashFile.file_path,
-      line_number: ctx.crashLine,
-      function_name: ctx.crashFunc.qualified_name,
-      weight: 2,
-      reason:
-        `'${attr}' is never assigned on ${cls.qualified_name} or its base classes ` +
-        `(no self.${attr} in __init__/methods) — the attribute access at the crash ` +
-        `line ${ctx.crashLine} can never succeed.`,
-    });
-  }
+  if (sites.length > 0) return evidence;
+
+  const file = fileOfClass(cls, ctx.model);
+  if (!file) return evidence;
+
+  const bases = ctx.model.class_edges.get(cls.qualified_name)?.bases ?? [];
+  const accessedVia = receiver && receiver !== 'self' && receiver !== 'cls'
+    ? `, accessed via '${receiver}'` : '';
+  evidence.push({
+    kind: 'missing-attribute',
+    file_path: file.file_path,
+    line_number: cls.line,
+    function_name: cls.qualified_name,
+    weight: 3,
+    reason:
+      `'${attr}' is never assigned on ${cls.qualified_name}` +
+      `${bases.length > 0 ? ` or its base classes (${bases.join(', ')})` : ''} — ` +
+      `the class defined at ${file.file_path}:${cls.line} lacks it${accessedVia}; ` +
+      `the access at the crash line ${ctx.crashLine} can never succeed.`,
+  });
   return evidence;
 }
 
@@ -367,6 +363,10 @@ export function collectEvidence(ctx: CrashContext): Evidence[] {
     if (receiver) {
       evidence.push(...collectNoneReturn(ctx, receiver));
       if (attr) evidence.push(...collectMissingAttribute(ctx, receiver, attr));
+    } else if (attr) {
+      // Receiver extraction failed — the class quoted in the exception
+      // message alone can still locate a missing-attribute definition site.
+      evidence.push(...collectMissingAttribute(ctx, '', attr));
     }
     return evidence.length > 0 ? evidence : collectGeneric(ctx);
   }

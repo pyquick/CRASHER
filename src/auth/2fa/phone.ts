@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
-import type { UserPhone } from '../model.js';
-import * as store from '../database/auth-contact-store.js';
-import { nowSqlDateTimePlusMinutes } from '../shared/date.js';
+import type { UserPhone } from '../../model.js';
+import * as contactStore from '../../database/auth-contact-store.js';
+import { nowSqlDateTimePlusMinutes } from '../../shared/date.js';
 
 const PHONE_PATTERN = /^\+[1-9]\d{6,14}$/;
 
@@ -18,7 +18,7 @@ function generateAndHashCode(): { code: string; hash: string } {
 }
 
 export function listPhones(userId: number): UserPhone[] {
-  return store.listUserPhones(userId);
+  return contactStore.listUserPhones(userId);
 }
 
 export function addPhone(userId: number, phone: string): { code: string; phone: string } {
@@ -30,60 +30,60 @@ export function addPhone(userId: number, phone: string): { code: string; phone: 
   const expiresSql = nowSqlDateTimePlusMinutes(15);
   const isPrimary = listPhones(userId).length === 0 ? 1 : 0;
 
-  store.insertUserPhone(userId, normalized, hash, expiresSql, isPrimary);
+  contactStore.insertUserPhone(userId, normalized, hash, expiresSql, isPrimary);
   return { code, phone: normalized };
 }
 
 export function resendPhoneVerificationCode(userId: number, phoneId: number): { code: string; phone: string } | null {
-  const phone = store.findPendingPhoneVerification(userId, phoneId);
+  const phone = contactStore.findPendingPhoneVerification(userId, phoneId);
   if (!phone) return null;
 
   const { code, hash } = generateAndHashCode();
   const expiresSql = nowSqlDateTimePlusMinutes(15);
-  store.updatePhoneVerificationCode(phoneId, hash, expiresSql);
+  contactStore.updatePhoneVerificationCode(phoneId, hash, expiresSql);
   return { code, phone: phone.phone };
 }
 
 export function verifyPhoneCode(userId: number, phoneId: number, code: string): UserPhone | null {
   const hash = createHash('sha256').update(code.trim()).digest('hex');
-  const row = store.findPhoneByToken(userId, phoneId, hash);
+  const row = contactStore.findPhoneByToken(userId, phoneId, hash);
   if (!row) return null;
 
-  store.markPhoneVerified(phoneId);
+  contactStore.markPhoneVerified(phoneId);
   row.phone_verified = 1;
   return row;
 }
 
 export function setPrimaryPhone(userId: number, phoneId: number): boolean {
-  const row = store.findVerifiedPhone(phoneId, userId);
+  const row = contactStore.findVerifiedPhone(phoneId, userId);
   if (!row) return false;
-  store.clearPrimaryPhones(userId);
-  store.setPhonePrimary(phoneId);
+  contactStore.clearPrimaryPhones(userId);
+  contactStore.setPhonePrimary(phoneId);
   return true;
 }
 
 export function deletePhone(userId: number, phoneId: number): boolean {
-  const count = store.countUserPhones(userId);
-  const emailCount = store.countUserEmails(userId);
+  const count = contactStore.countUserPhones(userId);
+  const emailCount = contactStore.countUserEmails(userId);
   if (count <= 1 && emailCount === 0) throw new Error('Cannot remove your only contact method');
-  const phone = store.findVerifiedPhone(phoneId, userId) ?? store.findPendingPhoneVerification(userId, phoneId);
+  const phone = contactStore.findVerifiedPhone(phoneId, userId) ?? contactStore.findPendingPhoneVerification(userId, phoneId);
   if (!phone) return false;
   const wasPrimary = !!phone.is_primary;
-  store.deleteUserPhone(phoneId, userId);
+  contactStore.deleteUserPhone(phoneId, userId);
   if (wasPrimary) {
-    const next = store.findFirstUserPhone(userId);
-    if (next) store.setPhonePrimary(next.id);
+    const next = contactStore.findFirstUserPhone(userId);
+    if (next) contactStore.setPhonePrimary(next.id);
   }
   return true;
 }
 
 export function getPrimaryPhone(userId: number): string | null {
-  const row = store.findPrimaryVerifiedPhone(userId);
+  const row = contactStore.findPrimaryVerifiedPhone(userId);
   return row ? row.phone : null;
 }
 
 export function hasVerifiedPhone(userId: number): boolean {
-  return store.countVerifiedPhones(userId) > 0;
+  return contactStore.countVerifiedPhones(userId) > 0;
 }
 
 export function maskPhone(phone: string): string {

@@ -5,6 +5,7 @@
 
 import type {
   AnalysisSourceSnapshot,
+  CrashPathStep,
   DependencySummary,
   FixSuggestion,
   RootCauseCandidate,
@@ -24,6 +25,7 @@ export interface PythonDeepResult {
   root_cause_candidates: RootCauseCandidate[];
   fixes: FixSuggestion[];
   dependency_summary: DependencySummary;
+  crash_path: CrashPathStep[];
   warnings: string[];
 }
 
@@ -37,6 +39,7 @@ export function analyzePythonDeep(
     root_cause_candidates: [],
     fixes: [],
     dependency_summary: { callers: [], subclass_chain: [], variable_definitions: [] },
+    crash_path: [],
     warnings,
   };
 
@@ -77,8 +80,55 @@ export function analyzePythonDeep(
   }
 
   const dependencySummary = buildDependencySummary(model, ctx, crashClass);
+  const crashPath = buildCrashPath(frames, rootCauseCandidates);
 
-  return { root_cause_candidates: rootCauseCandidates, fixes, dependency_summary: dependencySummary, warnings };
+  return {
+    root_cause_candidates: rootCauseCandidates,
+    fixes,
+    dependency_summary: dependencySummary,
+    crash_path: crashPath,
+    warnings,
+  };
+}
+
+/**
+ * Build the crash-path flow: frames from entry point to crash site
+ * (tracebacks list innermost first, so reverse), then the terminal
+ * root-cause node the analysis points at (e.g. a class definition).
+ */
+function buildCrashPath(frames: StackFrame[], candidates: RootCauseCandidate[]): CrashPathStep[] {
+  const steps: CrashPathStep[] = [...frames].reverse()
+    .filter(frame => frame.file_path)
+    .map(frame => ({
+      file_path: frame.file_path,
+      line_number: frame.line_number,
+      function_name: frame.function_name,
+      label: frame.function_name || frame.file_path,
+      role: 'frame' as const,
+      severity: frame.severity,
+    }));
+
+  const top = candidates[0];
+  if (top) {
+    steps.push({
+      file_path: top.file_path,
+      line_number: top.line_number,
+      function_name: top.function_name,
+      label: rootCauseStepLabel(top),
+      role: 'root-cause' as const,
+      kind: top.kind,
+    });
+  }
+  return steps;
+}
+
+function rootCauseStepLabel(candidate: RootCauseCandidate): string {
+  const attr = candidate.reason.match(/^'([^']+)' is never assigned/)?.[1];
+  if (candidate.kind === 'missing-attribute' && attr) {
+    return `${candidate.function_name} (class) — '${attr}' is never assigned`;
+  }
+  const sentence = candidate.reason.split('.')[0] ?? candidate.reason;
+  return `${candidate.function_name} — ${sentence}`;
 }
 
 function buildDependencySummary(

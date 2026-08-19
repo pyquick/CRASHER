@@ -5,363 +5,94 @@
 </head>
 <body class="bg-surface-950 text-gray-100 min-h-screen">
 
-<div x-data="loginForm" x-init="checkSetup()" class="flex items-center justify-center min-h-screen">
-  <div class="w-full max-w-sm px-4">
-    <div class="bg-surface-900 rounded-xl p-8 border border-gray-800">
-      <div class="text-center mb-6">
-        <h1 class="text-2xl font-bold">💥 Crash Reporter</h1>
-        <p class="text-xs text-gray-500 mt-1">Cross-Platform Error Tracking</p>
+<div x-data="authFlow" x-init="checkSetup()" class="auth-page px-4">
+  <div class="auth-card">
+    <div class="text-center mb-6">
+      <h1 class="text-2xl font-bold">💥 Crash Reporter</h1>
+      <p class="text-xs text-gray-500 mt-1">Cross-Platform Error Tracking</p>
+    </div>
+
+    <!-- Loading -->
+    <div x-show="checking" class="text-center py-4">
+      <span class="inline-block w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></span>
+    </div>
+
+    <!-- Setup Form (no users yet) -->
+    <form x-show="!checking && needsSetup" @submit.prevent="doSetup" class="space-y-4">
+      <p class="text-sm text-purple-400 text-center">Welcome! Create your UltraAdmin account. <br><span class="text-xs text-gray-500">Username: 15+ chars, with letters, numbers, and symbols</span></p>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Username</label>
+        <input type="text" x-model="username" required autocomplete="off" class="fc w-full"
+               placeholder="e.g. super_admin@2024!">
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Email (for password reset verification)</label>
+        <input type="email" x-model="email" autocomplete="email" class="fc w-full" placeholder="you@example.com">
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Password</label>
+        <input type="password" x-model="password" required autocomplete="new-password" class="fc w-full"
+               placeholder="Min 12 chars: upper, lower, digit, special">
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Confirm Password</label>
+        <input type="password" x-model="confirmPassword" required autocomplete="new-password" class="fc w-full"
+               placeholder="Re-enter password">
       </div>
 
-      <!-- Loading -->
-      <div x-show="checking" class="text-center py-4">
-        <span class="inline-block w-5 h-5 border-2 border-blue-500 border-t-transparent rounded-full animate-spin"></span>
+      <p x-show="errorMsg" class="text-sm text-red-400 text-center" x-text="errorMsg"></p>
+
+      <button type="submit" :disabled="loading" class="btn btn-green w-full">
+        <span x-show="!loading">Create Admin Account</span>
+        <span x-show="loading" class="inline-flex items-center justify-center gap-2">
+          <span class="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+          Creating...
+        </span>
+      </button>
+    </form>
+
+    <!-- Login Form -->
+    <form x-show="!checking && !needsSetup" @submit.prevent="login" class="space-y-4">
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Username</label>
+        <input type="text" x-model="username" required autocomplete="username" class="fc w-full"
+               placeholder="Enter username">
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Password</label>
+        <input type="password" x-model="password" required autocomplete="current-password" class="fc w-full"
+               placeholder="Enter password">
+      </div>
+      <div>
+        <label class="block text-xs text-gray-500 mb-1">Container (optional for UltraAdmin)</label>
+        <select x-model="containerId" class="fc w-full">
+          <option value="">-- No container (UltraAdmin only) --</option>
+          <template x-for="c in containers" :key="c.id">
+            <option :value="c.id" x-text="c.name + ' (Tier ' + c.tier + ')'"></option>
+          </template>
+        </select>
       </div>
 
-      <!-- Setup Form (no users yet) -->
-      <form x-show="!checking && needsSetup" @submit.prevent="doSetup" class="space-y-4">
-        <p class="text-sm text-purple-400 text-center">Welcome! Create your UltraAdmin account. <br><span class="text-xs text-gray-500">Username: 15+ chars, with letters, numbers, and symbols</span></p>
-        <div>
-          <label class="block text-xs text-gray-500 mb-1">Username</label>
-          <input type="text" x-model="username" required autocomplete="off"
-                 class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
-                 placeholder="e.g. super_admin@2024!">
-        </div>
-        <div>
-          <label class="block text-xs text-gray-500 mb-1">Email (for password reset verification)</label>
-          <input type="email" x-model="email" autocomplete="email"
-                 class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
-                 placeholder="you@example.com">
-        </div>
-        <div>
-          <label class="block text-xs text-gray-500 mb-1">Password</label>
-          <input type="password" x-model="password" required autocomplete="new-password"
-                 class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
-                 placeholder="Min 12 chars: upper, lower, digit, special">
-        </div>
-        <div>
-          <label class="block text-xs text-gray-500 mb-1">Confirm Password</label>
-          <input type="password" x-model="confirmPassword" required autocomplete="new-password"
-                 class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
-                 placeholder="Re-enter password">
-        </div>
+      <p x-show="errorMsg" class="text-sm text-red-400 text-center" x-text="errorMsg"></p>
 
-        <p x-show="errorMsg" class="text-sm text-red-400 text-center" x-text="errorMsg"></p>
+      <button type="submit" :disabled="loading" class="btn btn-blue w-full">
+        <span x-show="!loading">Sign In</span>
+        <span x-show="loading" class="inline-flex items-center justify-center gap-2">
+          <span class="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+          Signing in...
+        </span>
+      </button>
+    </form>
 
-        <button type="submit" :disabled="loading"
-                class="w-full py-2.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors">
-          <span x-show="!loading">Create Admin Account</span>
-          <span x-show="loading" class="inline-flex items-center justify-center gap-2">
-            <span class="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-            Creating...
-          </span>
-        </button>
-      </form>
-
-      <!-- Login Form (normal) -->
-      <form x-show="!checking && !needsSetup && !showTotp && !showEmailVerification" @submit.prevent="login" class="space-y-4">
-        <div>
-          <label class="block text-xs text-gray-500 mb-1">Username</label>
-          <input type="text" x-model="username" required autocomplete="username"
-                 class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
-                 placeholder="Enter username">
-        </div>
-        <div>
-          <label class="block text-xs text-gray-500 mb-1">Password</label>
-          <input type="password" x-model="password" required autocomplete="current-password"
-                 class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
-                 placeholder="Enter password">
-        </div>
-        <div>
-          <label class="block text-xs text-gray-500 mb-1">Container (optional for UltraAdmin)</label>
-          <select x-model="containerId"
-                  class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2.5 text-sm text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500">
-            <option value="">-- No container (UltraAdmin only) --</option>
-            <template x-for="c in containers" :key="c.id">
-              <option :value="c.id" x-text="c.name + ' (Tier ' + c.tier + ')'"></option>
-            </template>
-          </select>
-        </div>
-
-        <p x-show="errorMsg" class="text-sm text-red-400 text-center" x-text="errorMsg"></p>
-
-        <button type="submit" :disabled="loading"
-                class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors">
-          <span x-show="!loading">Sign In</span>
-          <span x-show="loading" class="inline-flex items-center justify-center gap-2">
-            <span class="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-            Signing in...
-          </span>
-        </button>
-      </form>
-
-      <!-- TOTP Step -->
-      <form x-show="!checking && !needsSetup && showTotp" @submit.prevent="loginTotp" class="space-y-4">
-        <p class="text-sm text-blue-400 text-center">Enter the 6-digit code from your authenticator app.</p>
-        <div>
-          <input type="text" x-model="totpCode" required autocomplete="one-time-code" inputmode="numeric" maxlength="6"
-                 class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2.5 text-center text-lg tracking-[0.3em] font-mono text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
-                 placeholder="000000">
-        </div>
-        <p x-show="errorMsg" class="text-sm text-red-400 text-center" x-text="errorMsg"></p>
-        <button type="submit" :disabled="loading"
-                class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors">
-          <span x-show="!loading">Verify</span>
-          <span x-show="loading" class="inline-flex items-center justify-center gap-2">
-            <span class="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-            Verifying...
-          </span>
-        </button>
-      </form>
-
-      <!-- Email Verification Step -->
-      <form x-show="!checking && !needsSetup && showEmailVerification" @submit.prevent="verifyEmail" class="space-y-4">
-        <p class="text-sm text-blue-400 text-center">Verify your email address to complete login.</p>
-        <p class="text-xs text-gray-500 text-center" x-text="'A verification code has been sent to ' + emailHint"></p>
-        <div>
-          <input type="text" x-model="emailCode" required autocomplete="one-time-code" inputmode="numeric" maxlength="6"
-                 class="w-full bg-surface-800 border border-gray-700 rounded-lg px-3 py-2.5 text-center text-lg tracking-[0.3em] font-mono text-gray-200 placeholder-gray-600 focus:outline-none focus:border-blue-500"
-                 placeholder="000000">
-        </div>
-        <p x-show="errorMsg" class="text-sm text-red-400 text-center" x-text="errorMsg"></p>
-        <button type="submit" :disabled="loading"
-                class="w-full py-2.5 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 rounded-lg text-sm font-medium transition-colors">
-          <span x-show="!loading">Verify Email</span>
-          <span x-show="loading" class="inline-flex items-center justify-center gap-2">
-            <span class="inline-block w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
-            Verifying...
-          </span>
-        </button>
-        <button type="button" @click="resendEmail" :disabled="loading || resendCooldown > 0"
-                class="w-full py-2 text-xs text-gray-400 hover:text-blue-400 disabled:text-gray-600 transition-colors">
-          <span x-show="resendCooldown === 0">Resend Code</span>
-          <span x-show="resendCooldown > 0" x-text="'Resend in ' + resendCooldown + 's'"></span>
-        </button>
-        <button type="button" @click="cancelEmailVerification" :disabled="loading"
-                class="w-full py-2 text-xs text-gray-500 hover:text-gray-400 disabled:text-gray-700 transition-colors">
-          Back to Login
-        </button>
-      </form>
-
-      <div x-show="!checking && !needsSetup && !showTotp && !showEmailVerification" class="mt-4 text-center">
-        <a href="/web/forgot-password" class="text-xs text-gray-500 hover:text-blue-400 transition-colors">Forgot Password?</a>
-      </div>
+    <div x-show="!checking && !needsSetup" class="mt-4 text-center">
+      <a href="/web/forgot-password" class="text-xs text-gray-500 hover:text-blue-400 transition-colors">Forgot Password?</a>
     </div>
   </div>
+
+  <!-- Two-step verification widgets: siblings of the login card, dim the rest of the page -->
+  {{INCLUDE:auth.html}}
 </div>
 
-<script>
-  document.addEventListener('alpine:init', () => {
-    Alpine.data('loginForm', () => ({
-      username: '',
-      password: '',
-      email: '',
-      confirmPassword: '',
-      containerId: '',
-      containers: [],
-      loading: false,
-      checking: true,
-      needsSetup: false,
-      showTotp: false,
-      showEmailVerification: false,
-      totpCode: '',
-      emailCode: '',
-      emailHint: '',
-      tempToken: '',
-      errorMsg: '',
-      resendCooldown: 0,
-      _resendTimer: null,
-
-      async checkSetup() {
-        try {
-          const res = await fetch('/api/v1/auth/setup-status');
-          const data = await res.json();
-          this.needsSetup = !!data.needs_setup;
-          if (!this.needsSetup) {
-            // Load available containers
-            const cRes = await fetch('/api/v1/auth/containers/active');
-            const cData = await cRes.json();
-            this.containers = cData.items || [];
-          }
-        } catch {}
-        this.checking = false;
-      },
-
-      async doSetup() {
-        this.errorMsg = '';
-        if (this.password !== this.confirmPassword) {
-          this.errorMsg = 'Passwords do not match';
-          return;
-        }
-        if (this.password.length < 12) {
-          this.errorMsg = 'Password must be at least 12 characters';
-          return;
-        }
-        this.loading = true;
-        try {
-          const body = { username: this.username, password: this.password };
-          if (this.email) body.email = this.email;
-          const res = await fetch('/api/v1/auth/setup', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-          });
-          const data = await res.json();
-          if (res.ok && data.success) {
-            window.location.href = '/web/';
-          } else {
-            this.errorMsg = data.message || 'Setup failed';
-          }
-        } catch (err) {
-          this.errorMsg = 'Network error';
-        }
-        this.loading = false;
-      },
-
-      async login() {
-        this.errorMsg = '';
-        this.loading = true;
-        try {
-          const body = { username: this.username, password: this.password };
-          if (this.containerId) body.container_id = parseInt(this.containerId);
-          const res = await fetch('/web/login', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(body),
-          });
-          const data = await res.json();
-          if (res.ok && data.success) {
-            if (data.requires_totp) {
-              this.tempToken = data.temp_token;
-              this.showTotp = true;
-            } else if (data.requires_email_verification) {
-              this.openEmailVerification(data);
-            } else {
-              this.redirectAfterLogin();
-            }
-          } else {
-            this.errorMsg = data.message || 'Login failed';
-          }
-        } catch (err) {
-          this.errorMsg = 'Network error';
-        }
-        this.loading = false;
-      },
-
-      async loginTotp() {
-        this.errorMsg = '';
-        this.loading = true;
-        try {
-          const res = await fetch('/web/login/totp', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ temp_token: this.tempToken, totp_code: this.totpCode }),
-          });
-          const data = await res.json();
-          if (res.ok && data.success) {
-            if (data.requires_email_verification) {
-              this.showTotp = false;
-              this.totpCode = '';
-              this.openEmailVerification(data);
-            } else {
-              this.redirectAfterLogin();
-            }
-          } else {
-            this.errorMsg = data.message || 'Verification failed';
-          }
-        } catch (err) {
-          this.errorMsg = 'Network error';
-        }
-        this.loading = false;
-      },
-
-      openEmailVerification(data) {
-        this.tempToken = data.temp_token;
-        this.emailHint = data.email_hint || '';
-        this.emailCode = '';
-        this.errorMsg = '';
-        this.showEmailVerification = true;
-        this.startResendCooldown();
-      },
-
-      async verifyEmail() {
-        this.errorMsg = '';
-        const code = this.emailCode.replace(/\s/g, '');
-        if (code.length !== 6) {
-          this.errorMsg = 'Please enter the 6-digit code';
-          return;
-        }
-        this.loading = true;
-        try {
-          const res = await fetch('/api/v1/auth/login/verify-email', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ temp_token: this.tempToken, code }),
-          });
-          const data = await res.json();
-          if (res.ok && data.success) {
-            clearInterval(this._resendTimer);
-            this.redirectAfterLogin();
-          } else {
-            this.errorMsg = data.message || 'Verification failed';
-          }
-        } catch (err) {
-          this.errorMsg = 'Network error';
-        }
-        this.loading = false;
-      },
-
-      async resendEmail() {
-        this.errorMsg = '';
-        this.loading = true;
-        try {
-          const res = await fetch('/api/v1/auth/login/resend-email', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ temp_token: this.tempToken }),
-          });
-          const data = await res.json();
-          if (res.ok && data.success) {
-            this.emailHint = data.email_hint || this.emailHint;
-            this.startResendCooldown();
-          } else {
-            this.errorMsg = data.message || 'Failed to resend code';
-          }
-        } catch (err) {
-          this.errorMsg = 'Network error';
-        }
-        this.loading = false;
-      },
-
-      cancelEmailVerification() {
-        this.showEmailVerification = false;
-        this.emailCode = '';
-        this.emailHint = '';
-        this.tempToken = '';
-        this.errorMsg = '';
-        clearInterval(this._resendTimer);
-        this.resendCooldown = 0;
-      },
-
-      startResendCooldown() {
-        clearInterval(this._resendTimer);
-        this.resendCooldown = 60;
-        this._resendTimer = setInterval(() => {
-          this.resendCooldown = Math.max(0, this.resendCooldown - 1);
-          if (this.resendCooldown === 0) clearInterval(this._resendTimer);
-        }, 1000);
-      },
-
-      redirectAfterLogin() {
-        const params = new URLSearchParams(window.location.search);
-        const requestedRedirect = params.get('redirect') || '/web/';
-        window.location.href = requestedRedirect.startsWith('/') && !requestedRedirect.startsWith('//')
-          ? requestedRedirect
-          : '/web/';
-      },
-
-    }));
-  });
-</script>
+<script src="/web/static/js/auth.js"></script>
 </body>
 </html>

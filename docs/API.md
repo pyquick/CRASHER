@@ -116,23 +116,24 @@ X-CSRF-Token: yyy  (修改操作必须)
 |------|------|------|
 | GET | `/setup-status` | 检查是否已初始化 |
 | POST | `/setup` | 初始化 UltraAdmin |
-| POST | `/login` | 登录 (返回 auth_token cookie) |
-| POST | `/login/totp` | TOTP 2FA 验证 |
-| POST | `/login/verify-email` | 邮箱 2FA 验证 |
-| POST | `/login/2fa/email` | 邮箱 2FA 登录 |
+| POST | `/login` | 登录 (返回 auth_token cookie，或 `email_verification` / `two_factor` 下一步) |
+| POST | `/login/verify-email` | 登录邮箱验证步骤（仅 admin，开启开关后） |
+| POST | `/login/resend-email` | 重发登录邮箱验证码 |
+| POST | `/login/totp` | TOTP 登录验证步骤（仅 admin） |
 | POST | `/logout` | 登出 |
-| GET | `/me` | 当前用户信息 |
-| POST | `/2fa/challenge` | 发起 2FA 挑战 |
-| POST | `/2fa/verify` | 验证 2FA |
-| GET | `/me/two-factor-method` | 当前 2FA 方法 |
-| PUT | `/me/two-factor-method` | 切换 2FA 方法 |
+| GET | `/me` | 当前用户信息 (含 verify_email_on_login / has_verified_email) |
+| POST | `/2fa/challenge` | 发起 2FA 挑战 (账户操作) |
+| POST | `/2fa/verify` | 验证 2FA (设置 MFA cookie) |
+| POST | `/2fa/resend` | 重发操作 2FA 验证码 |
+| PATCH | `/me/two-factor-method` | 切换 2FA 方法 (账户操作) |
+| PATCH | `/me/verify-email-on-login` | 开关「每次登录邮箱验证」(admin) |
 | GET | `/users` | 用户列表 (admin) |
 | POST | `/users` | 创建用户 (admin) |
-| PUT | `/users/:id` | 更新用户 (admin) |
-| PUT | `/me/password` | 修改密码 |
+| PATCH | `/users/:id` | 更新用户 (admin) |
+| PUT | `/users/:id/password` | 修改密码 |
 | GET/POST/DELETE | `/me/emails*` | 邮箱管理 |
 | GET/POST/DELETE | `/me/phones*` | 手机管理 |
-| GET/POST/DELETE | `/me/totp*` | TOTP 管理 |
+| GET/POST/DELETE | `/me/totp*` | TOTP 管理 (admin) |
 | GET | `/api-keys` | API 密钥列表 |
 | POST | `/api-keys` | 创建 API 密钥 |
 | DELETE | `/api-keys/:id` | 撤销 API 密钥 |

@@ -161,6 +161,10 @@ function recordAssignment(scope: Scope, name: string, rhs: string, line: number,
     scope.func!.assignments.push({ name, line, ...classified });
     return;
   }
+  if (scope.kind === 'class') {
+    scope.cls!.assignments.push({ name, line, ...classified });
+    return;
+  }
   if (scope.kind === 'module') {
     fileModel.module_assignments.push({ name, line, ...classified });
     const key = name.toLowerCase();
@@ -257,8 +261,10 @@ export function parsePythonSource(relativePath: string, content: string): PyFile
         name: classMatch[1],
         qualified_name: classMatch[1],
         bases: classMatch[2] ? splitTopLevel(classMatch[2]).filter(Boolean) : [],
+        line: logical.line,
         body: { start: logical.line + 1, end: logical.line },
         methods: [],
+        assignments: [],
       };
       fileModel.classes.push(cls);
       const key = cls.name.toLowerCase();

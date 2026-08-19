@@ -94,6 +94,12 @@ export interface SourceAnalysis {
   root_cause_candidates?: RootCauseCandidate[];
   fixes?: FixSuggestion[];
   dependency_summary?: DependencySummary;
+  /**
+   * Crash path flow: the stack frames from entry point to crash site,
+   * followed by the terminal root-cause node (e.g. the class definition
+   * missing an attribute). Rendered as a flow chart in the web UI.
+   */
+  crash_path?: CrashPathStep[];
 }
 
 export type RootCauseKind =
@@ -115,6 +121,23 @@ export interface RootCauseCandidate {
   confidence: number; // 0..1
   kind: RootCauseKind;
   evidence: string[];
+}
+
+/**
+ * One node of the crash-path flow chart: either a stack frame (entry point
+ * → crash site) or the terminal root-cause location the analysis points at.
+ */
+export interface CrashPathStep {
+  file_path: string;
+  line_number: number | null;
+  function_name: string;
+  /** Display label, e.g. 'run' or "class Constants — 'x' is never assigned". */
+  label: string;
+  role: 'frame' | 'root-cause';
+  /** Frame severity (frame steps only). */
+  severity?: StackFrame['severity'];
+  /** Root-cause kind (root-cause steps only). */
+  kind?: RootCauseKind;
 }
 
 export interface FixSuggestion {

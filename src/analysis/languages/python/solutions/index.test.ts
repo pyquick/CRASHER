@@ -116,6 +116,45 @@ test('missing-key candidate yields a .get() fix', () => {
   assert.equal(fixes[0].code_after, "    return SETTINGS.get(key, <default>)");
 });
 
+test('missing-attribute candidate yields a fix at the class definition', () => {
+  const sourceFiles = {
+    'constants.py': ['class Constants:', "    audio_type = 'VoodooHDA'"].join('\n'),
+    'voodoo_audio.py': [
+      'class VoodooAudio:',
+      '    def __init__(self, constants):',
+      '        self._constants = constants',
+      '',
+      '    def present(self):',
+      '        return not self._constants.voodoo_patch_already',
+    ].join('\n'),
+  };
+  const snapshot: AnalysisSourceSnapshot = {
+    project_name: 'audio_app',
+    requested_release: '',
+    snapshot_release: '',
+    snapshot_id: 1,
+    match_type: 'exact',
+    files: Object.entries(sourceFiles).map(([relative_path, content]) => ({
+      relative_path,
+      language: 'python',
+      content,
+    })),
+  };
+  const model = buildSnapshotModel(snapshot);
+  const { ctx, candidates } = crashContext(model, 'voodoo_audio.py', 6, 'present', {
+    type: 'AttributeError',
+    message: "'Constants' object has no attribute 'voodoo_patch_already'",
+  });
+  const top = candidates.find(candidate => candidate.kind === 'missing-attribute');
+  assert.ok(top, 'missing-attribute candidate present');
+
+  const fixes = suggestFixes(top, ctx, 0);
+  assert.equal(fixes.length, 1);
+  assert.ok(fixes[0].fix_site_snippet.includes('class Constants'), 'fix site shows the class definition');
+  assert.equal(fixes[0].code_before, 'class Constants:');
+  assert.equal(fixes[0].code_after, 'class Constants:\n    voodoo_patch_already = <default_value>');
+});
+
 test('snippetAround marks the target line', () => {
   const model = buildSnapshotModel(loadSampleApp());
   const app = model.by_path.get('app.py')!;

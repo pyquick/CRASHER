@@ -34,12 +34,12 @@ test('analyzeCrash produces Python root cause candidates, fixes and dependencies
     exception_message: "'NoneType' object has no attribute 'name'",
     stack_trace: [
       'Traceback (most recent call last):',
-      '  File "app.py", line 12, in main',
-      '    print(user.name)',
-      '  File "app.py", line 10, in main',
-      '    user = get_user(user_id)',
       '  File "app.py", line 16, in <module>',
       "    main(int(os.environ.get('USER_ID', '1')))",
+      '  File "app.py", line 10, in main',
+      '    user = get_user(user_id)',
+      '  File "app.py", line 12, in main',
+      '    print(user.name)',
       "AttributeError: 'NoneType' object has no attribute 'name'",
     ].join('\n'),
     runtime: 'python',
@@ -110,6 +110,89 @@ test('non-Python crashes are unaffected by the deep analysis', () => {
   assert.ok(analysis, 'analysis produced');
   assert.equal(analysis.detected_language, 'java');
   assert.ok(!analysis.source_analysis?.root_cause_candidates, 'no Python deep analysis for Java crashes');
+});
+
+test('analyzeCrash builds a crash path flow ending at the root cause', () => {
+  const sourceFiles: Record<string, string> = {
+    'sys_patch/constants.py': ['class Constants:', "    audio_type = 'VoodooHDA'"].join('\n'),
+    'sys_patch/patchsets/hardware/audio/voodoo_audio.py': [
+      'class VoodooAudio:',
+      '    def __init__(self, constants):',
+      '        self._constants = Constants(constants)',
+      '',
+      '    def present(self):',
+      '        return self._constants.audio_type=="VoodooHDA" and not self._constants.voodoo_patch_already',
+    ].join('\n'),
+    'sys_patch/patchsets/detect.py': [
+      'class HardwarePatchsetDetection:',
+      '    def __init__(self, constants):',
+      '        self._detect()',
+      '',
+      '    def _detect(self):',
+      '        if VoodooAudio(None).present() is False:',
+      '            pass',
+    ].join('\n'),
+    'qt_gui/gui_sys_patch.py': [
+      'from sys_patch.patchsets.detect import HardwarePatchsetDetection',
+      '',
+      'class GuiSysPatch:',
+      '    def run(self, constants):',
+      '        patches = HardwarePatchsetDetection(constants=constants).device_properties',
+    ].join('\n'),
+  };
+  const snapshot: AnalysisSourceSnapshot = {
+    project_name: 'macboxtool',
+    requested_release: '',
+    snapshot_release: '',
+    snapshot_id: 1,
+    match_type: 'exact',
+    files: Object.entries(sourceFiles).map(([relative_path, content]) => ({
+      relative_path,
+      language: 'python',
+      content,
+    })),
+  };
+
+  const report = {
+    id: 5,
+    exception_type: 'AttributeError',
+    exception_message: "'Constants' object has no attribute 'voodoo_patch_already'",
+    stack_trace: [
+      'Traceback (most recent call last):',
+      '  File "qt_gui/gui_sys_patch.py", line 5, in run',
+      '    patches = HardwarePatchsetDetection(constants=constants).device_properties',
+      '  File "sys_patch/patchsets/detect.py", line 3, in __init__',
+      '    self._detect()',
+      '  File "sys_patch/patchsets/detect.py", line 6, in _detect',
+      '    if VoodooAudio(None).present() is False:',
+      '  File "sys_patch/patchsets/hardware/audio/voodoo_audio.py", line 6, in present',
+      '    return self._constants.audio_type=="VoodooHDA" and not self._constants.voodoo_patch_already',
+      "AttributeError: 'Constants' object has no attribute 'voodoo_patch_already'",
+    ].join('\n'),
+    runtime: 'python',
+    runtime_version: '3.11',
+  };
+
+  const analysis = analyzeCrash(report, snapshot);
+  const candidates = analysis?.source_analysis?.root_cause_candidates ?? [];
+  assert.ok(candidates.length > 0, 'root cause candidates present');
+  assert.equal(candidates[0].kind, 'missing-attribute');
+  assert.equal(candidates[0].file_path, 'sys_patch/constants.py');
+  assert.equal(candidates[0].line_number, 1);
+
+  const path = analysis?.source_analysis?.crash_path ?? [];
+  assert.equal(path.length, 5, '4 frames + terminal root-cause node');
+  assert.equal(path[0].role, 'frame');
+  assert.equal(path[0].file_path, 'qt_gui/gui_sys_patch.py', 'entry frame first');
+  assert.equal(path[0].function_name, 'run');
+  assert.equal(path[3].file_path, 'sys_patch/patchsets/hardware/audio/voodoo_audio.py', 'crash frame before the root node');
+  assert.equal(path[3].function_name, 'present');
+  assert.equal(path[4].role, 'root-cause');
+  assert.equal(path[4].file_path, 'sys_patch/constants.py');
+  assert.equal(path[4].line_number, 1);
+  assert.equal(path[4].kind, 'missing-attribute');
+  assert.ok(path[4].label.includes('Constants'), `label: ${path[4].label}`);
+  assert.ok(path[4].label.includes('voodoo_patch_already'), `label: ${path[4].label}`);
 });
 
 test('Python crash with no matching snapshot file degrades gracefully', () => {

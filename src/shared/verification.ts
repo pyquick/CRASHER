@@ -23,7 +23,7 @@ function hashCode(code: string): string {
   return createHash('sha256').update(code.trim()).digest('hex');
 }
 
-export function createVerificationStore<T extends Record<string, unknown> = Record<string, unknown>>(
+export function createVerificationStore<T = Record<string, unknown>>(
   ttlMs: number,
   resendCooldownMs: number = 60000,
   maxAttempts: number = 0
@@ -73,7 +73,7 @@ export function createVerificationStore<T extends Record<string, unknown> = Reco
     return hashCode(code) === session.codeHash;
   }
 
-  function consume<T2 extends Record<string, unknown> = T>(token: string): T2 | null {
+  function consume<T2 = T>(token: string): T2 | null {
     cleanup();
     const session = store.get(token);
     if (!session || session.expires < Date.now()) {
@@ -84,7 +84,7 @@ export function createVerificationStore<T extends Record<string, unknown> = Reco
     return session.data as unknown as T2;
   }
 
-  function get<T2 extends Record<string, unknown> = T>(token: string): T2 | null {
+  function get<T2 = T>(token: string): T2 | null {
     cleanup();
     const session = store.get(token);
     if (!session || session.expires < Date.now()) {

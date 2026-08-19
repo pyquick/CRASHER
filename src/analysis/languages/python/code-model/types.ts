@@ -69,8 +69,12 @@ export interface PyClass {
   name: string;
   qualified_name: string;
   bases: string[];
+  /** 1-based line of the `class X(...)` statement itself. */
+  line: number;
   body: { start: number; end: number };
   methods: PyFunction[];
+  /** Class-body assignments (class attributes), e.g. `voodoo_patch_already = False`. */
+  assignments: PyAssignment[];
 }
 
 export interface PyFileModel {

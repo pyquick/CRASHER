@@ -149,3 +149,133 @@ test('crash outside any known function still produces candidates', () => {
   assert.ok(candidates.length > 0);
   assert.equal(candidates[0].kind, 'generic');
 });
+
+// ── Missing-attribute scenarios (MacBoxTool-style traceback) ──
+
+function snapshotOf(sourceFiles: Record<string, string>): AnalysisSourceSnapshot {
+  const files = Object.entries(sourceFiles).map(([relative_path, content]) => ({
+    relative_path,
+    language: 'python' as const,
+    content,
+  }));
+  return {
+    project_name: 'audio_app',
+    requested_release: '',
+    snapshot_release: '',
+    snapshot_id: 1,
+    match_type: 'exact',
+    files,
+  };
+}
+
+const AUDIO_SNAPSHOT_FILES: Record<string, string> = {
+  'sys_patch/constants.py': [
+    'class Constants:',
+    "    audio_type = 'VoodooHDA'",
+  ].join('\n'),
+  'sys_patch/patchsets/hardware/audio/voodoo_audio.py': [
+    'class VoodooAudio:',
+    '    def __init__(self, constants):',
+    '        self._constants = Constants(constants)',
+    '',
+    '    def present(self):',
+    '        return self._constants.audio_type=="VoodooHDA" and not self._constants.voodoo_patch_already',
+  ].join('\n'),
+  'sys_patch/patchsets/detect.py': [
+    'class HardwarePatchsetDetection:',
+    '    def __init__(self, constants):',
+    '        self._detect()',
+    '',
+    '    def _detect(self):',
+    '        if VoodooAudio(None).present() is False:',
+    '            pass',
+  ].join('\n'),
+  'qt_gui/gui_sys_patch.py': [
+    'from sys_patch.patchsets.detect import HardwarePatchsetDetection',
+    '',
+    'class GuiSysPatch:',
+    '    def run(self, constants):',
+    '        patches = HardwarePatchsetDetection(constants=constants).device_properties',
+  ].join('\n'),
+};
+
+function audioCrashFrames(): StackFrame[] {
+  return [
+    frame('sys_patch/patchsets/hardware/audio/voodoo_audio.py', 6, 'present', 'trigger'),
+    frame('sys_patch/patchsets/detect.py', 6, '_detect', 'propagation'),
+    frame('sys_patch/patchsets/detect.py', 3, '__init__', 'propagation'),
+    frame('qt_gui/gui_sys_patch.py', 5, 'run', 'source'),
+  ];
+}
+
+test("AttributeError names the class in the message and points at its definition ('Constants' case)", () => {
+  const model = buildSnapshotModel(snapshotOf(AUDIO_SNAPSHOT_FILES));
+  const candidates = analyzePythonRootCause(model, audioCrashFrames(), {
+    type: 'AttributeError',
+    message: "'Constants' object has no attribute 'voodoo_patch_already'",
+  });
+
+  assert.ok(candidates.length > 0);
+  const top = candidates[0];
+  assert.equal(top.kind, 'missing-attribute');
+  assert.equal(top.file_path, 'sys_patch/constants.py');
+  assert.equal(top.line_number, 1); // the class definition line, not the crash line
+  assert.equal(top.function_name, 'Constants');
+  assert.ok(top.confidence >= 0.9, `confidence ${top.confidence}`);
+  assert.ok(top.reason.includes("'voodoo_patch_already'"), `reason: ${top.reason}`);
+  assert.ok(top.reason.includes('Constants'), `reason: ${top.reason}`);
+});
+
+test('falls back to resolving self.<attr> chains to the constructor class', () => {
+  const model = buildSnapshotModel(snapshotOf(AUDIO_SNAPSHOT_FILES));
+  // Class name in the message is wrong/unknown → the self._constants chain
+  // (self._constants = Constants(...) in __init__) must resolve Constants.
+  const candidates = analyzePythonRootCause(model, audioCrashFrames(), {
+    type: 'AttributeError',
+    message: "'AudioConstants' object has no attribute 'voodoo_patch_already'",
+  });
+
+  assert.ok(candidates.length > 0);
+  const top = candidates[0];
+  assert.equal(top.kind, 'missing-attribute');
+  assert.equal(top.file_path, 'sys_patch/constants.py');
+  assert.equal(top.function_name, 'Constants');
+});
+
+test('attribute defined in the class body → no missing-attribute candidate', () => {
+  const files = {
+    ...AUDIO_SNAPSHOT_FILES,
+    'sys_patch/constants.py': [
+      'class Constants:',
+      "    audio_type = 'VoodooHDA'",
+      '    voodoo_patch_already = False',
+    ].join('\n'),
+  };
+  const model = buildSnapshotModel(snapshotOf(files));
+  const candidates = analyzePythonRootCause(model, audioCrashFrames(), {
+    type: 'AttributeError',
+    message: "'Constants' object has no attribute 'voodoo_patch_already'",
+  });
+
+  assert.ok(!candidates.some(candidate => candidate.kind === 'missing-attribute'),
+    `no missing-attribute candidates: ${JSON.stringify(candidates)}`);
+});
+
+test('attribute defined in __init__ → no missing-attribute candidate', () => {
+  const files = {
+    ...AUDIO_SNAPSHOT_FILES,
+    'sys_patch/constants.py': [
+      'class Constants:',
+      '    def __init__(self):',
+      '        self.voodoo_patch_already = False',
+    ].join('\n'),
+  };
+  const model = buildSnapshotModel(snapshotOf(files));
+  const candidates = analyzePythonRootCause(model, audioCrashFrames(), {
+    type: 'AttributeError',
+    message: "'Constants' object has no attribute 'voodoo_patch_already'",
+  });
+
+  assert.ok(!candidates.some(candidate => candidate.kind === 'missing-attribute'),
+    `no missing-attribute candidates: ${JSON.stringify(candidates)}`);
+});

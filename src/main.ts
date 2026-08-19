@@ -21,6 +21,10 @@ import {
   requireCsrf,
 } from './middleware.js';
 import authHandler from './handler/auth.js';
+import authAdminHandler from './handler/auth-admin.js';
+import authEmailHandler from './handler/auth-email.js';
+import auth2FAHandler from './handler/auth-2fa.js';
+import authPasswordHandler from './handler/auth-password.js';
 import crashReportHandler from './handler/crash_report.js';
 import feedbackHandler from './handler/feedback.js';
 import symbolHandler from './handler/symbol.js';
@@ -84,9 +88,10 @@ app.use(authenticateSession);
 app.use(requestLogger);
 
 // Web handler first so HTML pages take priority over JSON API on /web mount
+const authHandlers = [authHandler, authAdminHandler, authEmailHandler, auth2FAHandler, authPasswordHandler];
 app.use('/web', requireContainerAccess, webHandler);
-app.use('/web', authHandler);
-app.use('/api/v1/auth', authHandler);
+for (const handler of authHandlers) app.use('/web', handler);
+for (const handler of authHandlers) app.use('/api/v1/auth', handler);
 
 const ingestLimiter = rateLimit({ windowMs: 60 * 1000, limit: config.ingestRateLimit });
 const apiKeyMinuteLimiter = apiKeyRateLimit(60, 'minute_limit');

@@ -83,6 +83,7 @@ export interface User {
   totp_enabled: number;
   totp_mandatory: number;
   two_factor_method: string;
+  verify_email_on_login: number;
   created_at: string;
   updated_at: string;
   last_login_at: string | null;

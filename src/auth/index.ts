@@ -15,13 +15,10 @@ export type { ApiKeyLimits } from './api-key.js';
 export { createContainer, getContainerById, getContainerByName, listContainers, listActiveContainers, banContainer, unbanContainer, deleteContainer, isContainerBanned, getContainerAdminsForNotification, markBanNotificationSent, getContainerStorageSize, getContainerStatus, listContainerStatuses, isContainerOverLimit, getUserContainerId } from './container.js';
 
 // Email
-export { listEmails, addEmail, resendVerificationCode, verifyEmailCode, setPrimaryEmail, deleteEmail, getPrimaryEmail, hasVerifiedEmail } from './email.js';
-
-// Phone
-export { listPhones, addPhone, resendPhoneVerificationCode, verifyPhoneCode, setPrimaryPhone, deletePhone, getPrimaryPhone, hasVerifiedPhone, maskPhone } from './phone.js';
+export { listEmails, addEmail, resendVerificationCode, verifyEmailCode, setPrimaryEmail, deleteEmail, getPrimaryEmail, getAnyEmail, hasVerifiedEmail, isVerifyEmailOnLogin, setVerifyEmailOnLogin, createLoginEmailVerificationSession, consumeLoginEmailVerificationSession, resendLoginEmailVerificationCode } from './email/index.js';
 
 // 2FA
-export { generateTotpSecret, enableTotp, disableTotp, verifyTotp, createTotpTempToken, consumeTotpTempToken, createFirstLoginVerSession, consumeFirstLoginVerSession, resendFirstLoginCode, createLoginEmail2FASession, consumeLoginEmail2FASession, resendLoginEmail2FACode, createOperation2FASession, consumeOperation2FASession, resendOperation2FACode, getAvailable2FAMethods, createMfaSession, validateMfaSession } from './two-factor.js';
+export { generateTotpSecret, enableTotp, disableTotp, verifyTotp, createTotpTempToken, consumeTotpTempToken, createOperation2FASession, consumeOperation2FASession, resendOperation2FACode, createMfaSession, validateMfaSession, getAvailable2FAMethods, listPhones, addPhone, resendPhoneVerificationCode, verifyPhoneCode, setPrimaryPhone, deletePhone, getPrimaryPhone, hasVerifiedPhone, maskPhone } from './2fa/index.js';
 
 // Password Reset
 export { createResetRequest, getResetRequest, approveResetRequest, purgeExpiredResetTokens, createAdminResetSession, consumeAdminResetSession, verifyAdminResetEmailCode } from './password-reset.js';
