@@ -127,8 +127,6 @@ export interface RootCauseCandidate {
   definition_kind?: 'class' | 'function';
   /** Python module containing the resolved definition. */
   definition_module?: string;
-  /** Modules imported by the file that contains the resolved definition. */
-  imported_packages?: string[];
 }
 
 /**
@@ -203,6 +201,21 @@ export interface CrashAnalysis {
 
   /** Source-code evidence, when a project source snapshot is available */
   source_analysis?: SourceAnalysis;
+
+  /**
+   * Crash path flow for Python crashes: stack frames from entry point to
+   * crash site, rendered as a flow diagram even without a source snapshot.
+   * When source analysis ran, its crash_path (ending at the root cause)
+   * takes precedence in the UI.
+   */
+  crash_path?: CrashPathStep[];
+
+  /**
+   * Exception-type-based suggestions for Python crashes. Always present so
+   * every Python error shows at least one suggestion, even without a source
+   * snapshot. Source-analysis fixes take precedence in the UI.
+   */
+  suggestions?: FixSuggestion[];
 }
 
 /** An uploaded source file in a project source snapshot. */

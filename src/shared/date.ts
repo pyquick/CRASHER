@@ -14,10 +14,18 @@ export function nowSqlDateTime(): string {
   return formatDate(new Date());
 }
 
+export function sqlDateTimePlusSeconds(seconds: number, now = new Date()): string {
+  return formatDate(new Date(now.getTime() + seconds * 1000));
+}
+
 export function nowSqlDateTimePlusMinutes(minutes: number): string {
   return formatDate(new Date(Date.now() + minutes * 60 * 1000));
 }
 
 export function nowSqlDateTimePlusHours(hours: number): string {
   return formatDate(new Date(Date.now() + hours * 60 * 60 * 1000));
+}
+
+export function nowSqlDateTimePlusDays(days: number): string {
+  return formatDate(new Date(Date.now() + days * 24 * 60 * 60 * 1000));
 }

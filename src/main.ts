@@ -31,13 +31,37 @@ import symbolHandler from './handler/symbol.js';
 import unityHandler from './handler/unity.js';
 import queryHandler from './handler/query.js';
 import sourceHandler from './handler/source.js';
+import aiProviderHandler from './handler/ai-provider.js';
+import aiHandler from './handler/ai.js';
 import webHandler from './handler/web.js';
 import { testSmtpConnection } from './notification/service.js';
+import { sweepSourceDuplicates } from './service/dedup.js';
+import { regroupCrashReports } from './service/regroup.js';
+import { purgeExpiredAiConversations } from './store.js';
+import { nowSqlDateTime } from './shared/date.js';
 
 initDb();
 purgeExpiredSessions();
 purgeExpiredResetTokens();
+purgeExpiredAiConversations(nowSqlDateTime());
 testSmtpConnection();
+try {
+  const sweep = sweepSourceDuplicates();
+  if (sweep.duplicates_removed || sweep.orphans_removed || sweep.hashes_backfilled) {
+    console.log(`[dedup] sweep: ${JSON.stringify(sweep)}`);
+  }
+} catch (err) {
+  console.error('[dedup] startup sweep failed:', err);
+}
+
+try {
+  const regroup = regroupCrashReports();
+  if (regroup.groups_created || regroup.groups_deleted) {
+    console.log(`[regroup] sweep: ${JSON.stringify(regroup)}`);
+  }
+} catch (err) {
+  console.error('[regroup] startup sweep failed:', err);
+}
 
 const app = express();
 app.disable('x-powered-by');
@@ -79,7 +103,7 @@ app.use((req, res, next) => {
   if (config.cookieSecure) res.setHeader('Strict-Transport-Security', 'max-age=31536000; includeSubDomains');
   next();
 });
-app.use(compression());
+app.use(compression({ filter: (req) => !(req.url ?? '').startsWith('/api/v1/ai/conversations/') }));
 app.use(cors(corsOptions));
 app.use(cookieParser);
 app.use(express.json({ limit: config.maxJsonBodySize }));
@@ -92,6 +116,7 @@ const authHandlers = [authHandler, authAdminHandler, authEmailHandler, auth2FAHa
 app.use('/web', requireContainerAccess, webHandler);
 for (const handler of authHandlers) app.use('/web', handler);
 for (const handler of authHandlers) app.use('/api/v1/auth', handler);
+app.use('/api/v1/auth', aiProviderHandler);
 
 const ingestLimiter = rateLimit({ windowMs: 60 * 1000, limit: config.ingestRateLimit });
 const apiKeyMinuteLimiter = apiKeyRateLimit(60, 'minute_limit');
@@ -124,6 +149,7 @@ const apiLimiter = rateLimit({ windowMs: 60 * 1000, limit: config.apiRateLimit }
 // Protected API routes: session-auth required, CSRF required, container access enforced, API key delete restrictions
 app.use('/api/v1', apiLimiter, requireApiAuth, requireContainerAccess, requireCsrf, requireApiKeyDeleteAccess, queryHandler);
 app.use('/api/v1', apiLimiter, requireApiAuth, requireContainerAccess, requireCsrf, requireApiKeyDeleteAccess, symbolHandler);
+app.use('/api/v1/ai', apiLimiter, requireApiAuth, requireContainerAccess, requireCsrf, aiHandler);
 
 app.get('/', (_req, res) => res.redirect('/web/'));
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));

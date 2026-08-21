@@ -6,7 +6,7 @@ import { fileURLToPath } from 'url';
 import { buildSnapshotModel } from '../code-model/index.js';
 import type { AnalysisSourceSnapshot, AnalysisSourceFile, RootCauseCandidate, StackFrame } from '../../../types.js';
 import { analyzePythonRootCause, matchCrashFile, findCrashFunc, type CrashContext } from '../root-cause/index.js';
-import { suggestFixes, snippetAround } from './index.js';
+import { suggestFixes, suggestExceptionAdvice, snippetAround } from './index.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const sampleAppDir = join(here, '..', 'samples', 'sample_app');
@@ -162,4 +162,27 @@ test('snippetAround marks the target line', () => {
   const lines = snippet.split('\n');
   assert.ok(lines.some(line => line.startsWith('>') && line.includes('print(user.name)')));
   assert.equal(lines.length, 5);
+});
+
+test('suggestExceptionAdvice maps known exception types to a suggestion', () => {
+  const [suggestion] = suggestExceptionAdvice({ type: 'KeyError', message: "'setting'" });
+  assert.equal(suggestion.candidate_index, -1);
+  assert.ok(suggestion.title.length > 0);
+  assert.ok(suggestion.description.includes('.get('), `description: ${suggestion.description}`);
+  assert.equal(suggestion.code_before, '');
+  assert.equal(suggestion.code_after, '');
+});
+
+test('suggestExceptionAdvice prefers the most specific exception type', () => {
+  const [module] = suggestExceptionAdvice({ type: 'ModuleNotFoundError', message: "No module named 'requests'" });
+  assert.ok(module.title.toLowerCase().includes('module'), `title: ${module.title}`);
+  const [importer] = suggestExceptionAdvice({ type: 'ImportError', message: 'cannot import name' });
+  assert.notEqual(module.title, importer.title, 'ModuleNotFoundError has its own entry');
+});
+
+test('suggestExceptionAdvice falls back to a default for unknown types', () => {
+  const [suggestion] = suggestExceptionAdvice({ type: 'SomeWeirdError', message: 'boom' });
+  assert.ok(suggestion.title.length > 0);
+  assert.ok(suggestion.description.length > 0);
+  assert.equal(suggestion.candidate_index, -1);
 });

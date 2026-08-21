@@ -1,5 +1,13 @@
 export type UserRole = 'ultraadmin' | 'admin' | 'operator' | 'viewer';
 export type ApiKeyTier = 'admin' | 'operator' | 'viewer';
+export type AiProvider = 'deepseek';
+export type AiProviderModel = 'deepseek-chat' | 'deepseek-v4-pro[1m]' | 'deepseek-v4-flash[1m]';
+export const AI_PROVIDER_MODELS: Array<{ value: AiProviderModel; label: string }> = [
+  { value: 'deepseek-chat', label: 'deepseek-chat' },
+  { value: 'deepseek-v4-pro[1m]', label: 'deepseek-v4-pro' },
+  { value: 'deepseek-v4-flash[1m]', label: 'deepseek-v4-flash' },
+];
+export type AiMessageRole = 'user' | 'assistant';
 export type TwoFactorMethod = 'totp' | 'email' | 'sms' | 'none';
 export type ContainerTier = 1 | 2 | 3 | 4 | 5;
 
@@ -166,6 +174,19 @@ export interface Project {
   updated_at: string;
 }
 
+// Row shape used by the startup regroup sweep to recompute group membership.
+export interface ReportGroupingRow {
+  id: number;
+  exception_type: string;
+  exception_message: string;
+  stack_trace: string;
+  runtime: string;
+  client_timestamp: string;
+  project_id: number | null;
+  container_id: number | null;
+  project_name: string | null;
+}
+
 export interface SourceSnapshot {
   id: number;
   project_id: number;
@@ -181,6 +202,9 @@ export interface SourceFile {
   file_size: number;
   language: string;
   created_at: string;
+  content_hash: string;
+  parent_file_id: number | null;
+  patch: string;
 }
 
 export interface CrashGroup {
@@ -333,6 +357,69 @@ export interface PaginatedResult<T> {
   page: number;
   page_size: number;
   total_pages: number;
+}
+
+export interface AiConversation {
+  id: number;
+  owner_user_id: number;
+  group_id: number | null;
+  report_id: number | null;
+  title: string;
+  created_at: string;
+  updated_at: string;
+  expires_at: string;
+}
+
+export interface AiMessage {
+  id: number;
+  conversation_id: number;
+  role: AiMessageRole;
+  encrypted_content: string;
+  encrypted_reasoning: string | null;
+  created_at: string;
+}
+
+export interface AiConversationView extends Omit<AiConversation, 'owner_user_id'> {
+  message_count: number;
+}
+
+export interface AiMessageView {
+  id: number;
+  role: AiMessageRole;
+  content: string;
+  reasoning: string | null;
+  created_at: string;
+}
+
+export interface AiProviderKey {
+  id: number;
+  user_id: number;
+  provider: AiProvider;
+  encrypted_api_key: string;
+  masked_api_key: string;
+  encryption_aad: string;
+  enabled: number;
+  failure_count: number;
+  last_failure_code: string | null;
+  last_failure_at: string | null;
+  retry_after_at: string | null;
+  last_used_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AiProviderKeyView {
+  id: number;
+  provider: AiProvider;
+  masked_api_key: string;
+  enabled: boolean;
+  failure_count: number;
+  last_failure_code: string | null;
+  last_failure_at: string | null;
+  retry_after_at: string | null;
+  last_used_at: string | null;
+  created_at: string;
+  updated_at: string;
 }
 
 export interface CrashGroupQuery {

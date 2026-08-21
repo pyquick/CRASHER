@@ -15,6 +15,7 @@ import type {
   Project,
   SourceSnapshot,
   SourceFile,
+  ReportGroupingRow,
 } from '../model.js';
 
 // ----- Projects and source snapshots -----
@@ -82,14 +83,36 @@ export function createSourceFile(
   relativePath: string,
   storagePath: string,
   fileSize: number,
-  language: string
+  language: string,
+  contentHash: string = '',
+  parentFileId: number | null = null,
+  patch: string = ''
 ): SourceFile {
   const result = getDb().prepare(`
-    INSERT INTO source_files (snapshot_id, relative_path, storage_path, file_size, language)
-    VALUES (?, ?, ?, ?, ?)
-  `).run(snapshotId, relativePath, storagePath, fileSize, language);
+    INSERT INTO source_files (snapshot_id, relative_path, storage_path, file_size, language, content_hash, parent_file_id, patch)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+  `).run(snapshotId, relativePath, storagePath, fileSize, language, contentHash, parentFileId, patch);
   return getDb().prepare('SELECT * FROM source_files WHERE id = ?')
     .get(Number(result.lastInsertRowid)) as SourceFile;
+}
+
+export function findSourceSnapshotScoped(projectId: number, release: string, containerId?: number | null): (SourceSnapshot & { match_type: 'exact' | 'latest' }) | undefined {
+  const scope = containerId === undefined ? '' : containerId === null ? ' AND ss.container_id IS NULL' : ' AND ss.container_id = ?';
+  const scopeParams = containerId === undefined ? [] : containerId === null ? [] : [containerId];
+  if (release) {
+    const exact = getDb().prepare(`
+      SELECT * FROM source_snapshots ss
+      WHERE ss.project_id = ? AND ss.release = ?${scope}
+      ORDER BY ss.created_at DESC, ss.id DESC LIMIT 1
+    `).get(projectId, release, ...scopeParams) as SourceSnapshot | undefined;
+    if (exact) return { ...exact, match_type: 'exact' };
+  }
+  const latest = getDb().prepare(`
+    SELECT * FROM source_snapshots ss
+    WHERE ss.project_id = ?${scope}
+    ORDER BY ss.created_at DESC, ss.id DESC LIMIT 1
+  `).get(projectId, ...scopeParams) as SourceSnapshot | undefined;
+  return latest ? { ...latest, match_type: 'latest' } : undefined;
 }
 
 export function findSourceSnapshot(projectId: number, release: string): (SourceSnapshot & { match_type: 'exact' | 'latest' }) | undefined {
@@ -113,6 +136,17 @@ export function getSourceFilesForSnapshot(snapshotId: number): SourceFile[] {
   return getDb().prepare(
     'SELECT * FROM source_files WHERE snapshot_id = ? ORDER BY relative_path'
   ).all(snapshotId) as SourceFile[];
+}
+
+export function getSourceFilesForSnapshotScoped(snapshotId: number, containerId?: number | null): SourceFile[] {
+  const scope = containerId === undefined ? '' : containerId === null ? ' AND ss.container_id IS NULL' : ' AND ss.container_id = ?';
+  const params = containerId === undefined ? [snapshotId] : containerId === null ? [snapshotId] : [snapshotId, containerId];
+  return getDb().prepare(`
+    SELECT sf.* FROM source_files sf
+    JOIN source_snapshots ss ON ss.id = sf.snapshot_id
+    WHERE sf.snapshot_id = ?${scope}
+    ORDER BY sf.relative_path
+  `).all(...params) as SourceFile[];
 }
 
 // ----- Crash Groups -----
@@ -166,6 +200,17 @@ export function getGroupById(id: number): CrashGroup | undefined {
     LEFT JOIN projects p ON p.id = cg.project_id
     WHERE cg.id = ?
   `).get(id) as CrashGroup | undefined;
+}
+
+export function getGroupByIdScoped(id: number, containerId?: number | null): CrashGroup | undefined {
+  const condition = containerId === undefined ? 'cg.id = ?' : containerId === null ? 'cg.id = ? AND cg.container_id IS NULL' : 'cg.id = ? AND cg.container_id = ?';
+  const params = containerId === undefined ? [id] : [id, containerId];
+  return getDb().prepare(`
+    SELECT cg.*, p.name AS project_name
+    FROM crash_groups cg
+    LEFT JOIN projects p ON p.id = cg.project_id
+    WHERE ${condition}
+  `).get(...params) as CrashGroup | undefined;
 }
 
 export function listGroups(query: CrashGroupQuery & { container_id?: number | null }): PaginatedResult<CrashGroup> {
@@ -349,6 +394,29 @@ export function getReportById(id: number): CrashReport | undefined {
   `).get(id) as CrashReport | undefined;
 }
 
+export function getReportByIdScoped(id: number, containerId?: number | null): CrashReport | undefined {
+  const condition = containerId === undefined ? 'cr.id = ?' : containerId === null ? 'cr.id = ? AND cr.container_id IS NULL' : 'cr.id = ? AND cr.container_id = ?';
+  const params = containerId === undefined ? [id] : [id, containerId];
+  return getDb().prepare(`
+    SELECT cr.*, p.name AS project_name
+    FROM crash_reports cr
+    LEFT JOIN projects p ON p.id = cr.project_id
+    WHERE ${condition}
+  `).get(...params) as CrashReport | undefined;
+}
+
+export function getLatestReportForGroupScoped(groupId: number, containerId?: number | null): CrashReport | undefined {
+  const condition = containerId === undefined ? 'cr.group_id = ?' : containerId === null ? 'cr.group_id = ? AND cr.container_id IS NULL' : 'cr.group_id = ? AND cr.container_id = ?';
+  const params = containerId === undefined ? [groupId] : [groupId, containerId];
+  return getDb().prepare(`
+    SELECT cr.*, p.name AS project_name
+    FROM crash_reports cr
+    LEFT JOIN projects p ON p.id = cr.project_id
+    WHERE ${condition}
+    ORDER BY cr.created_at DESC, cr.id DESC LIMIT 1
+  `).get(...params) as CrashReport | undefined;
+}
+
 export function listReports(params: {
   group_id?: number;
   project_id?: number;
@@ -420,6 +488,35 @@ export function listReports(params: {
     page_size: pageSize,
     total_pages: Math.ceil(countRow.total / pageSize),
   };
+}
+
+// ----- Crash Regrouping -----
+
+export function listReportGroupingRows(): ReportGroupingRow[] {
+  return getDb().prepare(`
+    SELECT cr.id, cr.exception_type, cr.exception_message, cr.stack_trace, cr.runtime,
+           cr.client_timestamp, cr.project_id, cr.container_id, p.name AS project_name
+    FROM crash_reports cr
+    LEFT JOIN projects p ON p.id = cr.project_id
+    ORDER BY cr.id
+  `).all() as ReportGroupingRow[];
+}
+
+export function updateReportGroup(reportId: number, groupId: number): void {
+  getDb().prepare('UPDATE crash_reports SET group_id = ? WHERE id = ?').run(groupId, reportId);
+}
+
+export function updateGroupStats(groupId: number, firstSeen: string, lastSeen: string, totalCount: number): void {
+  getDb()
+    .prepare('UPDATE crash_groups SET first_seen = ?, last_seen = ?, total_count = ? WHERE id = ?')
+    .run(firstSeen, lastSeen, totalCount, groupId);
+}
+
+export function deleteEmptyGroups(): number {
+  return getDb().prepare(`
+    DELETE FROM crash_groups
+    WHERE id NOT IN (SELECT DISTINCT group_id FROM crash_reports WHERE group_id IS NOT NULL)
+  `).run().changes;
 }
 
 // ----- Symbolication -----

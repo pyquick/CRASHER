@@ -140,14 +140,13 @@ test('unknown exception types fall back to a generic candidate', () => {
   assert.ok(candidates[0].confidence < 0.8, 'generic candidates keep low confidence');
 });
 
-test('crash outside any known function still produces candidates', () => {
+test('AttributeError with no resolvable definition produces no candidates (crash chain only)', () => {
   const model = buildSnapshotModel(loadSampleApp());
   const candidates = analyzePythonRootCause(model, [frame('app.py', 6, '<module>')], {
     type: 'AttributeError',
     message: "'NoneType' object has no attribute 'name'",
   });
-  assert.ok(candidates.length > 0);
-  assert.equal(candidates[0].kind, 'generic');
+  assert.deepEqual(candidates, []);
 });
 
 // ── Missing-attribute scenarios (MacBoxTool-style traceback) ──
@@ -254,11 +253,10 @@ test("targeted Constants AttributeError also resolves a function definition and 
   assert.equal(top.function_name, 'Constants');
   assert.equal(top.definition_kind, 'function');
   assert.equal(top.definition_module, 'factory');
-  assert.deepEqual(top.imported_packages, ['json']);
   assert.equal(top.is_conclusive, true);
   assert.equal(top.confidence, 1);
-  assert.ok(top.reason.includes('function Constants'), `reason: ${top.reason}`);
-  assert.ok(top.reason.includes('caused the crash'), `reason: ${top.reason}`);
+  assert.ok(top.reason.includes("'Constants' from factory.py:2"), `reason: ${top.reason}`);
+  assert.ok(top.reason.includes("never defines 'voodoo_patch_already'"), `reason: ${top.reason}`);
 });
 
 test('falls back to resolving self.<attr> chains to the constructor class', () => {
@@ -313,4 +311,90 @@ test('attribute defined in __init__ → no missing-attribute candidate', () => {
 
   assert.ok(!candidates.some(candidate => candidate.kind === 'missing-attribute'),
     `no missing-attribute candidates: ${JSON.stringify(candidates)}`);
+});
+
+// ── HDAU-style: runtime type defined in another file ──
+
+const HDAU_SNAPSHOT_FILES: Record<string, string> = {
+  'sys_patch/patchsets/hardware/audio/hda_universal_audio.py': [
+    'class HDAU:',
+    '    def __init__(self):',
+    '        self._variant = 1',
+    '',
+    '    def hardware_variant(self):',
+    '        return self._variant',
+    '',
+    '    def name(self):',
+    '        return f"{self._trans.get(self.hardware_variant(), self.hardware_variant())}: HDAUniversal"',
+  ].join('\n'),
+  'sys_patch/patchsets/detect.py': [
+    'class HardwarePatchsetDetection:',
+    '    def __init__(self, constants):',
+    '        self._detect()',
+    '',
+    '    def _detect(self):',
+    '        device_properties = {}',
+    '        device_properties[HDAU().name()] = True',
+  ].join('\n'),
+  'qt_gui/gui_sys_patch.py': [
+    'from sys_patch.patchsets.detect import HardwarePatchsetDetection',
+    '',
+    'class GuiSysPatch:',
+    '    def run(self, constants):',
+    '        patches = HardwarePatchsetDetection(constants=constants).device_properties',
+  ].join('\n'),
+};
+
+function hdauCrashFrames(): StackFrame[] {
+  return [
+    frame('sys_patch/patchsets/hardware/audio/hda_universal_audio.py', 9, 'name', 'trigger'),
+    frame('sys_patch/patchsets/detect.py', 7, '_detect', 'propagation'),
+    frame('qt_gui/gui_sys_patch.py', 5, 'run', 'source'),
+  ];
+}
+
+test("AttributeError 'HDAU' object has no attribute '_trans' points at the HDAU definition file", () => {
+  const model = buildSnapshotModel(snapshotOf(HDAU_SNAPSHOT_FILES));
+  const candidates = analyzePythonRootCause(model, hdauCrashFrames(), {
+    type: 'AttributeError',
+    message: "'HDAU' object has no attribute '_trans'",
+  });
+
+  assert.equal(candidates.length, 1, 'single conclusive candidate, no rival causes');
+  const top = candidates[0];
+  assert.equal(top.kind, 'missing-attribute');
+  assert.equal(top.file_path, 'sys_patch/patchsets/hardware/audio/hda_universal_audio.py');
+  assert.equal(top.line_number, 1); // the class definition line
+  assert.equal(top.function_name, 'HDAU');
+  assert.equal(top.is_conclusive, true);
+  assert.equal(top.definition_kind, 'class');
+  assert.equal(top.definition_module, 'sys_patch.patchsets.hardware.audio.hda_universal_audio');
+  assert.equal(top.confidence, 1);
+  assert.ok(top.reason.includes("'HDAU'"), `reason: ${top.reason}`);
+  assert.ok(top.reason.includes("'_trans'"), `reason: ${top.reason}`);
+});
+
+// ── ImportError: single conclusive import line ──
+
+test("ImportError 'No module named' produces one conclusive import-failure candidate", () => {
+  const model = buildSnapshotModel(snapshotOf({
+    'crash.py': [
+      'import missing_dep',
+      '',
+      'def run():',
+      '    return missing_dep.work()',
+    ].join('\n'),
+  }));
+  const candidates = analyzePythonRootCause(model, [frame('crash.py', 1, '<module>')], {
+    type: 'ModuleNotFoundError',
+    message: "No module named 'missing_dep'",
+  });
+
+  assert.equal(candidates.length, 1);
+  const top = candidates[0];
+  assert.equal(top.kind, 'import-failure');
+  assert.equal(top.file_path, 'crash.py');
+  assert.equal(top.line_number, 1);
+  assert.equal(top.is_conclusive, true);
+  assert.ok(top.reason.includes('missing_dep'), `reason: ${top.reason}`);
 });

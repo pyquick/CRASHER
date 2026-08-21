@@ -38,6 +38,15 @@
 | TypeError | isinstance() / 类型注解检查 |
 | (默认) | try/except + pdb 调试 |
 
+## 建议与崩溃逻辑图
+
+- 所有 Python 错误都至少有一条建议:`suggestFixes` 为排名靠前的
+  root-cause 候选生成代码级修复(包括 conclusive 诊断);无候选时回退到
+  `suggestExceptionAdvice`(按异常类型给出建议,未知类型用默认建议)。
+- 崩溃逻辑图(crash chain)对所有 Python 崩溃都可用:分析器层用栈帧生成
+  入口 → 崩溃点的 `crash_path`(无需源码快照);有快照时深分析在其末端
+  追加 root-cause 节点并在 UI 中优先展示。
+
 ## 样例数据
 
 | 文件 | 内容 |

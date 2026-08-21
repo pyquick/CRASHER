@@ -3,11 +3,12 @@ import multer from 'multer';
 import * as store from '../store.js';
 import { analyzeCrash } from '../analysis/analyzer.js';
 import { createTarGz, extractTarGzFile, cleanupArchive } from '../archive.js';
-import { createReadStream, existsSync, unlinkSync, readFileSync } from 'fs';
+import { createReadStream, existsSync, unlinkSync } from 'fs';
 import { config } from '../config.js';
 import { requireRole } from '../middleware.js';
 import { importCrashPackage, extractImportBuffer } from '../service/import.js';
 import { getContainerScope } from '../shared/container.js';
+import { readSourceFileContent, sweepSourceDuplicates } from '../service/dedup.js';
 import type { CrashReport, CrashAttachment } from '../model.js';
 
 /**
@@ -136,7 +137,7 @@ router.get('/crash-reports/:id/analysis', requireRole('admin', 'operator'), (req
     ? store.getSourceFilesForSnapshot(sourceSnapshot.id)
       .flatMap(file => {
         try {
-          return [{ relative_path: file.relative_path, language: file.language, content: readFileSync(file.storage_path, 'utf-8') }];
+          return [{ relative_path: file.relative_path, language: file.language, content: readSourceFileContent(file) }];
         } catch {
           return [];
         }
@@ -418,6 +419,12 @@ router.post('/clear-crashes', requireRole('admin'), (req, res) => {
     try { if (existsSync(p)) unlinkSync(p); } catch {}
   }
   res.json({ success: true, message: 'All crash data cleared' });
+});
+
+// ── Admin: Source file dedup sweep ──
+
+router.post('/source-dedup', requireRole('admin'), (_req, res) => {
+  res.json({ success: true, ...sweepSourceDuplicates() });
 });
 
 

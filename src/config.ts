@@ -41,6 +41,18 @@ export interface Config {
   smsApiKey: string;
   smsApiSecret: string;
   smsFrom: string;
+  aiEncryptionKey: string;
+  aiDeepseekModel: string;
+  aiDeepseekEndpoint: string;
+  aiRequestTimeoutMs: number;
+  aiMessageMaxLength: number;
+  aiContextMaxChars: number;
+  aiSourceMaxFiles: number;
+  aiHistoryMaxChars: number;
+  aiRateLimit: number;
+  aiMaxConversations: number;
+  aiMaxMessagesPerConversation: number;
+  aiRetentionDays: number;
 }
 
 function env(key: string, fallback: string): string {
@@ -120,6 +132,18 @@ function loadConfig(): Config {
     smsApiKey: env('SMS_API_KEY', ''),
     smsApiSecret: env('SMS_API_SECRET', ''),
     smsFrom: env('SMS_FROM', ''),
+    aiEncryptionKey: env('AI_ENCRYPTION_KEY', ''),
+    aiDeepseekModel: env('AI_DEEPSEEK_MODEL', 'deepseek-chat'),
+    aiDeepseekEndpoint: env('AI_DEEPSEEK_ENDPOINT', 'https://api.deepseek.com/chat/completions'),
+    aiRequestTimeoutMs: Math.max(1000, envInt('AI_REQUEST_TIMEOUT_MS', 60000)),
+    aiMessageMaxLength: Math.max(100, envInt('AI_MESSAGE_MAX_LENGTH', 10000)),
+    aiContextMaxChars: Math.max(10000, envInt('AI_CONTEXT_MAX_CHARS', 120000)),
+    aiSourceMaxFiles: Math.max(1, envInt('AI_SOURCE_MAX_FILES', 20)),
+    aiHistoryMaxChars: Math.max(1000, envInt('AI_HISTORY_MAX_CHARS', 40000)),
+    aiRateLimit: Math.max(1, envInt('AI_RATE_LIMIT', 20)),
+    aiMaxConversations: Math.max(1, envInt('AI_MAX_CONVERSATIONS', 50)),
+    aiMaxMessagesPerConversation: Math.max(2, envInt('AI_MAX_MESSAGES_PER_CONVERSATION', 100)),
+    aiRetentionDays: Math.max(1, envInt('AI_RETENTION_DAYS', 30)),
   };
 }
 

@@ -1,6 +1,9 @@
 // ── Python Fix Suggestion Generator ──
 // Produces concrete, code-grounded fix suggestions for each root-cause
 // candidate: guard snippets, default values, import fixes and base cases.
+// `suggestExceptionAdvice` is the fallback: every Python error gets at
+// least one exception-type-based suggestion, even when no root cause was
+// found or no source snapshot is available.
 
 import type { FixSuggestion, RootCauseCandidate, SourceLocation } from '../../../types.js';
 import type { PyFileModel } from '../code-model/types.js';
@@ -99,7 +102,8 @@ export function suggestFixes(candidate: RootCauseCandidate, ctx: CrashContext, c
       break;
     }
     case 'missing-attribute': {
-      const attr = candidate.reason.match(/^'([^']+)' is never assigned/)?.[1];
+      const attr = candidate.reason.match(/^'([^']+)' from [^']*never defines '([^']+)'/)?.[2]
+        ?? candidate.reason.match(/^'([^']+)' is never assigned/)?.[1];
       const attrRef = attr ?? '<attr>';
       const classBodyIndent = site.indent ? `${site.indent}    ` : '    ';
       suggestions.push(fix(
@@ -198,4 +202,133 @@ export function suggestFixes(candidate: RootCauseCandidate, ctx: CrashContext, c
   }
 
   return suggestions;
+}
+
+// ── Exception-Type Advice Fallback ──
+// Title + description suggestions keyed by Python exception type. These are
+// shown whenever the root-cause analysis produces no code-grounded fixes,
+// so every Python error still gets actionable advice.
+
+const EXCEPTION_ADVICE: Record<string, { title: string; description: string }> = {
+  AttributeError: {
+    title: 'Guard attribute access',
+    description: "'X' object has no attribute 'y' — the object is not the type you expect, often None returned by an earlier function. Check it before use (if obj is not None: / hasattr(obj, 'y')), and verify the attribute name is spelled correctly.",
+  },
+  KeyError: {
+    title: 'Use safe dictionary access',
+    description: 'The key is missing from the dictionary. Use d.get(key, default) or check `key in d` before subscripting, and make sure the key was inserted earlier.',
+  },
+  IndexError: {
+    title: 'Check the index bounds',
+    description: 'A list/tuple index is out of range. Validate it first: `if 0 <= i < len(seq):` — the sequence is probably shorter (or empty) than the code assumes.',
+  },
+  TypeError: {
+    title: 'Check the operand types',
+    description: 'An operation received an incompatible type (e.g. str + int, or calling a non-callable). Verify the types with isinstance() or type hints, and convert explicitly where needed.',
+  },
+  ValueError: {
+    title: 'Validate the input value',
+    description: "The value has the right type but an invalid form (e.g. int('abc'), list.remove() of a missing item). Validate or normalize the value before use.",
+  },
+  ZeroDivisionError: {
+    title: 'Guard the divisor',
+    description: 'A division by zero occurred. Check the divisor before dividing (`if divisor != 0:`), or handle the zero case explicitly.',
+  },
+  ModuleNotFoundError: {
+    title: 'Install or locate the missing module',
+    description: 'The module could not be found. Install the missing package into the runtime environment (pip install), or check the module name and PYTHONPATH.',
+  },
+  ImportError: {
+    title: 'Fix the failing import',
+    description: 'A module or name could not be imported. Install the missing dependency (pip install), correct the module path, or resolve the circular import.',
+  },
+  FileNotFoundError: {
+    title: 'Handle the missing file',
+    description: 'The file does not exist. Check the path with os.path.exists(), create the file when needed, or handle the missing-file case gracefully.',
+  },
+  PermissionError: {
+    title: 'Check file permissions',
+    description: 'The process lacks permission to access the file or directory. Check the permissions and the running user, or run with the required privileges.',
+  },
+  OSError: {
+    title: 'Handle the I/O failure',
+    description: 'An operating-system error occurred (file, socket, or device). Wrap the I/O call in try/except OSError and surface a clear error message.',
+  },
+  NameError: {
+    title: 'Fix the undefined name',
+    description: 'A name is not defined. Check for typos, a missing import, or use before assignment — the traceback may suggest the correct spelling.',
+  },
+  UnboundLocalError: {
+    title: 'Initialize the variable before use',
+    description: 'A local variable is read before it is assigned in this scope. Initialize it before use, or mark it global/nonlocal if that is intended.',
+  },
+  RecursionError: {
+    title: 'Stop the recursion',
+    description: 'The recursion never terminates. Add a base case that returns before recursing, or rewrite the logic as an iterative loop.',
+  },
+  StopIteration: {
+    title: 'Handle iterator exhaustion',
+    description: 'An iterator was consumed past its end. Use next(it, default) or catch StopIteration explicitly — note that raising it inside a generator becomes a RuntimeError.',
+  },
+  OverflowError: {
+    title: 'Reduce the numeric magnitude',
+    description: 'A number is too large for its type. Use float or Decimal for large values, or scale the computation down.',
+  },
+  UnicodeDecodeError: {
+    title: 'Use the correct encoding',
+    description: "The bytes could not be decoded. Open the file with the right encoding, e.g. open(path, encoding='utf-8'), or pass errors='replace'.",
+  },
+  MemoryError: {
+    title: 'Reduce memory usage',
+    description: 'The process ran out of memory. Stream or chunk data instead of loading it all at once, and release large objects (del, gc.collect()).',
+  },
+  TimeoutError: {
+    title: 'Handle the timeout',
+    description: 'An operation timed out. Increase the timeout or add retry logic, and handle the timeout case gracefully.',
+  },
+  ConnectionError: {
+    title: 'Handle the connection failure',
+    description: 'A network connection failed. Add retry/backoff logic, handle the offline case, and surface a clear error message.',
+  },
+  AssertionError: {
+    title: 'Review the failed assertion',
+    description: 'An assert statement failed. Check the inputs that reach the assertion and whether the assumption behind it still holds.',
+  },
+  RuntimeError: {
+    title: 'Check the runtime state',
+    description: 'A generic runtime error occurred (e.g. misuse of a generator or an unsupported operation). Inspect the traceback for the operation that raised it.',
+  },
+};
+
+const DEFAULT_EXCEPTION_ADVICE: { title: string; description: string } = {
+  title: 'Debug with try/except and logging',
+  description: 'Wrap the crash site in try/except, log the full traceback, and reproduce the failure with pdb or logging to inspect the failing state.',
+};
+
+/**
+ * Fallback suggestion for an exception type, used when no code-grounded
+ * fix was produced. Always returns exactly one advisory suggestion.
+ */
+export function suggestExceptionAdvice(exception: { type: string; message: string }): FixSuggestion[] {
+  const entry = matchExceptionAdvice(exception.type);
+  return [{
+    candidate_index: -1,
+    title: entry.title,
+    description: entry.description,
+    crash_site_snippet: '',
+    fix_site_snippet: '',
+    code_before: '',
+    code_after: '',
+    confidence: 0.5,
+  }];
+}
+
+function matchExceptionAdvice(type: string): { title: string; description: string } {
+  const lower = type.toLowerCase();
+  // Longest keys first so e.g. ModuleNotFoundError wins over ImportError.
+  const keys = Object.keys(EXCEPTION_ADVICE).sort((a, b) => b.length - a.length);
+  for (const key of keys) {
+    if (lower.includes(key.toLowerCase())) return EXCEPTION_ADVICE[key];
+  }
+  return DEFAULT_EXCEPTION_ADVICE;
 }

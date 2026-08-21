@@ -30,7 +30,6 @@ export interface Evidence {
   is_conclusive?: boolean;
   definition_kind?: 'class' | 'function';
   definition_module?: string;
-  imported_packages?: string[];
 }
 
 export interface CrashContext {
@@ -173,10 +172,6 @@ function moduleNameForFile(filePath: string): string {
     .replace(/\//g, '.');
 }
 
-function importedPackages(file: PyFileModel): string[] {
-  return [...new Set(file.imports.map(item => item.module).filter(Boolean))];
-}
-
 function constructorDefinitions(
   ctx: CrashContext,
   receiver: string,
@@ -255,27 +250,23 @@ function exceptionNamedDefinition(
 }
 
 export function collectMissingAttribute(ctx: CrashContext, receiver: string, attr: string): Evidence[] {
+  // Direct answer: resolve the runtime type named by the exception message
+  // (through the stack/import chain when it lives in another file), then
+  // point at its definition if the attribute is absent. Nothing else.
   const runtimeType = ctx.exception.message.match(
     /^'([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)' object has no attribute/
   )?.[1]?.split('.').pop();
 
-  const isTargetedConstantsFailure = runtimeType === 'Constants' && attr === 'voodoo_patch_already';
-  if (isTargetedConstantsFailure) {
+  if (runtimeType) {
     const definition = exceptionNamedDefinition(ctx, receiver, runtimeType);
     if (definition) {
       if (definition.cls && attributeDefinitionSites(definition.cls, attr, ctx.model).length > 0) {
         return [];
       }
 
-      const packages = importedPackages(definition.file);
-      const moduleName = moduleNameForFile(definition.file.file_path);
       const bases = definition.cls
         ? ctx.model.class_edges.get(definition.cls.qualified_name)?.bases ?? []
         : [];
-      const declaration = `${definition.kind} ${definition.qualified_name}`;
-      const packageEvidence = packages.length > 0
-        ? ` The definition file imports: ${packages.join(', ')}.`
-        : '';
       return [{
         kind: 'missing-attribute',
         file_path: definition.file.file_path,
@@ -284,21 +275,17 @@ export function collectMissingAttribute(ctx: CrashContext, receiver: string, att
         weight: 3,
         is_conclusive: true,
         definition_kind: definition.kind,
-        definition_module: moduleName,
-        imported_packages: packages,
+        definition_module: moduleNameForFile(definition.file.file_path),
         reason:
-          `'${attr}' is never assigned on ${definition.qualified_name}` +
-          `${bases.length > 0 ? ` or its base classes (${bases.join(', ')})` : ''} — ` +
-          `direct cause: ${declaration} from module '${moduleName}', defined at ` +
-          `${definition.file.file_path}:${definition.line}, provides the '${runtimeType}' object ` +
-          `named by the AttributeError but lacks this attribute; it caused the crash at ` +
-          `${ctx.crashFile.file_path}:${ctx.crashLine}.${packageEvidence}`,
+          `'${runtimeType}' from ${definition.file.file_path}:${definition.line} never defines '${attr}'` +
+          `${bases.length > 0 ? ` (or its bases: ${bases.join(', ')})` : ''} — ` +
+          `the access at ${ctx.crashFile.file_path}:${ctx.crashLine} crashes.`,
       }];
     }
   }
 
-  // Generic fallback when the exception-named definition is ambiguous or is
-  // absent from the uploaded snapshot.
+  // Fallback when the runtime type is absent from the snapshot: resolve the
+  // crash-line receiver's class.
   const cls = resolveAttributeReceiverClass(ctx, receiver);
   if (!cls) return [];
   if (attributeDefinitionSites(cls, attr, ctx.model).length > 0) return [];
@@ -306,19 +293,19 @@ export function collectMissingAttribute(ctx: CrashContext, receiver: string, att
   const file = fileOfClass(cls, ctx.model);
   if (!file) return [];
   const bases = ctx.model.class_edges.get(cls.qualified_name)?.bases ?? [];
-  const accessedVia = receiver && receiver !== 'self' && receiver !== 'cls'
-    ? `, accessed via '${receiver}'` : '';
   return [{
     kind: 'missing-attribute',
     file_path: file.file_path,
     line_number: cls.line,
     function_name: cls.qualified_name,
     weight: 3,
+    is_conclusive: true,
+    definition_kind: 'class',
+    definition_module: moduleNameForFile(file.file_path),
     reason:
       `'${attr}' is never assigned on ${cls.qualified_name}` +
-      `${bases.length > 0 ? ` or its base classes (${bases.join(', ')})` : ''} — ` +
-      `the class defined at ${file.file_path}:${cls.line} lacks it${accessedVia}; ` +
-      `the access at the crash line ${ctx.crashLine} can never succeed.`,
+      `${bases.length > 0 ? ` or its bases (${bases.join(', ')})` : ''} — ` +
+      `the access at ${ctx.crashFile.file_path}:${ctx.crashLine} crashes.`,
   }];
 }
 
@@ -437,10 +424,10 @@ export function collectImportFailure(ctx: CrashContext, moduleName: string | nul
     line_number: item.line,
     function_name: '<module>',
     weight: 2,
+    is_conclusive: true,
     reason:
-      `The import of '${item.module}' at line ${item.line} cannot be satisfied ` +
-      `${moduleName ? `(module '${moduleName}' was not found)` : ''} — the module is ` +
-      `missing from the project or installed in the wrong environment.`,
+      `The import '${item.module}' at ${item.file_path}:${item.line} cannot be resolved — ` +
+      `the module is missing from the project or the environment.`,
   }];
 }
 
@@ -491,21 +478,17 @@ export function collectEvidence(ctx: CrashContext): Evidence[] {
   }
 
   if (type.includes('attributeerror')) {
+    // Concise by design: locate the missing attribute's definition site, or
+    // the None-returning callee when the type is unresolvable. No other
+    // analysis — the crash chain is shown separately.
     const attr = message.match(/has no attribute '([^']+)'/)?.[1];
     const receiver = extractReceiver(ctx) ?? '';
     if (attr) {
       const missingAttribute = collectMissingAttribute(ctx, receiver, attr);
-      if (missingAttribute.some(item => item.is_conclusive)) {
-        // A definition reached through the stack/import chain is the terminal
-        // cause. Keep intermediate calls in crash_path, not as rival causes.
-        return missingAttribute;
-      }
-      const noneReturn = receiver ? collectNoneReturn(ctx, receiver) : [];
-      const evidence = [...noneReturn, ...missingAttribute];
-      return evidence.length > 0 ? evidence : collectGeneric(ctx);
+      if (missingAttribute.length > 0) return missingAttribute;
+      return receiver ? collectNoneReturn(ctx, receiver) : [];
     }
-    const evidence = receiver ? collectNoneReturn(ctx, receiver) : [];
-    return evidence.length > 0 ? evidence : collectGeneric(ctx);
+    return receiver ? collectNoneReturn(ctx, receiver) : [];
   }
 
   if (type.includes('typeerror')) {

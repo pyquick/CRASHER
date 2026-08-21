@@ -148,7 +148,12 @@ const { id, name, key } = createApiKey(userId, 'production-key', 'operator', '20
 console.log('Created key:', key);  // ❌
 ```
 
-### 撤销密钥
+### AI Provider 凭据
+
+Admin/Operator 可在 Accounts 配置自己的 DeepSeek API Key。服务端使用 `AI_ENCRYPTION_KEY` 以 AES-256-GCM 加密保存，浏览器、审计日志和 API 响应只显示配置状态，不显示 Key。聊天会话仅创建者可见，消息正文同样加密并默认保留 30 天。
+
+AI 权限是授权数据范围内的只读权限：可以读取当前用户可见的崩溃、确定性分析和已上传源码快照；禁止命令执行、文件修改、远程仓库访问和跨容器/跨用户会话读取。
+
 
 ```typescript
 // ✅ 正确 —— 设置 revoked_at 时间戳（软删除）

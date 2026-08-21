@@ -41,59 +41,13 @@ export async function applySymbolication(
 // ── Pipeline Stage 4: Hash Computation ──
 
 export function computeCrashHash(input: CrashReportInput): string {
-  const firstFrame = extractFirstFrame(input.stack_trace ?? '', input.runtime);
+  // Only reports whose full stack trace content is identical (after trimming
+  // surrounding whitespace) belong to the same group; a shared exception type
+  // or first frame alone is not enough.
+  const stackTrace = (input.stack_trace ?? '').trim() || 'no-stack';
   const projectPart = input.project_name ? `|${input.project_name.trim().toLocaleLowerCase()}` : '';
-  const content = `${input.exception_type}|${firstFrame}|${input.runtime ?? 'generic'}${projectPart}`;
+  const content = `${input.exception_type}|${stackTrace}|${input.runtime ?? 'generic'}${projectPart}`;
   return createHash('sha256').update(content).digest('hex').substring(0, 16);
-}
-
-function extractFirstFrame(stackTrace: string, runtime?: string): string {
-  if (!stackTrace.trim()) return 'no-stack';
-
-  const lines = stackTrace.split('\n');
-
-  if (runtime) {
-    const patterns: Record<string, RegExp> = {
-      node: /\s+at\s+(\S+)\s+\(/,
-      browser: /\s+at\s+(\S+)\s+\(/,
-      python: /File\s+"(.+?)",\s+line\s+\d+,\s+in\s+(\w+)/,
-      go: /([\w.\/-]+)\.(\w+)\(/,
-    };
-    const pattern = patterns[runtime];
-    if (pattern) {
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-        const m = trimmed.match(pattern);
-        if (m) {
-          return runtime === 'python' ? (m[2] || m[1]) : (m[1] || m[0]);
-        }
-      }
-    }
-  }
-
-  // Universal fallback
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) continue;
-
-    const atMatch = trimmed.match(/at\s+([\w.<>]+)\s*\(/);
-    if (atMatch) return atMatch[1];
-
-    const nodeMatch = trimmed.match(/\s+at\s+(\S+)\s+\(/);
-    if (nodeMatch) return nodeMatch[1];
-
-    const nativeMatch = trimmed.match(/\(([\w:]+)(\+\d+)?\)/);
-    if (nativeMatch) return nativeMatch[1];
-
-    const pyMatch = trimmed.match(/File\s+"(.+?)",\s+line\s+\d+,\s+in\s+(\w+)/);
-    if (pyMatch) return pyMatch[2];
-
-    const goMatch = trimmed.match(/^(\S+)\.(\S+)\(/);
-    if (goMatch) return `${goMatch[1]}.${goMatch[2]}`;
-  }
-
-  return lines.find(l => l.trim())?.trim().substring(0, 120) ?? 'no-stack';
 }
 
 // ── Pipeline Stage 5: Group Upsert ──
@@ -178,11 +132,9 @@ export async function ingestCrash(
   if (project) input.project_name = projectName;
 
   const symbolication = await applySymbolication(input);
-  const groupingInput = symbolication.method
-    ? { ...input, stack_trace: symbolication.method }
-    : input;
-
-  const hash = computeCrashHash(groupingInput);
+  // Group by the full stack trace content as submitted; symbolication only
+  // affects the displayed stack, never the grouping key.
+  const hash = computeCrashHash(input);
   const { group, isNewGroup } = upsertCrashGroup(
     hash,
     input.exception_type,

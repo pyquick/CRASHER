@@ -9,12 +9,16 @@ import { getContainerById } from '../auth/container.js';
 import { CONTAINER_SOURCE_LIMITS, type ContainerTier, type SourceUploadLimits } from '../model.js';
 import * as store from '../store.js';
 import {
+  computeContentHash,
+  computeLinePatch,
+  isPatchSmall,
   isTextSource,
   normalizeProjectName,
   normalizeRelease,
   normalizeSourcePath,
   sourceLanguage,
 } from '../source.js';
+import { tryReadSourceFileContent } from '../service/dedup.js';
 
 const router = Router();
 
@@ -125,13 +129,37 @@ function handleSourceUpload(req: Request, res: Response): void {
     const snapshot = store.createSourceSnapshot(project.id, release, now, containerId);
     snapshotId = snapshot.id;
 
-    const accepted: Array<{ path: string; file_size: number; language: string }> = [];
+    const accepted: Array<{ path: string; file_size: number; language: string; storage: 'full' | 'patch' }> = [];
+    const deduplicated: string[] = [];
     for (const candidate of unique.values()) {
+      const contentHash = computeContentHash(candidate.data);
+      const latest = store.getLatestSourceFileForPath(project.id, candidate.path);
+      if (latest && latest.content_hash === contentHash) {
+        // Identical content at the same path in this project: keep one copy.
+        deduplicated.push(candidate.path);
+        continue;
+      }
+      if (latest && latest.content_hash) {
+        const text = candidate.data.toString('utf-8');
+        if (Buffer.compare(Buffer.from(text, 'utf-8'), candidate.data) === 0) {
+          const previous = tryReadSourceFileContent(latest);
+          if (previous !== null) {
+            const patch = computeLinePatch(previous, text);
+            if (patch && isPatchSmall(patch, candidate.data.length)) {
+              // Small change: store only the changed part, no disk file.
+              store.createSourceFile(snapshot.id, candidate.path, '', candidate.data.length,
+                candidate.language, contentHash, latest.id, JSON.stringify(patch));
+              accepted.push({ path: candidate.path, file_size: candidate.data.length, language: candidate.language, storage: 'patch' });
+              continue;
+            }
+          }
+        }
+      }
       const storagePath = join(config.sourcesDir, `${randomBytes(16).toString('hex')}.src`);
       writeFileSync(storagePath, candidate.data, { flag: 'wx' });
       storedPaths.push(storagePath);
-      store.createSourceFile(snapshot.id, candidate.path, storagePath, candidate.data.length, candidate.language);
-      accepted.push({ path: candidate.path, file_size: candidate.data.length, language: candidate.language });
+      store.createSourceFile(snapshot.id, candidate.path, storagePath, candidate.data.length, candidate.language, contentHash);
+      accepted.push({ path: candidate.path, file_size: candidate.data.length, language: candidate.language, storage: 'full' });
     }
 
     res.status(201).json({
@@ -139,6 +167,7 @@ function handleSourceUpload(req: Request, res: Response): void {
       release,
       snapshot_id: snapshot.id,
       accepted,
+      deduplicated,
       skipped,
     });
   } catch (err: any) {

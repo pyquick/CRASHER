@@ -18,7 +18,7 @@ import { transitiveSubclasses } from './dependencies/class-graph.js';
 import { fileOfFunction } from './dependencies/imports.js';
 import { findAssignmentSites } from './dependencies/dataflow.js';
 import { analyzePythonRootCause, matchCrashFile, findCrashFunc, type CrashContext, crashLineText } from './root-cause/index.js';
-import { suggestFixes, sourceLocationFor } from './solutions/index.js';
+import { suggestFixes, suggestExceptionAdvice, sourceLocationFor } from './solutions/index.js';
 import { extractReceiver } from './root-cause/evidence.js';
 
 export interface PythonDeepResult {
@@ -46,12 +46,10 @@ export function analyzePythonDeep(
   const missingAttribute = exception.type.toLowerCase().includes('attributeerror')
     ? exception.message.match(/^'([A-Za-z_]\w*)' object has no attribute '([^']+)'/)
     : null;
-  const exceptionDefinitionName = missingAttribute?.[1] === 'Constants'
-    && missingAttribute[2] === 'voodoo_patch_already'
-    ? 'Constants'
-    : undefined;
+  // Any runtime type named by the exception must be indexed before the
+  // parse cap, so its definition file is never skipped in large snapshots.
   const model = buildSnapshotModel(snapshot, {
-    priorityDefinitionNames: exceptionDefinitionName ? [exceptionDefinitionName] : [],
+    priorityDefinitionNames: missingAttribute ? [missingAttribute[1]] : [],
     priorityFilePaths: frames.map(frame => frame.file_path).filter(Boolean),
   });
   if (model.files.length === 0) {
@@ -86,9 +84,11 @@ export function analyzePythonDeep(
 
   const fixes: FixSuggestion[] = [];
   for (let index = 0; index < Math.min(rootCauseCandidates.length, 3); index++) {
-    const candidate = rootCauseCandidates[index];
-    if (!candidate.is_conclusive) fixes.push(...suggestFixes(candidate, ctx, index));
+    fixes.push(...suggestFixes(rootCauseCandidates[index], ctx, index));
   }
+  // Every Python error gets a suggestion: when no candidate produced a
+  // fix, fall back to exception-type-based advice.
+  if (fixes.length === 0) fixes.push(...suggestExceptionAdvice(exception));
 
   const dependencySummary = buildDependencySummary(model, ctx, crashClass);
   const crashPath = buildCrashPath(frames, rootCauseCandidates);
@@ -103,13 +103,17 @@ export function analyzePythonDeep(
 }
 
 /**
- * Build the crash-path flow: frames from entry point to crash site
- * (tracebacks list innermost first, so reverse), then the terminal
- * root-cause node the analysis points at (e.g. a class definition).
+ * Build the frame-only crash-path flow: user frames from entry point to
+ * crash site (tracebacks list innermost first, so reverse). Framework
+ * frames are dropped and long chains collapse around an ellipsis. Also
+ * used at the analyzer level so every Python crash shows the flow diagram,
+ * even without a source snapshot.
  */
-function buildCrashPath(frames: StackFrame[], candidates: RootCauseCandidate[]): CrashPathStep[] {
-  const steps: CrashPathStep[] = [...frames].reverse()
-    .filter(frame => frame.file_path)
+const CRASH_PATH_MAX_FRAMES = 6;
+
+export function buildFrameCrashPath(frames: StackFrame[]): CrashPathStep[] {
+  let steps: CrashPathStep[] = [...frames].reverse()
+    .filter(frame => frame.file_path && frame.severity !== 'framework')
     .map(frame => ({
       file_path: frame.file_path,
       line_number: frame.line_number,
@@ -119,6 +123,24 @@ function buildCrashPath(frames: StackFrame[], candidates: RootCauseCandidate[]):
       severity: frame.severity,
     }));
 
+  if (steps.length > CRASH_PATH_MAX_FRAMES) {
+    const tail = steps.slice(-(CRASH_PATH_MAX_FRAMES - 2));
+    steps = [
+      steps[0],
+      { file_path: '', line_number: null, function_name: '', label: '…', role: 'frame' },
+      ...tail,
+    ];
+  }
+
+  return steps;
+}
+
+/**
+ * Build the crash-path flow ending at the terminal root-cause node the
+ * analysis points at (e.g. a class definition).
+ */
+function buildCrashPath(frames: StackFrame[], candidates: RootCauseCandidate[]): CrashPathStep[] {
+  const steps = buildFrameCrashPath(frames);
   const top = candidates[0];
   if (top) {
     steps.push({
@@ -134,9 +156,9 @@ function buildCrashPath(frames: StackFrame[], candidates: RootCauseCandidate[]):
 }
 
 function rootCauseStepLabel(candidate: RootCauseCandidate): string {
-  const attr = candidate.reason.match(/^'([^']+)' is never assigned/)?.[1];
-  if (candidate.kind === 'missing-attribute' && attr) {
-    return `${candidate.function_name} (${candidate.definition_kind ?? 'class'}) — '${attr}' is never assigned`;
+  const missing = candidate.reason.match(/^'([^']+)' from [^']*never defines '([^']+)'/);
+  if (candidate.kind === 'missing-attribute' && missing) {
+    return `${candidate.function_name} — '${missing[2]}' never defined on '${missing[1]}'`;
   }
   const sentence = candidate.reason.split('.')[0] ?? candidate.reason;
   return `${candidate.function_name} — ${sentence}`;

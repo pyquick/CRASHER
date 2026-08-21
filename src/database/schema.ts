@@ -220,6 +220,55 @@ export function applySchema(db: Database.Database): void {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS ai_provider_configs (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      provider TEXT NOT NULL CHECK(provider IN ('deepseek')),
+      model TEXT NOT NULL DEFAULT 'deepseek-chat' CHECK(model IN ('deepseek-chat','deepseek-v4-pro[1m]','deepseek-v4-flash[1m]')),
+      encrypted_api_key TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      UNIQUE(user_id, provider)
+    );
+
+    CREATE TABLE IF NOT EXISTS ai_provider_keys (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      provider TEXT NOT NULL CHECK(provider IN ('deepseek')),
+      encrypted_api_key TEXT NOT NULL,
+      masked_api_key TEXT NOT NULL,
+      encryption_aad TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
+      failure_count INTEGER NOT NULL DEFAULT 0,
+      last_failure_code TEXT,
+      last_failure_at TEXT,
+      retry_after_at TEXT,
+      last_used_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS ai_conversations (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      owner_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      group_id INTEGER REFERENCES crash_groups(id) ON DELETE SET NULL,
+      report_id INTEGER REFERENCES crash_reports(id) ON DELETE SET NULL,
+      title TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+      expires_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS ai_messages (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      conversation_id INTEGER NOT NULL REFERENCES ai_conversations(id) ON DELETE CASCADE,
+      role TEXT NOT NULL CHECK(role IN ('user','assistant')),
+      encrypted_content TEXT NOT NULL,
+      encrypted_reasoning TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
     -- Base indexes
     CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
     CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);
@@ -241,5 +290,10 @@ export function applySchema(db: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_player_feedback_status ON player_feedback(status);
     CREATE INDEX IF NOT EXISTS idx_player_feedback_created_at ON player_feedback(created_at);
     CREATE INDEX IF NOT EXISTS idx_feedback_attachments_feedback_id ON feedback_attachments(feedback_id);
+    CREATE INDEX IF NOT EXISTS idx_ai_provider_configs_user_id ON ai_provider_configs(user_id);
+    CREATE INDEX IF NOT EXISTS idx_ai_provider_keys_selection ON ai_provider_keys(user_id, provider, enabled, retry_after_at, last_used_at, id);
+    CREATE INDEX IF NOT EXISTS idx_ai_conversations_owner_updated ON ai_conversations(owner_user_id, updated_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_ai_conversations_expires_at ON ai_conversations(expires_at);
+    CREATE INDEX IF NOT EXISTS idx_ai_messages_conversation_id ON ai_messages(conversation_id, id);
   `);
 }

@@ -49,8 +49,13 @@ X-CSRF-Token: yyy  (修改操作必须)
 | 方法 | 路径 | 鉴权 | 说明 |
 |------|------|------|------|
 | POST | `/project-sources` | API Key | 上传源码快照 (.tar.gz 或散文件) |
+| POST | `/source-dedup` | Session + CSRF(admin) | 源码去重扫荡 |
 
 按容器 Tier 限制：T1 10 文件 / 2 MB，T2 500 文件 / 200 MB，T3 50000 文件 / 5 GB，T4/T5 无 Tier 限制（仅受 `MAX_SOURCE_FILES` / `MAX_SOURCE_ARCHIVE_SIZE` 服务器全局上限约束）。
+
+**上传去重**：同一项目、同一路径下内容完全一致的文件只保留一份（响应 `deduplicated` 列出跳过的路径）；同路径小改动只存补丁（响应 `accepted[].storage` 为 `patch`），大改动完整存储（`full`）。
+
+**去重扫荡** `POST /source-dedup`：服务器启动时自动执行一次，也可手动调用。回填旧数据哈希、删除 (项目, 路径, 内容) 完全重复的行（保留最新，删除前先物化引用它的补丁行）、清理孤儿磁盘文件。响应：`{ success, hashes_backfilled, duplicates_removed, disk_files_removed, orphans_removed }`。
 
 ### 玩家反馈
 
@@ -110,7 +115,25 @@ X-CSRF-Token: yyy  (修改操作必须)
 | GET | `/download/group/:id` | Session (admin/operator) | 下载分组 JSON |
 | GET | `/download/dump/:reportId` | Session (admin/operator) | 下载 dump 解析 JSON |
 
-### 认证 (在 `/api/v1/auth` 下)
+### AI 崩溃助手
+
+AI 功能仅对 session 登录的 `admin` / `operator` 开放。每个用户在 Accounts 页面配置自己的 DeepSeek API Key；Key 不会返回给浏览器，服务端使用 `AI_ENCRYPTION_KEY` 加密保存。请求只读取当前用户有权访问的崩溃、确定性分析和通过 API 上传的源码快照；没有源码时只基于崩溃信息推断。AI 不执行命令、不修改文件、不访问远程仓库。
+
+| 方法 | 路径 | 鉴权 | 说明 |
+|------|------|------|------|
+| GET | `/auth/ai-provider` | Session + admin/operator | 返回 provider 状态，不返回 Key |
+| PUT | `/auth/ai-provider` | Session + CSRF + admin/operator | 保存/替换 DeepSeek Key |
+| DELETE | `/auth/ai-provider` | Session + CSRF + admin/operator | 删除当前用户 provider |
+| GET | `/ai/status` | Session + admin/operator | 查询 AI 可用状态 |
+| GET | `/ai/crash-context/:groupId` | Session + admin/operator | 查询授权崩溃摘要 |
+| GET | `/ai/conversations` | Session + admin/operator | 列出当前用户未过期会话 |
+| POST | `/ai/conversations` | Session + CSRF + admin/operator | 创建可选崩溃绑定会话 |
+| GET | `/ai/conversations/:id` | Session + admin/operator | 读取自己的会话和消息 |
+| DELETE | `/ai/conversations/:id` | Session + CSRF + admin/operator | 删除自己的会话 |
+| POST | `/ai/conversations/:id/messages` | Session + CSRF + admin/operator | 发送消息并调用 DeepSeek |
+
+会话默认保留 30 天，仅创建者可见；消息正文使用 AES-256-GCM 加密保存，并受每用户限流、消息长度和会话消息数量限制。
+
 
 | 方法 | 路径 | 说明 |
 |------|------|------|

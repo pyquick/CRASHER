@@ -178,7 +178,47 @@
     </div>
   </section>
 
-  <!-- Auth verification widgets (email + 2FA overlays) -->
+  <!-- ── AI Provider ── -->
+  <section class="bg-surface-900 border border-gray-800 rounded-xl p-5">
+    <h2 class="text-lg font-semibold mb-1">AI Provider</h2>
+    <p class="text-sm text-gray-500 mb-4">Add up to 10 DeepSeek API keys. Crash data and uploaded source code may be sent to the provider for analysis. Full keys are never shown again.</p>
+    <div x-data="aiProviderSettings" x-init="load()">
+      <div class="grid md:grid-cols-3 gap-3 items-end">
+        <label class="text-sm text-gray-400">Provider
+          <select x-model="provider" class="fc w-full mt-1"><option value="deepseek">DeepSeek</option></select>
+        </label>
+        <label class="text-sm text-gray-400 md:col-span-2">New API Key
+          <input x-model="apiKey" type="password" autocomplete="new-password" spellcheck="false" class="fc w-full mt-1" placeholder="Enter a new DeepSeek API key">
+        </label>
+      </div>
+      <div class="flex flex-wrap items-center gap-3 mt-4">
+        <button type="button" @click="addKey" :disabled="loading || !apiKey || keys.length >= 10" class="btn btn-blue btn-sm">Add key</button>
+        <span class="text-xs text-gray-500" x-text="keys.length + ' / 10 keys'"></span>
+      </div>
+
+      <div class="space-y-2 mt-4">
+        <template x-for="key in keys" :key="key.id">
+          <div class="flex flex-col gap-3 p-3 bg-surface-950 rounded-lg border border-gray-800 sm:flex-row sm:items-center sm:justify-between">
+            <div class="min-w-0">
+              <code class="text-sm break-all" x-text="key.masked_api_key || 'Migrated key — replace to show mask'"></code>
+              <p class="text-xs mt-1" :class="key.enabled && !key.last_failure_code ? 'text-green-400' : 'text-yellow-400'" x-text="keyStatus(key)"></p>
+              <p x-show="key.last_used_at" class="text-xs text-gray-600 mt-1" x-text="'Last used ' + formatDate(key.last_used_at)"></p>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <button type="button" @click="toggleKey(key)" :disabled="loading" class="btn btn-gray btn-sm" x-text="key.enabled ? 'Disable' : 'Enable'"></button>
+              <button type="button" @click="replaceKey(key)" :disabled="loading" class="btn btn-blue btn-sm">Replace</button>
+              <button type="button" @click="removeKey(key)" :disabled="loading" class="btn btn-red btn-sm">Remove</button>
+            </div>
+          </div>
+        </template>
+        <p x-show="keys.length === 0" class="text-sm text-gray-500 text-center py-4">No DeepSeek API keys configured.</p>
+      </div>
+
+      <p x-show="message" x-text="message" class="text-sm mt-3" :class="failed ? 'text-red-400' : 'text-green-400'"></p>
+      <p x-show="!serverReady" class="text-sm mt-3 text-yellow-400">AI is disabled by the server administrator until AI_ENCRYPTION_KEY is configured.</p>
+    </div>
+  </section>
+
   {{INCLUDE:auth.html}}
 </div>
 

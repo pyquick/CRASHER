@@ -182,6 +182,99 @@ const migrations: Migration[] = [
       db.exec("UPDATE users SET totp_enabled = 0, totp_secret = NULL WHERE role != 'admin'");
     },
   },
+  {
+    version: 15,
+    description: 'Add source file dedup columns (content_hash, parent_file_id, patch)',
+    up: (db) => {
+      addColumn(db, 'source_files', 'content_hash', "TEXT NOT NULL DEFAULT ''");
+      addColumn(db, 'source_files', 'parent_file_id', 'INTEGER');
+      addColumn(db, 'source_files', 'patch', "TEXT NOT NULL DEFAULT ''");
+      db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_source_files_path ON source_files(relative_path);
+        CREATE INDEX IF NOT EXISTS idx_source_files_parent ON source_files(parent_file_id);
+      `);
+    },
+  },
+  {
+    version: 16,
+    description: 'Add encrypted AI provider configuration and owner-scoped chat history',
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS ai_provider_configs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          provider TEXT NOT NULL CHECK(provider IN ('deepseek')),
+          model TEXT NOT NULL DEFAULT 'deepseek-chat' CHECK(model IN ('deepseek-chat','deepseek-v4-pro[1m]','deepseek-v4-flash[1m]')),
+          encrypted_api_key TEXT NOT NULL,
+          enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          UNIQUE(user_id, provider)
+        );
+        CREATE TABLE IF NOT EXISTS ai_conversations (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          owner_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          group_id INTEGER REFERENCES crash_groups(id) ON DELETE SET NULL,
+          report_id INTEGER REFERENCES crash_reports(id) ON DELETE SET NULL,
+          title TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now')),
+          expires_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS ai_messages (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          conversation_id INTEGER NOT NULL REFERENCES ai_conversations(id) ON DELETE CASCADE,
+          role TEXT NOT NULL CHECK(role IN ('user','assistant')),
+          encrypted_content TEXT NOT NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_ai_provider_configs_user_id ON ai_provider_configs(user_id);
+        CREATE INDEX IF NOT EXISTS idx_ai_conversations_owner_updated ON ai_conversations(owner_user_id, updated_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_ai_conversations_expires_at ON ai_conversations(expires_at);
+        CREATE INDEX IF NOT EXISTS idx_ai_messages_conversation_id ON ai_messages(conversation_id, id);
+      `);
+    },
+  },
+  {
+    version: 17,
+    description: 'Add selectable DeepSeek model to provider configuration',
+    up: (db) => addColumn(db, 'ai_provider_configs', 'model', "TEXT NOT NULL DEFAULT 'deepseek-chat'"),
+  },
+  {
+    version: 18,
+    description: 'Add encrypted multi-key AI provider storage and reasoning messages',
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS ai_provider_keys (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          provider TEXT NOT NULL CHECK(provider IN ('deepseek')),
+          encrypted_api_key TEXT NOT NULL,
+          masked_api_key TEXT NOT NULL DEFAULT '',
+          encryption_aad TEXT NOT NULL,
+          enabled INTEGER NOT NULL DEFAULT 1 CHECK(enabled IN (0,1)),
+          failure_count INTEGER NOT NULL DEFAULT 0,
+          last_failure_code TEXT,
+          last_failure_at TEXT,
+          retry_after_at TEXT,
+          last_used_at TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_ai_provider_keys_selection
+          ON ai_provider_keys(user_id, provider, enabled, retry_after_at, last_used_at, id);
+      `);
+      addColumn(db, 'ai_messages', 'encrypted_reasoning', 'TEXT');
+      db.exec(`
+        INSERT INTO ai_provider_keys (user_id, provider, encrypted_api_key, masked_api_key, encryption_aad, enabled, created_at, updated_at)
+        SELECT c.user_id, c.provider, c.encrypted_api_key, '', 'provider:' || c.user_id || ':' || c.provider, c.enabled, c.created_at, c.updated_at
+        FROM ai_provider_configs c
+        WHERE NOT EXISTS (
+          SELECT 1 FROM ai_provider_keys k WHERE k.user_id = c.user_id AND k.provider = c.provider
+        );
+      `);
+    },
+  },
 ];
 
 function addColumn(db: Database.Database, table: string, column: string, definition: string): void {

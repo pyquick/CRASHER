@@ -13,6 +13,7 @@ import { buildFileTree } from './common/tree.js';
 import { buildTriggerPoint, buildSummary } from './common/summary.js';
 import { analyzeSourceCode } from './common/source.js';
 import { extractGenericStackFrames } from './common/generic.js';
+import { buildFrameCrashPath, suggestExceptionAdvice } from './languages/python/index.js';
 
 export type { AnalysisSourceFile, AnalysisSourceSnapshot } from './types.js';
 
@@ -86,6 +87,13 @@ export function analyzeCrash(report: {
     runtime,
     runtime_version,
   };
+  // Python: every error gets the crash flow diagram and at least one
+  // exception-type-based suggestion, snapshot or not.
+  if (lang === 'python') {
+    analysis.crash_path = buildFrameCrashPath(frames);
+    analysis.suggestions = suggestExceptionAdvice({ type: exception_type, message: exception_message });
+  }
+
   if (sourceSnapshot) {
     analysis.source_analysis = analyzeSourceCode(sourceSnapshot, frames, triggerPoint, { exception_type, exception_message });
     const conclusive = analysis.source_analysis.root_cause_candidates?.find(candidate => candidate.is_conclusive);
@@ -137,6 +145,9 @@ function createMinimalAnalysis(
     summary: `## Crash Analysis\n\n**Exception**: \`${exceptionType}\`${exceptionMessage ? ` — ${exceptionMessage}` : ''}\n\nNo stack trace was submitted with this crash report. Upload a crash log or stack trace for detailed analysis.`,
     runtime,
     runtime_version: runtimeVersion,
+    ...(lang === 'python'
+      ? { suggestions: suggestExceptionAdvice({ type: exceptionType, message: exceptionMessage }) }
+      : {}),
   };
 }
 

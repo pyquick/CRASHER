@@ -1,11 +1,12 @@
 export {
   findProjectByName, getOrCreateProject, listProjects,
   createSourceSnapshot, deleteSourceSnapshot,
-  createSourceFile, findSourceSnapshot, getSourceFilesForSnapshot,
-  findGroupByHash, createGroup, updateGroupOnNewReport, getGroupById,
+  createSourceFile, findSourceSnapshot, findSourceSnapshotScoped, getSourceFilesForSnapshot, getSourceFilesForSnapshotScoped,
+  findGroupByHash, createGroup, updateGroupOnNewReport, getGroupById, getGroupByIdScoped,
   listGroups, updateGroupStatus,
-  createReport, getReportById, listReports,
+  createReport, getReportById, getReportByIdScoped, getLatestReportForGroupScoped, listReports,
   updateReportSymbolication, listReportsForSymbolication,
+  listReportGroupingRows, updateReportGroup, updateGroupStats, deleteEmptyGroups,
   createAttachment, getAttachmentsForReport, getAttachmentById,
   createFeedback, getFeedbackById, listFeedback,
   updateFeedbackStatus, deleteFeedback,
@@ -14,3 +15,20 @@ export {
   getDashboardStats,
   listDistinctPlatforms, listDistinctVersions, clearAllCrashes,
 } from './database/store.js';
+
+export {
+  getSourceFileById, getLatestSourceFileForPath,
+  listSourceFileRows, listSourceFileChildren,
+  updateSourceFileContent, backfillSourceFileHash, deleteSourceFileRow,
+  listDuplicateSourceGroups, listSourceFilesInGroup,
+} from './database/source-store.js';
+
+export {
+  listAiProviderKeys, countAiProviderKeys, getAiProviderKey, createAiProviderKey,
+  updateAiProviderKey, deleteAiProviderKey, listSelectableAiProviderKeys,
+  recordAiProviderUse, recordAiProviderSuccess, recordAiProviderFailure,
+  countAiConversations, listAiConversations, createAiConversation,
+  getAiConversationForOwner, deleteAiConversation, updateAiConversationBinding,
+  touchAiConversation, countAiMessages, listAiMessages, insertAiMessage, insertAiMessageExchange,
+  purgeExpiredAiConversations,
+} from './database/ai-store.js';

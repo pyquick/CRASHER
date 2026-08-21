@@ -1,4 +1,5 @@
 import { extname } from 'path';
+import { createHash } from 'crypto';
 
 const SOURCE_LANGUAGES: Record<string, string> = {
   '.cs': 'csharp', '.cpp': 'cpp', '.cc': 'cpp', '.cxx': 'cpp', '.c': 'c',
@@ -62,4 +63,44 @@ export function pathsMatch(stackPath: string, sourcePath: string): boolean {
   const stack = stackPath.replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase();
   const source = sourcePath.replace(/\\/g, '/').replace(/^\.\//, '').toLowerCase();
   return stack === source || stack.endsWith('/' + source) || source.endsWith('/' + stack);
+}
+
+// ----- Content dedup: hashing and line-level patches -----
+
+export function computeContentHash(data: Buffer): string {
+  return createHash('sha256').update(data).digest('hex');
+}
+
+export interface LinePatch {
+  prefix: number; // common leading lines kept from the base
+  suffix: number; // common trailing lines kept from the base
+  lines: string[]; // replacement lines between prefix and suffix
+}
+
+// Computes the smallest single-hunk patch between two texts by stripping
+// the common leading/trailing lines. Returns null when the texts are equal.
+export function computeLinePatch(oldText: string, newText: string): LinePatch | null {
+  const oldLines = oldText.split('\n');
+  const newLines = newText.split('\n');
+  let prefix = 0;
+  while (prefix < oldLines.length && prefix < newLines.length && oldLines[prefix] === newLines[prefix]) prefix++;
+  let suffix = 0;
+  while (suffix < oldLines.length - prefix && suffix < newLines.length - prefix
+    && oldLines[oldLines.length - 1 - suffix] === newLines[newLines.length - 1 - suffix]) suffix++;
+  if (prefix + suffix === oldLines.length && prefix + suffix === newLines.length) return null;
+  return { prefix, suffix, lines: newLines.slice(prefix, newLines.length - suffix) };
+}
+
+export function applyLinePatch(baseText: string, patch: LinePatch): string {
+  const baseLines = baseText.split('\n');
+  if (patch.prefix + patch.suffix > baseLines.length) throw new Error('Patch does not fit its base file');
+  const head = baseLines.slice(0, patch.prefix);
+  const tail = baseLines.slice(baseLines.length - patch.suffix);
+  return head.concat(patch.lines, tail).join('\n');
+}
+
+// A patch is worth storing (instead of the full file) when it is no larger
+// than half of the new content.
+export function isPatchSmall(patch: LinePatch, newSize: number): boolean {
+  return newSize > 0 && JSON.stringify(patch).length * 2 <= newSize;
 }

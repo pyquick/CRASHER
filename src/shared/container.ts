@@ -1,4 +1,10 @@
 import type { Request } from 'express';
+import type { AuthenticatedUser } from '../model.js';
+
+export function resolveContainerScopeForUser(user: AuthenticatedUser): number | null | undefined {
+  if (user.role === 'ultraadmin') return undefined;
+  return user.container_id ?? null;
+}
 
 /**
  * Resolve container scope for database queries.
@@ -7,8 +13,8 @@ import type { Request } from 'express';
  */
 export function resolveContainerScope(req: Request): number | null {
   const user = req.authUser;
-  if (!user || user.role === 'ultraadmin') return null;
-  return user.container_id ?? null;
+  if (!user) return null;
+  return resolveContainerScopeForUser(user) ?? null;
 }
 
 /**

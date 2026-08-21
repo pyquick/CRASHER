@@ -69,7 +69,6 @@ export function scoreEvidence(
       if (item.is_conclusive) existing.is_conclusive = true;
       existing.definition_kind ??= item.definition_kind;
       existing.definition_module ??= item.definition_module;
-      existing.imported_packages ??= item.imported_packages;
     } else {
       grouped.set(key, {
         file_path: item.file_path,
@@ -82,7 +81,6 @@ export function scoreEvidence(
         ...(item.is_conclusive ? { is_conclusive: true } : {}),
         ...(item.definition_kind ? { definition_kind: item.definition_kind } : {}),
         ...(item.definition_module ? { definition_module: item.definition_module } : {}),
-        ...(item.imported_packages ? { imported_packages: item.imported_packages } : {}),
       });
     }
   }

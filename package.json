@@ -7,7 +7,7 @@
     "dev": "tsx src/main.ts",
     "build": "tsc",
     "start": "node dist/main.js",
-    "test": "tsx --test \"src/analysis/**/*.test.ts\""
+    "test": "tsx --test \"src/**/*.test.ts\""
   },
   "keywords": [
     "unity",

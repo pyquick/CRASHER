@@ -22,7 +22,7 @@ containers
     │       └── projects ── source_snapshots ── source_files
     │
     ├── symbols
-    └── player_feedback ── feedback_attachments
+    └── ai_provider_configs ── ai_conversations ── ai_messages
 ```
 
 ---
@@ -35,6 +35,8 @@ containers
 |----|------|--------|
 | `crash_reports` | 崩溃报告 | exception_type, stack_trace, runtime, build_guid, symbolicated_stack |
 | `crash_groups` | 崩溃分组 (按 hash) | crash_hash (UNIQUE), status (open/resolved/ignored) |
+
+分组键 (`crash_groups.crash_hash`)：`exception_type + 完整 stack_trace + runtime + 项目名`，只有 Latest Stack Trace 内容完全相同的报告才归入同一组。服务器启动时自动重排所有报告的分组（`regroupCrashReports`）：按当前规则重算 hash、合并相同 stack 的报告、拆开旧规则下误合并的报告并删除空组（幂等）。
 | `crash_attachments` | 崩溃附件 | file_path, file_size |
 | `player_feedback` | 玩家反馈 | title, description, category, severity, status |
 | `feedback_attachments` | 反馈附件 | file_path, file_size |
@@ -46,6 +48,18 @@ containers
 | `projects` | 项目 (name UNIQUE) |
 | `source_snapshots` | 源码快照 (project_id + release) |
 | `source_files` | 源码文件 (snapshot_id + relative_path UNIQUE) |
+
+### 源码去重 (source_files)
+
+| 列 | 说明 |
+|----|------|
+| `content_hash` | 文件内容 SHA-256（去重键） |
+| `parent_file_id` | 同路径上一版本的 source_files.id（补丁链，NULL = 完整存储） |
+| `patch` | 变化部分 JSON：`{prefix, suffix, lines}`（公共前缀/后缀行数 + 中间替换行），空 = 完整存储 |
+
+- 同一项目、同一路径、`content_hash` 相同 → 只保留一行（最新），其余由扫荡删除
+- 同路径小改动 → 只存 `patch`（`storage_path` 为空），读取时沿 `parent_file_id` 回溯到基础文件并依次应用补丁
+- 扫荡删除补丁父行前会先物化子行（写出完整内容并清空补丁链）
 
 ### 符号
 
@@ -63,6 +77,16 @@ containers
 | `api_key_usage` | API 密钥配额 | (api_key_id, period_start, period_seconds) PK |
 | `user_emails` | 用户邮箱 | email_verified, is_primary |
 | `user_phones` | 用户手机 | phone_verified, is_primary |
+
+### AI 助手
+
+| 表 | 说明 |
+|----|------|
+| `ai_provider_configs` | 每用户的 DeepSeek 配置；API Key 只保存 AES-256-GCM 密文 |
+| `ai_conversations` | 仅创建者可见的崩溃绑定会话，默认 30 天过期 |
+| `ai_messages` | 会话消息；正文使用 AES-256-GCM 密文保存，外键级联删除 |
+
+聊天数据按 owner 查询，不按容器共享；启动时清理过期会话。`AI_ENCRYPTION_KEY` 更换后旧 provider/chat 密文无法解密，部署时必须备份并稳定保存该密钥。
 
 ### 管理
 
@@ -93,6 +117,10 @@ containers
 | v10 | 手机号表 |
 | v11 | 容器系统 + ultraadmin 角色 |
 | v12 | 扩展性能索引 |
+| v13 | 登录邮箱验证开关 + 非 admin 重置 TOTP |
+| v14 | 修复:幂等确保 verify_email_on_login 存在 |
+| v15 | 源码去重列 (content_hash, parent_file_id, patch) |
+| v16 | 加密 AI provider、owner-scoped 会话和消息 |
 
 ### 添加新迁移
 

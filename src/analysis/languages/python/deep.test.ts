@@ -110,6 +110,8 @@ test('non-Python crashes are unaffected by the deep analysis', () => {
   assert.ok(analysis, 'analysis produced');
   assert.equal(analysis.detected_language, 'java');
   assert.ok(!analysis.source_analysis?.root_cause_candidates, 'no Python deep analysis for Java crashes');
+  assert.ok(!analysis.suggestions, 'no Python suggestions for Java crashes');
+  assert.ok(!analysis.crash_path, 'no Python crash path for Java crashes');
 });
 
 test('analyzeCrash builds a crash path flow ending at the root cause', () => {
@@ -194,11 +196,12 @@ test('analyzeCrash builds a crash path flow ending at the root cause', () => {
   assert.equal(candidates[0].is_conclusive, true);
   assert.equal(candidates[0].definition_kind, 'class');
   assert.equal(candidates[0].definition_module, 'sys_patch.constants');
-  assert.deepEqual(candidates[0].imported_packages, ['plistlib', 'Foundation']);
-  assert.ok(candidates[0].reason.includes('direct cause'), `reason: ${candidates[0].reason}`);
-  assert.ok(candidates[0].reason.includes('caused the crash'), `reason: ${candidates[0].reason}`);
+  assert.ok(candidates[0].reason.includes("'Constants' from sys_patch/constants.py:3"), `reason: ${candidates[0].reason}`);
+  assert.ok(candidates[0].reason.includes("never defines 'voodoo_patch_already'"), `reason: ${candidates[0].reason}`);
   assert.ok(analysis?.summary.includes('**Root Cause**'), 'summary names the direct root cause');
-  assert.deepEqual(analysis?.source_analysis?.fixes, [], 'terminal diagnosis ends without speculative fixes');
+  const conclusiveFixes = analysis?.source_analysis?.fixes ?? [];
+  assert.ok(conclusiveFixes.length > 0, 'conclusive diagnoses still carry suggestions');
+  assert.ok(conclusiveFixes[0].title.toLowerCase().includes('attribute'), `title: ${conclusiveFixes[0].title}`);
 
   const path = analysis?.source_analysis?.crash_path ?? [];
   assert.equal(path.length, 5, '4 frames + terminal root-cause node');
@@ -234,4 +237,48 @@ test('Python crash with no matching snapshot file degrades gracefully', () => {
   assert.ok(analysis?.source_analysis, 'source analysis present');
   assert.deepEqual(analysis.source_analysis.root_cause_candidates ?? [], []);
   assert.ok((analysis.source_analysis.warnings ?? []).some(w => w.includes('not found in the source snapshot')));
+  // Even without a matched snapshot file the error still gets the fallback
+  // suggestions and the crash flow diagram.
+  const suggestions = analysis?.suggestions ?? [];
+  assert.ok(suggestions.length > 0, 'exception advice fallback present');
+  assert.equal(suggestions[0].candidate_index, -1);
+  assert.ok(suggestions[0].description.toLowerCase().includes('attribute'));
+  const path = analysis?.crash_path ?? [];
+  assert.ok(path.length > 0, 'frame crash path present');
+  assert.equal(path[path.length - 1].line_number, 5, 'crash frame is the last step');
+});
+
+test('Python crash without a source snapshot still gets suggestions and a crash path', () => {
+  const report = {
+    id: 6,
+    exception_type: 'ZeroDivisionError',
+    exception_message: 'division by zero',
+    stack_trace: [
+      'Traceback (most recent call last):',
+      '  File "app.py", line 4, in <module>',
+      '    main()',
+      '  File "app.py", line 2, in main',
+      '    return total / count',
+      'ZeroDivisionError: division by zero',
+    ].join('\n'),
+    runtime: 'python',
+    runtime_version: '3.11',
+  };
+
+  const analysis = analyzeCrash(report);
+  assert.ok(analysis, 'analysis produced without a snapshot');
+  assert.ok(!analysis.source_analysis, 'no source analysis without a snapshot');
+
+  const suggestions = analysis.suggestions ?? [];
+  assert.ok(suggestions.length > 0, 'exception advice present without a snapshot');
+  assert.equal(suggestions[0].candidate_index, -1);
+  assert.equal(suggestions[0].title, 'Guard the divisor');
+
+  const path = analysis.crash_path ?? [];
+  assert.equal(path.length, 2, 'entry frame → crash frame');
+  assert.equal(path[0].function_name, '<module>', 'entry frame first');
+  assert.equal(path[0].line_number, 4);
+  assert.equal(path[1].function_name, 'main', 'crash frame last');
+  assert.equal(path[1].line_number, 2);
+  assert.ok(path.every(step => step.role === 'frame'));
 });
