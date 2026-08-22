@@ -56,8 +56,10 @@ export function loadScopedCrashContext(
   const snapshot = report.project_id
     ? store.findSourceSnapshotScoped(report.project_id, report.release, scope)
     : undefined;
-  const sourceFiles = snapshot
-    ? store.getSourceFilesForSnapshotScoped(snapshot.id, scope)
+  // Source matching reads the project's current state (latest row per path
+  // across all snapshots), not just the matched snapshot's delta.
+  const sourceFiles = snapshot && report.project_id !== null
+    ? store.getCurrentSourceFilesForProject(report.project_id, scope)
       .slice(0, config.aiSourceMaxFiles)
       .map(file => ({ file, content: safeSourceContent(file) }))
       .filter((entry): entry is { file: SourceFile; content: string } => entry.content !== null)

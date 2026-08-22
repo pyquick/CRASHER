@@ -17,6 +17,27 @@ export function getLatestSourceFileForPath(projectId: number, relativePath: stri
   `).get(projectId, relativePath) as SourceFile | undefined;
 }
 
+// Current state of a project's sources: the latest row (by id) for each
+// relative_path across all of the project's snapshots. This is what source
+// matching reads, so changed files are matched by their new content while
+// unchanged files from older snapshots stay part of the state.
+export function getCurrentSourceFilesForProject(projectId: number, containerId?: number | null): SourceFile[] {
+  const scope = containerId === undefined ? '' : containerId === null ? ' AND ss.container_id IS NULL' : ' AND ss.container_id = ?';
+  const innerScope = containerId === undefined ? '' : containerId === null ? ' AND ss2.container_id IS NULL' : ' AND ss2.container_id = ?';
+  const scopeParams = containerId === undefined ? [] : containerId === null ? [] : [containerId];
+  return getDb().prepare(`
+    SELECT sf.* FROM source_files sf
+    JOIN source_snapshots ss ON ss.id = sf.snapshot_id
+    WHERE ss.project_id = ?${scope}
+      AND sf.id = (
+        SELECT MAX(sf2.id) FROM source_files sf2
+        JOIN source_snapshots ss2 ON ss2.id = sf2.snapshot_id
+        WHERE ss2.project_id = ? AND sf2.relative_path = sf.relative_path${innerScope}
+      )
+    ORDER BY sf.relative_path
+  `).all(projectId, ...scopeParams, projectId, ...scopeParams) as SourceFile[];
+}
+
 export function listSourceFileRows(): SourceFile[] {
   return getDb().prepare('SELECT * FROM source_files ORDER BY id').all() as SourceFile[];
 }

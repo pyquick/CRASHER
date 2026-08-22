@@ -17,7 +17,7 @@ export {
 } from './database/store.js';
 
 export {
-  getSourceFileById, getLatestSourceFileForPath,
+  getSourceFileById, getLatestSourceFileForPath, getCurrentSourceFilesForProject,
   listSourceFileRows, listSourceFileChildren,
   updateSourceFileContent, backfillSourceFileHash, deleteSourceFileRow,
   listDuplicateSourceGroups, listSourceFilesInGroup,

@@ -229,8 +229,8 @@ curl -b cookies.txt -c cookies.txt http://localhost:8080/api/v1/auth/csrf</code>
     <section id="sources" class="section-card mb-6">
       <h2 class="text-xl font-semibold mb-4"><span class="method-badge bg-green-600 text-white mr-3">POST</span>/api/v1/project-sources</h2>
       <p class="text-gray-400 mb-3">Upload a project source snapshot, used by Crash Analysis to locate the crash line, function definitions, and possible call sites. Source code is only searched as text — it is never executed or compiled.</p>
-      <p class="text-sm text-gray-400 mb-2">multipart fields: <code>project_name</code> required (1–100 characters); <code>release</code> optional (max 200 characters); submit individual files via repeated <code>files</code> fields, or upload a <code>.tar.gz/.tgz</code> project archive via <code>archive</code> — both can be used together. A successful upload creates an immutable source snapshot.</p>
-      <p class="text-sm text-gray-400 mb-2">During analysis, an exact match on <code>project_name + release</code> is tried first; if no matching release exists, it falls back to the project's latest snapshot. Limits by container tier: T1 10 files/2 MB, T2 500 files/200 MB, T3 50000 files/5 GB, T4/T5 no tier limits; a single source file may be at most 2 MiB.</p>
+      <p class="text-sm text-gray-400 mb-2">multipart fields: <code>project_name</code> required (1–100 characters); <code>release</code> optional (max 200 characters); submit individual files via repeated <code>files</code> fields, or upload a <code>.tar.gz/.tgz</code> project archive via <code>archive</code> — both can be used together. Files whose content is identical to the latest stored version are skipped (<code>deduplicated</code>); when every file is skipped, no snapshot is created and <code>snapshot_id</code> is <code>null</code>.</p>
+      <p class="text-sm text-gray-400 mb-2">During analysis, source matching always reads the project's current state — the latest version of each file across all snapshots — so changed files are matched by their new content, unchanged files stay available, and added files take effect immediately. The reported <code>match_type</code> still reflects the matched snapshot (<code>exact</code> when <code>release</code> matches, otherwise <code>latest</code>). Limits by container tier: T1 10 files/2 MB, T2 500 files/200 MB, T3 50000 files/5 GB, T4/T5 no tier limits; a single source file may be at most 2 MiB.</p>
       <pre><code>curl -X POST http://localhost:8080/api/v1/project-sources \\
   -H "X-API-Key: &lt;key&gt;" \\
   -F "project_name=api-gateway" \\
@@ -249,7 +249,8 @@ curl -X POST http://localhost:8080/api/v1/project-sources \\
   "project": { "id": 3, "name": "api-gateway" },
   "release": "abc1234",
   "snapshot_id": 9,
-  "accepted": [{ "path": "src/app.ts", "file_size": 2048, "language": "typescript" }],
+  "accepted": [{ "path": "src/app.ts", "file_size": 2048, "language": "typescript", "storage": "full" }],
+  "deduplicated": ["src/unchanged.ts"],
   "skipped": [{ "path": "assets/logo.png", "reason": "binary content" }]
 }</code></pre>
       <p class="text-xs text-gray-500 mt-2">Any text file can be uploaded (any extension; non-Unity projects are supported too); absolute paths, <code>..</code> paths, binary files, oversized files, and over-limit extracted contents are rejected.</p>

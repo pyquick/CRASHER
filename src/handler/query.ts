@@ -133,8 +133,10 @@ router.get('/crash-reports/:id/analysis', requireRole('admin', 'operator'), (req
   const sourceSnapshot = report.project_id
     ? store.findSourceSnapshot(report.project_id, report.release)
     : undefined;
-  const sourceFiles = sourceSnapshot
-    ? store.getSourceFilesForSnapshot(sourceSnapshot.id)
+  // Source matching reads the project's current state (latest row per path
+  // across all snapshots), not just the matched snapshot's delta.
+  const sourceFiles = sourceSnapshot && report.project_id !== null
+    ? store.getCurrentSourceFilesForProject(report.project_id)
       .flatMap(file => {
         try {
           return [{ relative_path: file.relative_path, language: file.language, content: readSourceFileContent(file) }];

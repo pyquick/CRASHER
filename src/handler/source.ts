@@ -6,7 +6,7 @@ import { unlinkSync, writeFileSync } from 'fs';
 import { extractTarGz } from '../archive.js';
 import { config } from '../config.js';
 import { getContainerById } from '../auth/container.js';
-import { CONTAINER_SOURCE_LIMITS, type ContainerTier, type SourceUploadLimits } from '../model.js';
+import { CONTAINER_SOURCE_LIMITS, type ContainerTier, type SourceSnapshot, type SourceUploadLimits } from '../model.js';
 import * as store from '../store.js';
 import {
   computeContentHash,
@@ -126,8 +126,16 @@ function handleSourceUpload(req: Request, res: Response): void {
     const now = new Date().toISOString();
     const containerId = req.authUser?.container_id ?? null;
     const project = store.getOrCreateProject(projectName, now, containerId);
-    const snapshot = store.createSourceSnapshot(project.id, release, now, containerId);
-    snapshotId = snapshot.id;
+    // Create the snapshot lazily: an upload where every file is deduplicated
+    // must not leave an empty snapshot behind.
+    let snapshot: SourceSnapshot | null = null;
+    const ensureSnapshot = (): SourceSnapshot => {
+      if (!snapshot) {
+        snapshot = store.createSourceSnapshot(project.id, release, now, containerId);
+        snapshotId = snapshot.id;
+      }
+      return snapshot;
+    };
 
     const accepted: Array<{ path: string; file_size: number; language: string; storage: 'full' | 'patch' }> = [];
     const deduplicated: string[] = [];
@@ -147,7 +155,7 @@ function handleSourceUpload(req: Request, res: Response): void {
             const patch = computeLinePatch(previous, text);
             if (patch && isPatchSmall(patch, candidate.data.length)) {
               // Small change: store only the changed part, no disk file.
-              store.createSourceFile(snapshot.id, candidate.path, '', candidate.data.length,
+              store.createSourceFile(ensureSnapshot().id, candidate.path, '', candidate.data.length,
                 candidate.language, contentHash, latest.id, JSON.stringify(patch));
               accepted.push({ path: candidate.path, file_size: candidate.data.length, language: candidate.language, storage: 'patch' });
               continue;
@@ -158,14 +166,14 @@ function handleSourceUpload(req: Request, res: Response): void {
       const storagePath = join(config.sourcesDir, `${randomBytes(16).toString('hex')}.src`);
       writeFileSync(storagePath, candidate.data, { flag: 'wx' });
       storedPaths.push(storagePath);
-      store.createSourceFile(snapshot.id, candidate.path, storagePath, candidate.data.length, candidate.language, contentHash);
+      store.createSourceFile(ensureSnapshot().id, candidate.path, storagePath, candidate.data.length, candidate.language, contentHash);
       accepted.push({ path: candidate.path, file_size: candidate.data.length, language: candidate.language, storage: 'full' });
     }
 
     res.status(201).json({
       project: { id: project.id, name: project.name },
       release,
-      snapshot_id: snapshot.id,
+      snapshot_id: snapshotId,
       accepted,
       deduplicated,
       skipped,

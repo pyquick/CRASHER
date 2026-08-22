@@ -57,8 +57,9 @@ containers
 | `parent_file_id` | 同路径上一版本的 source_files.id（补丁链，NULL = 完整存储） |
 | `patch` | 变化部分 JSON：`{prefix, suffix, lines}`（公共前缀/后缀行数 + 中间替换行），空 = 完整存储 |
 
-- 同一项目、同一路径、`content_hash` 相同 → 只保留一行（最新），其余由扫荡删除
-- 同路径小改动 → 只存 `patch`（`storage_path` 为空），读取时沿 `parent_file_id` 回溯到基础文件并依次应用补丁
+- 上传时与同路径最新一行的 `content_hash` 相同 → 跳过处理；全部被去重时连快照都不创建
+- 同路径内容变化 → 写入新行：小改动只存 `patch`（`storage_path` 为空），否则完整存储；旧行保留作历史备份
+- 崩溃分析（source match）总是读取项目「当前状态」：每个 `relative_path` 跨快照的最新一行，读取时沿 `parent_file_id` 回溯到基础文件并依次应用补丁
 - 扫荡删除补丁父行前会先物化子行（写出完整内容并清空补丁链）
 
 ### 符号

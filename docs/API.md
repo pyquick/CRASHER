@@ -53,7 +53,9 @@ X-CSRF-Token: yyy  (修改操作必须)
 
 按容器 Tier 限制：T1 10 文件 / 2 MB，T2 500 文件 / 200 MB，T3 50000 文件 / 5 GB，T4/T5 无 Tier 限制（仅受 `MAX_SOURCE_FILES` / `MAX_SOURCE_ARCHIVE_SIZE` 服务器全局上限约束）。
 
-**上传去重**：同一项目、同一路径下内容完全一致的文件只保留一份（响应 `deduplicated` 列出跳过的路径）；同路径小改动只存补丁（响应 `accepted[].storage` 为 `patch`），大改动完整存储（`full`）。
+**上传去重**：同一项目、同一路径下内容与最新版本完全一致的文件跳过处理（响应 `deduplicated` 列出跳过的路径）；内容有改动则写入新行（小改动只存补丁 `accepted[].storage` 为 `patch`，大改动完整存储 `full`），旧行保留作历史备份；新增路径直接入库。全部文件都被去重时不再创建快照，响应 `snapshot_id` 为 `null`。
+
+**源码匹配**：崩溃分析（`GET /crash-reports/:id/analysis` 与 AI 助手）总是读取项目的「当前状态」——每个路径跨快照的最新一行，因此变更文件按新内容匹配、未变文件不丢失、新增文件立即参与。`match_type`（`exact`/`latest`）仍描述匹配到的快照（按 release 精确优先，否则最新）。
 
 **去重扫荡** `POST /source-dedup`：服务器启动时自动执行一次，也可手动调用。回填旧数据哈希、删除 (项目, 路径, 内容) 完全重复的行（保留最新，删除前先物化引用它的补丁行）、清理孤儿磁盘文件。响应：`{ success, hashes_backfilled, duplicates_removed, disk_files_removed, orphans_removed }`。
 
