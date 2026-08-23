@@ -53,6 +53,16 @@ export interface Config {
   aiMaxConversations: number;
   aiMaxMessagesPerConversation: number;
   aiRetentionDays: number;
+  aiBashEnabled: boolean;
+  aiBashTimeoutMs: number;
+  aiBashMaxOutput: number;
+  aiMaxToolSteps: number;
+  aiSubagentMax: number;
+  aiSubagentMaxSteps: number;
+  aiSubagentModel: string;
+  aiWebFetchTimeoutMs: number;
+  aiWebFetchMaxBytes: number;
+  aiToolResultMaxChars: number;
 }
 
 function env(key: string, fallback: string): string {
@@ -144,6 +154,16 @@ function loadConfig(): Config {
     aiMaxConversations: Math.max(1, envInt('AI_MAX_CONVERSATIONS', 50)),
     aiMaxMessagesPerConversation: Math.max(2, envInt('AI_MAX_MESSAGES_PER_CONVERSATION', 100)),
     aiRetentionDays: Math.max(1, envInt('AI_RETENTION_DAYS', 30)),
+    aiBashEnabled: envBool('AI_BASH_ENABLED', false),
+    aiBashTimeoutMs: Math.max(1000, envInt('AI_BASH_TIMEOUT_MS', 30000)),
+    aiBashMaxOutput: Math.max(1024, envInt('AI_BASH_MAX_OUTPUT', 65536)),
+    aiMaxToolSteps: Math.max(1, envInt('AI_MAX_TOOL_STEPS', 12)),
+    aiSubagentMax: Math.max(1, envInt('AI_SUBAGENT_MAX', 4)),
+    aiSubagentMaxSteps: Math.max(1, envInt('AI_SUBAGENT_MAX_STEPS', 8)),
+    aiSubagentModel: env('AI_SUBAGENT_MODEL', '') || env('AI_DEEPSEEK_MODEL', 'deepseek-chat'),
+    aiWebFetchTimeoutMs: Math.max(1000, envInt('AI_WEBFETCH_TIMEOUT_MS', 15000)),
+    aiWebFetchMaxBytes: Math.max(1024, envInt('AI_WEBFETCH_MAX_BYTES', 262144)),
+    aiToolResultMaxChars: Math.max(1000, envInt('AI_TOOL_RESULT_MAX_CHARS', 20000)),
   };
 }
 

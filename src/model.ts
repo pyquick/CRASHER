@@ -408,6 +408,38 @@ export interface AiProviderKey {
   updated_at: string;
 }
 
+export interface AiAgentEvent {
+  id: number;
+  conversation_id: number;
+  message_id: number | null;
+  owner_user_id: number;
+  kind: 'tool_call' | 'tool_result' | 'subagent' | 'task_update';
+  name: string;
+  status: 'running' | 'ok' | 'error' | 'cancelled';
+  group_id: number | null;
+  encrypted_payload: string;
+  created_at: string;
+}
+
+export interface AiAgentEventView {
+  id: number;
+  conversation_id: number;
+  message_id: number | null;
+  kind: AiAgentEvent['kind'];
+  name: string;
+  status: AiAgentEvent['status'];
+  group_id: number | null;
+  payload: unknown;
+  created_at: string;
+}
+
+export interface AiAgentTask {
+  id: string;
+  title: string;
+  status: 'pending' | 'in_progress' | 'completed';
+  notes?: string;
+}
+
 export interface AiProviderKeyView {
   id: number;
   provider: AiProvider;

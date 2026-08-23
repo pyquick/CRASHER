@@ -8,6 +8,7 @@ import type {
   AiProviderKey,
   AiProviderKeyView,
 } from '../model.js';
+import { patchAiAgentEventsMessageId } from './ai-agent-store.js';
 
 export function listAiProviderKeys(userId: number, provider: AiProvider): AiProviderKeyView[] {
   return getDb().prepare(`
@@ -188,6 +189,7 @@ export function insertAiMessageExchange(
   now: string,
   expiresAt: string,
   maxMessages: number,
+  eventIds: number[] = [],
 ): AiMessage {
   return getDb().transaction(() => {
     const count = countAiMessages(conversationId, ownerUserId);
@@ -195,6 +197,7 @@ export function insertAiMessageExchange(
     insertAiMessage(conversationId, ownerUserId, 'user', encryptedUserContent, null, now);
     const assistant = insertAiMessage(conversationId, ownerUserId, 'assistant', encryptedAssistantContent, encryptedAssistantReasoning, now);
     touchAiConversation(conversationId, ownerUserId, now, expiresAt);
+    patchAiAgentEventsMessageId(conversationId, ownerUserId, eventIds, assistant.id);
     return assistant;
   })();
 }

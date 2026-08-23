@@ -84,6 +84,12 @@ src/
 ├── symbolication/                  # Unity IL2CPP 符号化
 ├── archive/                        # tar.gz 打包/解包
 ├── source/                         # 源码处理
+├── ai/                             # AI 助手（DeepSeek 客户端 + Agent 循环 + 工具）
+│   ├── deepseek.ts                 #   provider 调用（支持 function calling）
+│   ├── agent.ts                    #   Agent 循环编排（工具执行/子 Agent/预算）
+│   ├── tools.ts                    #   5 个工具：read_source_file/web_fetch/run_bash/update_tasks/spawn_subagent
+│   ├── ssrf.ts                     #   SSRF 安全抓取（undici 连接时 IP 校验）
+│   ├── context.ts / crypto.ts      #   崩溃上下文装配 / AES-256-GCM
 └── cli/                            # 命令行工具
 ```
 
@@ -121,6 +127,28 @@ src/
 ```
 
 ---
+
+## AI Agent 循环
+
+```
+POST /api/v1/ai/conversations/:id/messages (SSE)
+    │
+    ▼
+[密钥轮换] 首个 provider 调用在候选 DeepSeek Key 间轮换（失败即禁用重试）
+    │
+    ▼
+[runAgentLoop] 循环（步数预算 AI_MAX_TOOL_STEPS）
+  completeWithDeepSeek(tools) ── 返回 tool_calls? ──► 逐个执行工具
+        │                                            ├─ read_source_file（仅 DB 内源码）
+        │ 无 tool_calls（最终答案）                    ├─ web_fetch（SSRF 防护）
+        ▼                                            ├─ run_bash（AI_BASH_ENABLED 门控 + 工作目录/超时/输出上限）
+  SSE: delta + done + tasks                          ├─ update_tasks（任务列表持久化）
+        │                                            └─ spawn_subagent（受限工具集，深度 1，计入父预算）
+        ▼
+[持久化] insertAiMessageExchange + ai_agent_events（工具活动加密入库，message_id 回填关联）
+```
+
+所有 Agent 事件（tool_call/tool_result/subagent/task_update）通过 SSE 实时推送到聊天面板并加密持久化（`ai_agent_events` 表），刷新页面后按 `message_id` 回放、任务列表按最新 `task_update` 恢复。
 
 ## 认证流
 

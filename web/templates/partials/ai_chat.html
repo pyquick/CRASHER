@@ -7,7 +7,7 @@
     <header class="ai-chat-header">
       <div class="min-w-0">
         <h2 class="font-semibold text-sm">AI Crash Assistant</h2>
-        <p class="text-xs text-gray-500 truncate">DeepSeek · <span x-text="selectedModelLabel()"></span> · read-only analysis</p>
+        <p class="text-xs text-gray-500 truncate">DeepSeek · <span x-text="selectedModelLabel()"></span> · agent tools (read · web · bash · subagents)</p>
       </div>
       <div class="flex items-center gap-1">
         <button type="button" class="ai-chat-icon-btn" @click="panelExpanded = !panelExpanded" :aria-expanded="String(panelExpanded)" :aria-label="panelExpanded ? 'Collapse chat' : 'Expand chat'">
@@ -65,6 +65,24 @@
         </div>
       </details>
 
+      <div x-show="tasks.length > 0" class="ai-chat-tasks">
+        <details class="ai-chat-tasks-details" :open="panelExpanded">
+          <summary class="ai-chat-tasks-summary">
+            <span>Agent tasks</span>
+            <span class="ai-chat-tasks-count" x-text="tasks.filter(task => task.status !== 'completed').length + '/' + tasks.length + ' open'"></span>
+          </summary>
+          <ul class="ai-chat-tasks-list">
+            <template x-for="task in tasks" :key="task.id">
+              <li class="ai-chat-task" :class="'ai-chat-task-' + task.status" :title="task.notes || ''">
+                <span class="ai-chat-task-dot" aria-hidden="true"></span>
+                <span class="ai-chat-task-title" x-text="task.title"></span>
+                <span class="ai-chat-task-status" x-text="task.status.replace('_', ' ')"></span>
+              </li>
+            </template>
+          </ul>
+        </details>
+      </div>
+
       <div class="ai-chat-messages" x-ref="messages" aria-live="polite">
         <template x-if="messages.length === 0"><p class="text-xs text-gray-500 text-center py-8">Ask about an attached crash, its analysis, or a safe next step.</p></template>
         <template x-for="item in messages" :key="item.id">
@@ -80,7 +98,30 @@
               <p class="whitespace-pre-wrap break-words text-xs text-gray-400 mt-2" x-text="item.reasoning"></p>
             </details>
             <template x-if="item.role === 'assistant'">
-              <div class="ai-chat-markdown" x-markdown="item.content"></div>
+              <div class="ai-chat-flow">
+                <template x-for="(seg, segIndex) in messageSegments(item)" :key="item.id + ':' + segIndex">
+                  <div class="ai-chat-seg">
+                    <template x-if="seg.step">
+                      <div class="ai-chat-step" :class="'ai-chat-step-' + seg.step.status" :style="seg.step.group ? 'margin-left: 14px' : ''">
+                        <details class="ai-chat-step-details">
+                          <summary class="ai-chat-step-summary">
+                            <span class="ai-chat-step-name" x-text="seg.step.name"></span>
+                            <span class="ai-chat-step-status" x-text="stepStatusLabel(seg.step.status)"></span>
+                          </summary>
+                          <div class="ai-chat-step-body">
+                            <p x-show="seg.step.args" class="ai-chat-step-detail" x-text="seg.step.args"></p>
+                            <p x-show="seg.step.prompt" class="ai-chat-step-detail" x-text="seg.step.prompt"></p>
+                            <p x-show="seg.step.summary" class="ai-chat-step-detail" x-text="seg.step.summary"></p>
+                          </div>
+                        </details>
+                      </div>
+                    </template>
+                    <template x-if="!seg.step && seg.text">
+                      <ai-markdown class="ai-chat-markdown" :content="seg.text"></ai-markdown>
+                    </template>
+                  </div>
+                </template>
+              </div>
             </template>
             <template x-if="item.role === 'user'">
               <p class="whitespace-pre-wrap break-words text-sm" x-text="item.content"></p>

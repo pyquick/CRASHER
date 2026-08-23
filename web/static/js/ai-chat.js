@@ -1,7 +1,7 @@
 document.addEventListener('alpine:init', () => {
   Alpine.data('aiChat', () => ({
     available: false, open: false, conversations: [], selectedId: '', conversation: null,
-    model: 'deepseek-chat', models: [], messages: [], draft: '', sending: false, error: '', status: '', copiedId: null, requestController: null, panelExpanded: true, pendingGroupId: null, showCrashPicker: false, crashSearch: '', crashes: [], crashLoading: false,
+    model: 'deepseek-chat', models: [], messages: [], events: [], tasks: [], draft: '', sending: false, error: '', status: '', copiedId: null, requestController: null, panelExpanded: true, pendingGroupId: null, showCrashPicker: false, crashSearch: '', crashes: [], crashLoading: false,
 
     async init() {
       if (!['/web/', '/web', '/web/crashes', '/web/feedback', '/web/symbols', '/web/accounts', '/web/containers', '/web/api-doc'].some(path => window.location.pathname === path || window.location.pathname.startsWith(path + '/'))) return;
@@ -50,20 +50,77 @@ document.addEventListener('alpine:init', () => {
     },
     conversationLabel(item) { return '#' + item.id + (item.group_id ? ' · Crash #' + item.group_id : ' · New'); },
 
+    stepStatusLabel(status) {
+      return { ok: 'Success', error: 'Error', running: 'Running', cancelled: 'Cancelled' }[status] || status;
+    },
+
     async loadConversations() {
       const data = await this.request('/api/v1/ai/conversations');
       this.conversations = data.items || [];
     },
 
+    buildSteps(messageId) {
+      // Persisted results/subagent outcomes nest under their parent event via
+      // group_id, so replay pairs them by that reference. `at` is the
+      // character offset into the message text where the step was streamed.
+      const steps = [];
+      for (const entry of this.events.filter(event => event.message_id === messageId)) {
+        const payload = entry.payload || {};
+        const at = typeof payload.at === 'number' ? payload.at : 0;
+        if (entry.kind === 'tool_call') {
+          steps.push({ id: entry.id, name: entry.name, status: 'running', args: payload.args || '', prompt: '', summary: '', group: entry.group_id, at });
+        } else if (entry.kind === 'tool_result') {
+          const step = steps.find(item => item.id === entry.group_id);
+          if (step) { step.status = entry.status; step.summary = payload.summary || ''; }
+        } else if (entry.kind === 'subagent') {
+          if (entry.status === 'running') {
+            steps.push({ id: entry.id, name: 'subagent', status: 'running', args: '', prompt: payload.prompt || '', summary: '', group: entry.group_id, at });
+          } else {
+            const step = steps.find(item => item.id === entry.group_id);
+            if (step) { step.status = entry.status; step.summary = payload.report || payload.error || entry.status; }
+          }
+        }
+      }
+      return steps;
+    },
+
+    // Splits a message into text/step segments so tool lines appear in the
+    // text flow at the point they were streamed, not stacked at the top.
+    messageSegments(item) {
+      const content = item.content || '';
+      const steps = item.steps || [];
+      if (!steps.length) return content ? [{ text: content }] : [];
+      const segments = [];
+      let cursor = 0;
+      for (const step of steps) {
+        const at = Math.max(0, Math.min(typeof step.at === 'number' ? step.at : 0, content.length));
+        if (at >= cursor) {
+          if (at > cursor) segments.push({ text: content.slice(cursor, at) });
+          segments.push({ step });
+          cursor = at;
+        } else {
+          segments.push({ step });
+        }
+      }
+      if (cursor < content.length) segments.push({ text: content.slice(cursor) });
+      return segments;
+    },
+
+    applyConversation(data) {
+      this.conversation = data.conversation;
+      this.events = data.events || [];
+      this.tasks = data.tasks || [];
+      this.messages = (data.messages || []).map(item => ({ ...item, steps: this.buildSteps(item.id) }));
+    },
+
     async loadConversation() {
       this.error = '';
       if (!this.selectedId) {
-        this.conversation = null; this.messages = []; return;
+        this.conversation = null; this.messages = []; this.events = []; this.tasks = []; return;
       }
       try {
         const data = await this.request('/api/v1/ai/conversations/' + this.selectedId, { signal: undefined });
-        this.conversation = data.conversation;
-        this.messages = data.messages || [];
+        this.applyConversation(data);
         this.$nextTick(() => this.scrollMessages());
       } catch (error) { this.error = error.message; }
     },
@@ -74,8 +131,7 @@ document.addEventListener('alpine:init', () => {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(groupId ? { group_id: groupId } : {}),
         });
-        this.conversation = data.conversation;
-        this.messages = data.messages || [];
+        this.applyConversation(data);
         this.selectedId = String(this.conversation.id);
         await this.loadConversations();
       } catch (error) { this.error = error.message; }
@@ -86,7 +142,7 @@ document.addEventListener('alpine:init', () => {
       if (!this.selectedId || !await Modal.confirm('Delete conversation', 'Delete this AI conversation?', 'Delete')) return;
       try {
         await this.request('/api/v1/ai/conversations/' + this.selectedId, { method: 'DELETE' });
-        this.selectedId = ''; this.conversation = null; this.messages = [];
+        this.selectedId = ''; this.conversation = null; this.messages = []; this.events = []; this.tasks = [];
         await this.loadConversations();
       } catch (error) { this.error = error.message; }
     },
@@ -131,7 +187,7 @@ document.addEventListener('alpine:init', () => {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ group_id: groupId, report_id: reportId }),
         });
-        this.conversation = data.conversation; this.messages = data.messages || [];
+        this.applyConversation(data);
         this.pendingGroupId = null; await this.loadConversations();
       } catch (error) { this.error = error.message; }
     },
@@ -192,7 +248,7 @@ document.addEventListener('alpine:init', () => {
       const provisionalId = 'local-ai-' + timestamp;
       this.messages.push(
         { id: localUserId, role: 'user', content: message, reasoning: null, created_at: timestamp },
-        { id: provisionalId, role: 'assistant', content: '', reasoning: null, created_at: timestamp },
+        { id: provisionalId, role: 'assistant', content: '', reasoning: null, created_at: timestamp, steps: [] },
       );
       // Always mutate through the reactive array so Alpine re-renders per delta.
       const liveItem = () => this.messages.find(item => item.id === provisionalId);
@@ -212,7 +268,9 @@ document.addEventListener('alpine:init', () => {
         const decoder = new TextDecoder();
         let buffer = '';
         let eventName = 'message';
-        while (true) {
+        let streamError = '';
+        let streamFinished = false;
+        while (!streamFinished) {
           const chunk = await reader.read();
           if (chunk.done) break;
           buffer += decoder.decode(chunk.value, { stream: true });
@@ -235,21 +293,66 @@ document.addEventListener('alpine:init', () => {
               if (event === 'delta') item.content += payload.content || '';
               else item.reasoning = (item.reasoning || '') + (payload.content || '');
               scroll();
+            } else if (event === 'tool_call') {
+              this.status = 'Agent is using ' + (payload.name || 'a tool') + '…';
+              const item = liveItem();
+              if (!item) continue;
+              item.steps = item.steps || [];
+              item.steps.push({ id: payload.id, name: payload.name, status: 'running', args: payload.args || '', prompt: '', summary: '', group: payload.group ?? null, at: item.content.length });
+              scroll();
+            } else if (event === 'tool_result') {
+              this.status = payload.status === 'error' ? 'Tool failed; Agent is continuing…' : 'Tool finished; Agent is continuing…';
+              const item = liveItem();
+              const step = item && (item.steps || []).find(entry => entry.id === payload.id);
+              if (step) { step.status = payload.status; step.summary = payload.summary || ''; scroll(); }
+            } else if (event === 'subagent') {
+              this.status = payload.status === 'running' ? 'Sub-agent is investigating…'
+                : payload.status === 'error' ? 'Sub-agent failed; Agent is continuing directly…'
+                  : 'Sub-agent finished; Agent is continuing…';
+              const item = liveItem();
+              if (!item) continue;
+              item.steps = item.steps || [];
+              const existing = item.steps.find(entry => entry.id === payload.id);
+              if (existing) { existing.status = payload.status; existing.summary = payload.summary || existing.summary; }
+              else item.steps.push({ id: payload.id, name: 'subagent', status: payload.status, args: '', prompt: payload.prompt || '', summary: payload.summary || '', group: payload.group ?? null, at: item.content.length });
+              scroll();
+            } else if (event === 'tasks') {
+              this.tasks = payload.tasks || [];
+              scroll();
             } else if (event === 'done') {
+              this.status = '';
               if (payload.message) {
                 const index = this.messages.findIndex(item => item.id === provisionalId);
-                if (index !== -1) this.messages.splice(index, 1, payload.message);
-                scroll();
+                if (index !== -1) {
+                  const steps = this.messages[index].steps || [];
+                  this.messages.splice(index, 1, { ...payload.message, steps });
+                  scroll();
+                }
               }
+              if (payload.tasks) this.tasks = payload.tasks;
             } else if (event === 'error') {
-              throw new Error(payload.message || 'The AI request failed');
+              // A failed turn must not discard the output and tool activity
+              // already streamed: keep them visible and show the reason.
+              streamError = payload.message || 'The AI request failed';
+              streamFinished = true;
+              break;
             }
           }
         }
+        if (streamError) throw new Error(streamError);
       } catch (error) {
-        this.messages = this.messages.filter(item => item.id !== provisionalId && item.id !== localUserId);
-        if (error.name !== 'AbortError') this.error = error.message;
-        this.draft = message;
+        if (streamError) {
+          // Server-reported failure after partial output: keep the streamed
+          // content and tool steps, surface the reason.
+          const item = liveItem();
+          if (item && !item.content) item.content = '(no answer produced)';
+          this.error = streamError;
+          this.status = 'Generation stopped';
+        } else {
+          this.messages = this.messages.filter(item => item.id !== provisionalId && item.id !== localUserId);
+          if (error.name !== 'AbortError') this.error = error.message;
+          this.draft = message;
+        }
       }
       if (this.requestController === controller) {
         this.requestController = null;

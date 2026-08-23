@@ -269,6 +269,22 @@ export function applySchema(db: Database.Database): void {
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
+    CREATE TABLE IF NOT EXISTS ai_agent_events (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      conversation_id INTEGER NOT NULL REFERENCES ai_conversations(id) ON DELETE CASCADE,
+      message_id INTEGER REFERENCES ai_messages(id) ON DELETE SET NULL,
+      owner_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL CHECK(kind IN ('tool_call','tool_result','subagent','task_update')),
+      name TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'running' CHECK(status IN ('running','ok','error','cancelled')),
+      group_id INTEGER REFERENCES ai_agent_events(id) ON DELETE CASCADE,
+      encrypted_payload TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_ai_agent_events_conversation ON ai_agent_events(conversation_id, id);
+    CREATE INDEX IF NOT EXISTS idx_ai_agent_events_message ON ai_agent_events(message_id);
+
     -- Base indexes
     CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
     CREATE INDEX IF NOT EXISTS idx_sessions_user_id ON sessions(user_id);

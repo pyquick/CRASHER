@@ -119,7 +119,19 @@ X-CSRF-Token: yyy  (修改操作必须)
 
 ### AI 崩溃助手
 
-AI 功能仅对 session 登录的 `admin` / `operator` 开放。每个用户在 Accounts 页面配置自己的 DeepSeek API Key；Key 不会返回给浏览器，服务端使用 `AI_ENCRYPTION_KEY` 加密保存。请求只读取当前用户有权访问的崩溃、确定性分析和通过 API 上传的源码快照；没有源码时只基于崩溃信息推断。AI 不执行命令、不修改文件、不访问远程仓库。
+AI 功能仅对 session 登录的 `admin` / `operator` 开放。每个用户在 Accounts 页面配置自己的 DeepSeek API Key；Key 不会返回给浏览器，服务端使用 `AI_ENCRYPTION_KEY` 加密保存。请求只读取当前用户有权访问的崩溃、确定性分析和通过 API 上传的源码快照；没有源码时只基于崩溃信息推断。
+
+AI 以 **Agent 循环**运行：模型可调用工具逐步分析——
+
+| 工具 | 说明 | 安全边界 |
+|------|------|----------|
+| `read_source_file` | 读取绑定项目已上传的源码（路径/行号范围/列表） | 仅限 DB 中的 `relative_path`，不接受文件系统路径 |
+| `web_fetch` | 抓取公开网页（官方文档/规范） | SSRF 防护：连接时校验 IP，拦截私网/环回/链路本地/元数据地址，限制跳数与响应体积 |
+| `run_bash` | 在每会话独立工作目录复现问题 | 默认关闭（`AI_BASH_ENABLED=true` 开启）；超时 30s、输出上限、最小环境变量、无网络隔离 |
+| `update_tasks` | 维护自身任务列表 | 任务列表加密持久化，跨轮次可见 |
+| `spawn_subagent` | 派子 Agent 调查子问题 | 每轮最多 4 个、无嵌套、无 bash，步数计入总预算 |
+
+循环步数上限 `AI_MAX_TOOL_STEPS`（默认 12）。Agent 循环会倍增 provider 调用次数，受每用户 `AI_RATE_LIMIT`（20/分钟）约束。
 
 | 方法 | 路径 | 鉴权 | 说明 |
 |------|------|------|------|
@@ -134,7 +146,9 @@ AI 功能仅对 session 登录的 `admin` / `operator` 开放。每个用户在 
 | DELETE | `/ai/conversations/:id` | Session + CSRF + admin/operator | 删除自己的会话 |
 | POST | `/ai/conversations/:id/messages` | Session + CSRF + admin/operator | 发送消息并调用 DeepSeek |
 
-会话默认保留 30 天，仅创建者可见；消息正文使用 AES-256-GCM 加密保存，并受每用户限流、消息长度和会话消息数量限制。
+会话默认保留 30 天，仅创建者可见；消息正文与 Agent 事件（工具调用/结果、子 Agent 轨迹、任务更新）使用 AES-256-GCM 加密保存，并受每用户限流、消息长度和会话消息数量限制。
+
+`GET /ai/conversations/:id` 响应包含 `messages`、`events`（Agent 事件，`message_id` 关联到助手消息，`group_id` 嵌套子 Agent 内的事件）、`tasks`（最新任务列表）。`POST /ai/conversations/:id/messages` 以 SSE 流式返回：`delta` / `reasoning`（最终答案与思考）、`tool_call` `{id, name, args, group}`、`tool_result` `{id, name, status, ok, summary, group}`、`subagent` `{id, status, prompt, summary, group}`、`tasks` `{tasks}`、`done` `{message, context, key_id, tasks}`、`error` `{error, message}`。
 
 
 | 方法 | 路径 | 说明 |

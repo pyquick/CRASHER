@@ -5,6 +5,7 @@ import { analyzeCrash } from '../analysis/analyzer.js';
 import { readSourceFileContent } from '../service/dedup.js';
 import type { AuthenticatedUser, CrashGroup, CrashReport, SourceFile } from '../model.js';
 import { resolveContainerScopeForUser } from '../shared/container.js';
+import { truncate } from '../shared/string.js';
 import type { ScopedCrashContext } from './types.js';
 
 function scopeForUser(user: AuthenticatedUser): number | null | undefined {
@@ -12,8 +13,7 @@ function scopeForUser(user: AuthenticatedUser): number | null | undefined {
 }
 
 function bounded(value: string | null | undefined, max: number): string {
-  const text = value ?? '';
-  return text.length <= max ? text : `${text.substring(0, max)}\n[truncated]`;
+  return truncate(value ?? '', max, '[truncated]');
 }
 
 function safeSourceContent(file: SourceFile): string | null {

@@ -32,3 +32,7 @@ export {
   touchAiConversation, countAiMessages, listAiMessages, insertAiMessage, insertAiMessageExchange,
   purgeExpiredAiConversations,
 } from './database/ai-store.js';
+
+export {
+  insertAiAgentEvent, listAiAgentEvents, patchAiAgentEventsMessageId, deleteAiAgentEvents,
+} from './database/ai-agent-store.js';

@@ -3,6 +3,7 @@ import { Router, type Request, type Response } from 'express';
 import * as store from '../store.js';
 import { requireCsrf, requireRole } from '../middleware.js';
 import { nowSqlDateTime } from '../shared/date.js';
+import { parsePositiveId } from '../shared/string.js';
 import { resolve2FA } from './auth-common.js';
 import { decryptAiValue, encryptAiValue, isAiEncryptionConfigured } from '../ai/crypto.js';
 import { writeAuditLog } from '../auth.js';
@@ -17,11 +18,6 @@ function sessionOnly(req: Request, res: Response): boolean {
     return false;
   }
   return true;
-}
-
-function parseId(value: unknown): number | null {
-  const id = Number(value);
-  return Number.isSafeInteger(id) && id > 0 ? id : null;
 }
 
 export function maskAiProviderKey(value: string): string {
@@ -81,7 +77,7 @@ router.patch('/ai-provider/keys/:id', requireRole('admin', 'operator'), requireC
   if (!sessionOnly(req, res)) return;
   await resolve2FA(req, res, 'ai_provider_key.update', () => {
     if (!isAiEncryptionConfigured()) { res.status(503).json({ error: 'AI_UNAVAILABLE', message: 'AI encryption is not configured on the server' }); return; }
-    const id = parseId(req.params.id);
+    const id = parsePositiveId(req.params.id);
     if (!id) { res.status(400).json({ error: 'Bad Request', message: 'Invalid key ID' }); return; }
     const apiKey = req.body?.api_key === undefined ? undefined : validateApiKey(req.body.api_key);
     if (req.body?.api_key !== undefined && !apiKey) { res.status(400).json({ error: 'Bad Request', message: 'A valid DeepSeek API key is required' }); return; }
@@ -104,7 +100,7 @@ router.patch('/ai-provider/keys/:id', requireRole('admin', 'operator'), requireC
 router.delete('/ai-provider/keys/:id', requireRole('admin', 'operator'), requireCsrf, async (req, res): Promise<void> => {
   if (!sessionOnly(req, res)) return;
   await resolve2FA(req, res, 'ai_provider_key.delete', () => {
-    const id = parseId(req.params.id);
+    const id = parsePositiveId(req.params.id);
     if (!id) { res.status(400).json({ error: 'Bad Request', message: 'Invalid key ID' }); return; }
     const deleted = store.deleteAiProviderKey(id, req.authUser!.id, PROVIDER);
     if (!deleted) { res.status(404).json({ error: 'Not Found', message: 'Provider key not found' }); return; }

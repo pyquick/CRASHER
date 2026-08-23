@@ -182,22 +182,20 @@
     return fragment;
   }
 
-  const api = { parseMarkdown, parseInline, isSafeUrl, renderMarkdown };
+  if (typeof window !== 'undefined' && window.customElements && !window.customElements.get('ai-markdown')) {
+    window.customElements.define('ai-markdown', class extends HTMLElement {
+      static get observedAttributes() { return ['content']; }
 
-  // Alpine directive: renders the expression as sanitized markdown DOM.
-  if (typeof document !== 'undefined') {
-    document.addEventListener('alpine:init', () => {
-      if (typeof Alpine === 'undefined') return;
-      Alpine.directive('markdown', (el, { expression }, { evaluateLater, effect }) => {
-        const render = evaluateLater(expression);
-        effect(() => {
-          render((value) => {
-            el.replaceChildren(renderMarkdown(typeof value === 'string' ? value : ''));
-          });
-        });
-      });
+      connectedCallback() {
+        if (this.hasAttribute('content')) this.render();
+      }
+      attributeChangedCallback() { this.render(); }
+
+      render() {
+        this.replaceChildren(renderMarkdown(this.getAttribute('content') || ''));
+      }
     });
   }
 
-  return api;
+  return { parseMarkdown, parseInline, isSafeUrl, renderMarkdown };
 });
