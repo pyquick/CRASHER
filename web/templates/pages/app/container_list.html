@@ -92,7 +92,7 @@
           <div class="space-y-2">
             <input x-model="newContainer.adminUsername" placeholder="Admin username" autocomplete="off"
                    class="fc w-full">
-            <input x-model="newContainer.adminPassword" type="password" placeholder="Admin password (min 12 chars)"
+            <input x-model="newContainer.adminPassword" type="password" placeholder="Admin password (min 12 chars, upper/lower/number/symbol)"
                    class="fc w-full" autocomplete="new-password">
           </div>
         </div>
@@ -183,8 +183,22 @@
         this.createError = 'Container name is required';
         return;
       }
-      if (!this.newContainer.adminUsername.trim()) {
+      const adminUsername = this.newContainer.adminUsername.trim();
+      if (!adminUsername) {
         this.createError = 'Admin username is required to create a container';
+        return;
+      }
+
+      // Validate the admin password before creating anything (mirrors server-side rules)
+      const password = this.newContainer.adminPassword;
+      if (password.length < 12) { this.createError = 'Admin password must be at least 12 characters'; return; }
+      if (password.length > 256) { this.createError = 'Admin password must be at most 256 characters'; return; }
+      if (!/[a-z]/.test(password) || !/[A-Z]/.test(password) || !/\d/.test(password) || !/[^A-Za-z0-9]/.test(password)) {
+        this.createError = 'Admin password must include uppercase, lowercase, number, and special character';
+        return;
+      }
+      if (adminUsername.length >= 4 && password.toLowerCase().includes(adminUsername.toLowerCase())) {
+        this.createError = 'Admin password must not contain the admin username';
         return;
       }
 
@@ -201,12 +215,11 @@
         });
 
         // Step 2: create admin in container
-        const password = this.newContainer.adminPassword || undefined;
         const r = await this.request('/api/v1/auth/containers/' + container.id + '/users', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            username: this.newContainer.adminUsername.trim(),
+            username: adminUsername,
             password,
             role: 'admin',
           }),
