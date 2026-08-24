@@ -1,0 +1,1271 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>API 文档 - Crash Report Server</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', sans-serif; }
+    .method-badge { display: inline-block; padding: 2px 10px; border-radius: 4px; font-size: 0.75rem; font-weight: 600; min-width: 52px; text-align: center; }
+    pre { background: rgba(0,0,0,0.3); border-radius: 8px; padding: 14px 18px; overflow-x: auto; font-size: 0.8125rem; line-height: 1.6; }
+    code { font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace; font-size: 0.8125rem; }
+    .section-card { background: #1e293b; border-radius: 12px; padding: 24px; border: 1px solid #334155; }
+    .field-required { color: #f87171; }
+    table th { font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.05em; }
+    .tag { display: inline-block; padding: 1px 8px; border-radius: 999px; font-size: 0.6875rem; font-weight: 500; }
+    .tag-generic { background: rgba(96,165,250,0.15); color: #93c5fd; }
+    .tag-unity { background: rgba(167,139,250,0.15); color: #c4b5fd; }
+    .tag-device { background: rgba(52,211,153,0.15); color: #6ee7b7; }
+    .tag-deprecated { background: rgba(251,191,36,0.15); color: #fcd34d; }
+    .tag-ai { background: rgba(244,114,182,0.15); color: #f9a8d4; }
+    .tag-auth { background: rgba(148,163,184,0.15); color: #cbd5e1; }
+    .toc-link { transition: color 0.15s, background 0.15s; display: block; padding: 3px 8px; border-radius: 6px; }
+    .toc-link:hover { color: #93c5fd; }
+    .toc-link.toc-active { color: #93c5fd; background: rgba(96,165,250,0.12); }
+    .toc-group { font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin: 14px 0 6px; padding-left: 8px; }
+    .lang-tabs { display: flex; gap: 8px; margin-bottom: 8px; }
+    .lang-tab { padding: 3px 12px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; cursor: pointer; background: rgba(148,163,184,0.15); color: #94a3b8; }
+    .lang-tab.active { background: rgba(96,165,250,0.2); color: #93c5fd; }
+    .lang-pane { display: none; }
+    .lang-pane.active { display: block; }
+    html { scroll-behavior: smooth; }
+    .endpoint-row code { font-size: 0.75rem; }
+    /* 侧边栏：固定不随页面滚动；隐藏自身滚动条（目录超高时隐藏回退滚动），仅右侧内容滚动 */
+    .toc-nav { scrollbar-width: none; }
+    .toc-nav::-webkit-scrollbar { display: none; }
+  </style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen lg:overflow-x-hidden">
+
+  <!-- ============ 布局：固定侧边栏 + 可滚动主区域 ============ -->
+  <div>
+
+    <!-- 侧边栏（桌面端）：固定，不随页面滚动 -->
+    <aside class="hidden lg:block fixed inset-y-0 left-0 w-72 z-40 border-r border-gray-800 bg-gray-950">
+      <nav class="toc-nav h-full overflow-y-auto p-5">
+        <div class="mb-4 flex items-center justify-between">
+          <div>
+            <h1 class="text-lg font-bold tracking-tight">💥 Crash Reporter</h1>
+            <p class="text-xs text-gray-500 mt-1">API 文档</p>
+          </div>
+        </div>
+        <p class="text-[11px] text-gray-600 px-2">Base URL: <code class="text-gray-500">/api/v1</code></p>
+        <p class="text-[11px] px-2 mt-1"><a href="/web/api-doc" class="text-blue-400 hover:text-blue-300">English Version →</a></p>
+
+        <div class="toc-group">快速开始</div>
+        <ul class="space-y-0.5 text-sm text-gray-400">
+          <li><a href="#auth" class="toc-link" data-section="auth">0. 认证与权限</a></li>
+        </ul>
+
+        <div class="toc-group">崩溃上报</div>
+        <ul class="space-y-0.5 text-sm text-gray-400">
+          <li><a href="#generic" class="toc-link" data-section="generic">1. 通用崩溃上报</a></li>
+          <li><a href="#sources" class="toc-link" data-section="sources">2. 项目源码快照</a></li>
+          <li><a href="#feedback" class="toc-link" data-section="feedback">3. 玩家反馈</a></li>
+          <li><a href="#unity" class="toc-link" data-section="unity">4. Unity 专属端点</a></li>
+        </ul>
+
+        <div class="toc-group">查询与分析</div>
+        <ul class="space-y-0.5 text-sm text-gray-400">
+          <li><a href="#groups" class="toc-link" data-section="groups">5. 崩溃分组</a></li>
+          <li><a href="#reports" class="toc-link" data-section="reports">6. 崩溃报告与分析</a></li>
+          <li><a href="#downloads" class="toc-link" data-section="downloads">7. 文件下载</a></li>
+          <li><a href="#symbols" class="toc-link" data-section="symbols">8. 符号文件管理</a></li>
+          <li><a href="#dump" class="toc-link" data-section="dump">9. Dump 解析</a></li>
+        </ul>
+
+        <div class="toc-group">数据与工具</div>
+        <ul class="space-y-0.5 text-sm text-gray-400">
+          <li><a href="#stats" class="toc-link" data-section="stats">10. 项目、统计与工具</a></li>
+          <li><a href="#export" class="toc-link" data-section="export">11. 导出 / 导入</a></li>
+        </ul>
+
+        <div class="toc-group">AI 助手</div>
+        <ul class="space-y-0.5 text-sm text-gray-400">
+          <li><a href="#ai" class="toc-link" data-section="ai">12. AI 崩溃助手</a></li>
+        </ul>
+
+        <div class="toc-group">账户与安全</div>
+        <ul class="space-y-0.5 text-sm text-gray-400">
+          <li><a href="#account" class="toc-link" data-section="account">13. 账户、2FA 与 API Key</a></li>
+        </ul>
+      </nav>
+    </aside>
+
+    <!-- 移动端目录 -->
+    <div class="lg:hidden px-4 pt-4">
+      <details class="section-card !p-3 mb-4">
+        <summary class="text-sm font-semibold cursor-pointer">📑 目录</summary>
+        <ul class="mt-3 space-y-1 text-sm text-gray-400">
+          <li><a href="#auth" class="toc-link">0. 认证与权限</a></li>
+          <li><a href="#generic" class="toc-link">1. 通用崩溃上报</a></li>
+          <li><a href="#sources" class="toc-link">2. 项目源码快照</a></li>
+          <li><a href="#feedback" class="toc-link">3. 玩家反馈</a></li>
+          <li><a href="#unity" class="toc-link">4. Unity 专属端点</a></li>
+          <li><a href="#groups" class="toc-link">5. 崩溃分组</a></li>
+          <li><a href="#reports" class="toc-link">6. 崩溃报告与分析</a></li>
+          <li><a href="#downloads" class="toc-link">7. 文件下载</a></li>
+          <li><a href="#symbols" class="toc-link">8. 符号文件管理</a></li>
+          <li><a href="#dump" class="toc-link">9. Dump 解析</a></li>
+          <li><a href="#stats" class="toc-link">10. 项目、统计与工具</a></li>
+          <li><a href="#export" class="toc-link">11. 导出 / 导入</a></li>
+          <li><a href="#ai" class="toc-link">12. AI 崩溃助手</a></li>
+          <li><a href="#account" class="toc-link">13. 账户、2FA 与 API Key</a></li>
+        </ul>
+      </details>
+    </div>
+
+    <!-- 主内容区：桌面端唯一可滚动区域 -->
+    <main class="max-w-5xl mx-auto px-4 py-8 lg:px-8 lg:pl-72">
+      <div class="mb-8">
+        <h1 class="text-3xl font-bold mb-2">📋 API 文档</h1>
+        <p class="text-gray-400">跨平台崩溃上报服务 · 通用 REST API · v1 · Base URL <code>http://localhost:8080/api/v1</code></p>
+      </div>
+
+      <!-- ============================================================ -->
+      <!-- 0. 认证与权限 -->
+      <!-- ============================================================ -->
+      <section id="auth" class="section-card mb-6">
+        <h2 class="text-xl font-semibold mb-4">0. 认证与权限</h2>
+        <p class="text-gray-400 mb-3">默认 <code>API_REQUIRE_KEY=true</code>。以下写入端点接受 <code>Authorization: Bearer &lt;api-key&gt;</code> 或 <code>X-API-Key: &lt;api-key&gt;</code>：崩溃上报、玩家反馈、Unity 上报、项目源码上传。viewer Key 不能写入。</p>
+        <pre><code>curl -H "Authorization: Bearer &lt;api-key&gt;" ...
+# 或
+curl -H "X-API-Key: &lt;api-key&gt;" ...</code></pre>
+        <p class="text-sm text-gray-400 mt-3">查询、下载、分析、符号和管理 API 需要登录的 Session Cookie。修改类请求还必须携带 <code>csrf_token</code> Cookie 和对应的 <code>X-CSRF-Token</code> 请求头。admin/operator 可以查看崩溃详情；viewer 只能访问允许的只读列表页面；删除符号、删除反馈、清空崩溃仅限 admin。</p>
+        <pre><code># 登录并保存 auth_token 与 csrf_token Cookie
+curl -c cookies.txt -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"..."}' \
+  http://localhost:8080/api/v1/auth/login
+
+# 获取或刷新 CSRF token
+curl -b cookies.txt -c cookies.txt http://localhost:8080/api/v1/auth/csrf</code></pre>
+
+        <h3 class="font-medium mt-5 mb-2">端点总览</h3>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm border-collapse">
+            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">方法与路径</th><th class="text-left py-2">鉴权</th><th class="text-left py-2">权限</th></tr></thead>
+            <tbody class="text-gray-400">
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /crash-report</code>, <code>/unity/crash-report</code>, <code>/player-feedback</code>, <code>/project-sources</code></td><td>API Key（可关闭）</td><td>operator/admin Key</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /crash-groups</code>, <code>/stats/dashboard</code>, <code>/projects</code>, <code>/platforms</code>, <code>/versions</code></td><td>Session</td><td>已登录用户</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /crash-groups/:id</code>, <code>/crash-reports*</code>, 下载, 导入/导出</td><td>Session</td><td>admin/operator</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /symbols</code></td><td>Session</td><td>已登录用户</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /symbols</code>, <code>GET /symbols/:id/download</code></td><td>Session</td><td>admin/operator</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /source-dedup</code></td><td>Session + CSRF</td><td>admin</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>DELETE /symbols/:id</code>, <code>DELETE /player-feedback/:id</code>, <code>POST /clear-crashes</code></td><td>Session + CSRF</td><td>admin</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>/api/v1/ai/*</code></td><td>Session</td><td>admin/operator（仅 session）</td></tr>
+              <tr><td class="py-1"><code>/auth/users</code>, <code>/auth/api-keys</code>, 2FA, 邮箱, 手机, 容器, 密码重置</td><td>Session；写操作需 CSRF</td><td>按端点角色限制</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- 1. 通用崩溃上报 -->
+      <!-- ============================================================ -->
+      <section id="generic" class="section-card mb-6">
+        <h2 class="text-xl font-semibold mb-4">
+          <span class="method-badge bg-green-600 text-white mr-3">POST</span>
+          /api/v1/crash-report
+        </h2>
+        <p class="text-gray-400 mb-4">提交崩溃报告。支持 JSON 与 multipart/form-data 两种格式。multipart 可以直接使用普通表单字段，或将完整 JSON 放入 <code>report</code> 字段；附件字段名为 <code>attachments</code>，最多 10 个。默认需要 operator/admin API Key。</p>
+
+        <h3 class="font-medium mb-3">📥 请求体参数（JSON）</h3>
+
+        <!-- 通用运行时字段 -->
+        <p class="text-xs text-gray-500 mb-2 mt-4"><span class="tag tag-generic">通用运行时</span> 跨平台公共字段</p>
+        <table class="w-full text-sm border-collapse mb-4">
+          <thead>
+            <tr class="border-b border-gray-700 text-gray-500 text-xs uppercase">
+              <th class="text-left py-2 pr-4">字段</th>
+              <th class="text-left py-2 pr-4">类型</th>
+              <th class="text-left py-2">说明</th>
+            </tr>
+          </thead>
+          <tbody class="text-gray-400">
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><strong class="text-gray-200">exception_type</strong> <span class="field-required">*必填</span></td><td class="pr-4"><code>string</code></td><td>异常类型，如 TypeError、NullReferenceException、SIGSEGV</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><strong>project_name</strong></td><td class="pr-4"><code>string</code></td><td>项目名称（可选，最大 100 字符）。相同崩溃按项目独立分组；未传时归为 Unassigned</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">exception_message</td><td class="pr-4"><code>string</code></td><td>异常消息文本</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">stack_trace</td><td class="pr-4"><code>string</code></td><td>堆栈。完整堆栈参与分组 hash——只有堆栈完全一致的崩溃才会归入同一组</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">log_text</td><td class="pr-4"><code>string</code></td><td>完整日志文本，超过 <code>MAX_LOG_SIZE</code>（默认 10 MiB）时截断</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><strong>runtime</strong></td><td class="pr-4"><code>string</code></td><td>运行时环境：<code>node</code>, <code>browser</code>, <code>python</code>, <code>go</code>, <code>unity</code>, <code>csharp</code>, ...</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">runtime_version</td><td class="pr-4"><code>string</code></td><td>运行时版本，如 <code>20.11.0</code>, <code>3.12.3</code>, <code>2022.3.10f1</code></td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">framework</td><td class="pr-4"><code>string</code></td><td>框架/引擎：<code>express</code>, <code>react</code>, <code>django</code>, <code>gin</code>, <code>unity</code>, ...</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">environment</td><td class="pr-4"><code>string</code></td><td>部署环境：<code>production</code>, <code>staging</code>, <code>development</code></td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">server_name</td><td class="pr-4"><code>string</code></td><td>服务名 / 应用实例标识</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">release</td><td class="pr-4"><code>string</code></td><td>发布版本 / Git commit；用于匹配源码快照</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">error_severity</td><td class="pr-4"><code>string</code></td><td>严重级别：<code>warning</code>, <code>error</code>, <code>fatal</code>, <code>crash</code>（默认 <code>error</code>）</td></tr>
+          </tbody>
+        </table>
+
+        <!-- 设备/环境字段 -->
+        <p class="text-xs text-gray-500 mb-2 mt-4"><span class="tag tag-device">设备信息</span> 设备与环境上下文</p>
+        <table class="w-full text-sm border-collapse mb-4">
+          <thead>
+            <tr class="border-b border-gray-700 text-gray-500 text-xs uppercase">
+              <th class="text-left py-2 pr-4">字段</th>
+              <th class="text-left py-2 pr-4">类型</th>
+              <th class="text-left py-2">说明</th>
+            </tr>
+          </thead>
+          <tbody class="text-gray-400">
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">platform</td><td class="pr-4"><code>string</code></td><td>操作系统平台：<code>Android</code>, <code>iOS</code>, <code>Windows</code>, <code>Linux</code>, <code>macOS</code>, ...</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">os_version</td><td class="pr-4"><code>string</code></td><td>操作系统版本</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">device_model</td><td class="pr-4"><code>string</code></td><td>设备型号</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">gpu_name</td><td class="pr-4"><code>string</code></td><td>GPU 名称</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">cpu_name</td><td class="pr-4"><code>string</code></td><td>CPU 名称</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">memory_mb</td><td class="pr-4"><code>number</code></td><td>设备内存（MB）</td></tr>
+          </tbody>
+        </table>
+
+        <!-- 应用信息字段 -->
+        <p class="text-xs text-gray-500 mb-2 mt-4"><span class="tag tag-deprecated">应用信息</span> 版本与包信息</p>
+        <table class="w-full text-sm border-collapse mb-4">
+          <thead>
+            <tr class="border-b border-gray-700 text-gray-500 text-xs uppercase">
+              <th class="text-left py-2 pr-4">字段</th>
+              <th class="text-left py-2 pr-4">类型</th>
+              <th class="text-left py-2">说明</th>
+            </tr>
+          </thead>
+          <tbody class="text-gray-400">
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">app_version</td><td class="pr-4"><code>string</code></td><td>应用版本</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">bundle_id</td><td class="pr-4"><code>string</code></td><td>包名 / Bundle ID</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">client_timestamp</td><td class="pr-4"><code>string</code></td><td>客户端崩溃时间（ISO 8601）</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">custom_data</td><td class="pr-4"><code>object | string</code></td><td>自定义扩展数据（JSON）</td></tr>
+          </tbody>
+        </table>
+
+        <!-- Unity 字段 -->
+        <p class="text-xs text-gray-500 mb-2 mt-4"><span class="tag tag-unity">Unity 专属</span> 为向后兼容保留</p>
+        <table class="w-full text-sm border-collapse mb-4">
+          <thead>
+            <tr class="border-b border-gray-700 text-gray-500 text-xs uppercase">
+              <th class="text-left py-2 pr-4">字段</th>
+              <th class="text-left py-2 pr-4">类型</th>
+              <th class="text-left py-2">说明</th>
+            </tr>
+          </thead>
+          <tbody class="text-gray-400">
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">unity_version</td><td class="pr-4"><code>string</code></td><td>Unity 引擎版本，如 <code>2022.3.10f1</code></td></tr>
+            <tr><td class="py-1.5 pr-4">scene_name</td><td class="pr-4"><code>string</code></td><td>崩溃发生的场景名</td></tr>
+          </tbody>
+        </table>
+
+        <!-- ==================== SDK 示例 ==================== -->
+        <h3 class="font-medium mb-2 mt-6">📋 SDK 示例（C# 与 Python）</h3>
+        <div class="lang-tabs" data-tabs="crash-report">
+          <button class="lang-tab active" data-lang="csharp">C#</button>
+          <button class="lang-tab" data-lang="python">Python</button>
+          <button class="lang-tab" data-lang="curl">cURL</button>
+        </div>
+
+        <!-- C# -->
+        <div class="lang-pane active" data-lang-pane="csharp" data-tabs="crash-report">
+          <p class="text-sm text-gray-400 mb-2">使用 <code>HttpClient</code> 的函数式封装——异步上报崩溃并返回 <code>{ id, group_id, is_new_group }</code>。</p>
+          <pre><code>using System;
+using System.IO;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Threading.Tasks;
+
+public static class CrashReporter
+{
+    private static readonly HttpClient Http = new()
+    {
+        BaseAddress = new Uri("http://localhost:8080/api/v1")
+    };
+
+    /// &lt;summary&gt;以 JSON 上报崩溃，返回 { id, group_id, is_new_group }。&lt;/summary&gt;
+    public static async Task&lt;CrashResult&gt; ReportCrashAsync(
+        string apiKey,
+        string exceptionType,
+        string projectName = null,
+        string exceptionMessage = null,
+        string stackTrace = null,
+        string runtime = null,
+        string runtimeVersion = null,
+        string release = null,
+        string platform = null,
+        string appVersion = null,
+        object customData = null)
+    {
+        var payload = new
+        {
+            exception_type = exceptionType,
+            project_name = projectName,
+            exception_message = exceptionMessage,
+            stack_trace = stackTrace,
+            runtime,
+            runtime_version = runtimeVersion,
+            release,
+            platform,
+            app_version = appVersion,
+            custom_data = customData
+        };
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "crash-report")
+        {
+            Content = new StringContent(
+                JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+        };
+        request.Headers.Add("X-API-Key", apiKey);
+
+        using var response = await Http.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        return JsonSerializer.Deserialize&lt;CrashResult&gt;(
+            await response.Content.ReadAsStringAsync());
+    }
+
+    /// &lt;summary&gt;以 multipart 附件上报崩溃（例如 dump 文件）。&lt;/summary&gt;
+    public static async Task&lt;CrashResult&gt; ReportCrashWithAttachmentAsync(
+        string apiKey, string exceptionType, string stackTrace, string attachmentPath)
+    {
+        using var form = new MultipartFormDataContent
+        {
+            { new StringContent(exceptionType), "exception_type" },
+            { new StringContent(stackTrace), "stack_trace" }
+        };
+        var fileBytes = await File.ReadAllBytesAsync(attachmentPath);
+        form.Add(new ByteArrayContent(fileBytes), "attachments", Path.GetFileName(attachmentPath));
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "crash-report")
+        { Content = form };
+        request.Headers.Add("X-API-Key", apiKey);
+
+        using var response = await Http.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        return JsonSerializer.Deserialize&lt;CrashResult&gt;(
+            await response.Content.ReadAsStringAsync());
+    }
+}
+
+public sealed record CrashResult(
+    [property: JsonPropertyName("id")] long Id,
+    [property: JsonPropertyName("group_id")] long GroupId,
+    [property: JsonPropertyName("is_new_group")] bool IsNewGroup);</code></pre>
+          <p class="text-xs text-gray-500 mt-2">用法：<code>var result = await CrashReporter.ReportCrashAsync(key, "NullReferenceException", stackTrace: "...", runtime: "unity");</code></p>
+        </div>
+
+        <!-- Python -->
+        <div class="lang-pane" data-lang-pane="python" data-tabs="crash-report">
+          <p class="text-sm text-gray-400 mb-2">使用 <code>requests</code> 的函数式封装——返回服务器响应字典 <code>{ "id", "group_id", "is_new_group" }</code>。</p>
+          <pre><code>import requests
+from typing import Any, Optional
+
+API_BASE = "http://localhost:8080/api/v1"
+
+
+def report_crash(
+    exception_type: str,
+    project_name: Optional[str] = None,
+    exception_message: Optional[str] = None,
+    stack_trace: Optional[str] = None,
+    runtime: Optional[str] = None,
+    runtime_version: Optional[str] = None,
+    release: Optional[str] = None,
+    platform: Optional[str] = None,
+    app_version: Optional[str] = None,
+    custom_data: Optional[dict] = None,
+    attachments: Optional[list[str]] = None,
+    api_key: str = "",
+    api_base: str = API_BASE,
+) -> dict[str, Any]:
+    """上报崩溃并返回 {id, group_id, is_new_group}。
+
+    在 `attachments` 中传入文件路径列表可将其作为 multipart
+    文件上传（如 dump、日志文件，最多 10 个附件）。
+    """
+    headers = {"X-API-Key": api_key} if api_key else {}
+    payload = {
+        "exception_type": exception_type,
+        "project_name": project_name,
+        "exception_message": exception_message,
+        "stack_trace": stack_trace,
+        "runtime": runtime,
+        "runtime_version": runtime_version,
+        "release": release,
+        "platform": platform,
+        "app_version": app_version,
+        "custom_data": custom_data,
+    }
+    payload = {k: v for k, v in payload.items() if v is not None}
+
+    if attachments:
+        files = [("attachments", (path, open(path, "rb"))) for path in attachments]
+        try:
+            resp = requests.post(
+                f"{api_base}/crash-report", headers=headers, data=payload, files=files
+            )
+        finally:
+            for _, handle in files:
+                handle[1].close()
+    else:
+        resp = requests.post(f"{api_base}/crash-report", headers=headers, json=payload)
+
+    resp.raise_for_status()
+    return resp.json()</code></pre>
+          <p class="text-xs text-gray-500 mt-2">用法：<code>result = report_crash("ValueError", stack_trace=traceback.format_exc(), runtime="python")</code></p>
+        </div>
+
+        <!-- cURL -->
+        <div class="lang-pane" data-lang-pane="curl" data-tabs="crash-report">
+          <h4 class="text-xs text-gray-500 mb-1 mt-3">Node.js（Express）崩溃</h4>
+          <pre><code>curl -X POST http://localhost:8080/api/v1/crash-report \
+  -H "X-API-Key: &lt;key&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "project_name": "api-gateway",
+    "exception_type": "TypeError",
+    "exception_message": "Cannot read properties of undefined (reading 'id')",
+    "stack_trace": "at UserController.getUser (/app/controllers/user.js:42:15)\n    at Layer.handle (/app/node_modules/express/lib/router/layer.js:95:5)",
+    "runtime": "node",
+    "runtime_version": "20.11.0",
+    "framework": "express",
+    "environment": "production",
+    "server_name": "api-gateway",
+    "release": "abc1234",
+    "app_version": "1.5.2"
+  }'</code></pre>
+
+          <h4 class="text-xs text-gray-500 mb-1 mt-3">multipart 上传（带 dump 附件）</h4>
+          <pre><code>curl -X POST http://localhost:8080/api/v1/crash-report \
+  -H "X-API-Key: &lt;key&gt;" \
+  -F "exception_type=NullReferenceException" \
+  -F "stack_trace=at PlayerController.Update () [0x00000] in ..." \
+  -F "runtime=unity" \
+  -F "runtime_version=2022.3.10f1" \
+  -F "attachments=@crash.dmp"</code></pre>
+        </div>
+
+        <h3 class="font-medium mb-2 mt-4">📤 响应（201 Created）</h3>
+        <pre><code>{
+  "id": 42,
+  "group_id": 7,
+  "is_new_group": false
+}</code></pre>
+        <p class="text-xs text-gray-500 mt-2">分组 hash：<code>SHA256(exception_type | stack_trace | runtime [| project_name])[0:16]</code>。完整堆栈（trim 后，缺失时为 <code>no-stack</code>）参与 hash——堆栈完全一致的崩溃归为一组。提供项目名时项目名也参与，不同项目不会混组。</p>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- 2. 项目源码快照 -->
+      <!-- ============================================================ -->
+      <section id="sources" class="section-card mb-6">
+        <h2 class="text-xl font-semibold mb-4"><span class="method-badge bg-green-600 text-white mr-3">POST</span>/api/v1/project-sources</h2>
+        <p class="text-gray-400 mb-3">上传项目源码快照，供 Crash Analysis 定位崩溃代码行、函数定义和可能的调用位置。源码只作为文本检索——从不执行或编译。</p>
+        <p class="text-sm text-gray-400 mb-2">multipart 字段：<code>project_name</code> 必填（1–100 字符）；<code>release</code> 可选（最大 200 字符）；通过重复的 <code>files</code> 字段提交单个文件，或通过 <code>archive</code> 上传 <code>.tar.gz/.tgz</code> 项目包——两者可以同时使用。内容与最新存储版本完全一致的文件会跳过（<code>deduplicated</code>）；小改动存为补丁（<code>accepted[].storage = "patch"</code>）；全部文件都被去重时不创建快照，<code>snapshot_id</code> 为 <code>null</code>。</p>
+        <p class="text-sm text-gray-400 mb-2">分析时，源码匹配总是读取项目的「当前状态」——每个路径跨快照的最新版本——因此变更文件按新内容匹配、未变文件保持可用、新增文件立即生效。返回的 <code>match_type</code> 仍描述匹配到的快照（<code>release</code> 精确匹配为 <code>exact</code>，否则 <code>latest</code>）。按容器 Tier 限制：T1 10 文件/2 MB，T2 500 文件/200 MB，T3 50000 文件/5 GB，T4/T5 无 Tier 限制；单个源码文件最大 2 MiB。</p>
+        <pre><code>curl -X POST http://localhost:8080/api/v1/project-sources \
+  -H "X-API-Key: &lt;key&gt;" \
+  -F "project_name=api-gateway" \
+  -F "release=abc1234" \
+  -F "archive=@api-gateway.tar.gz"
+
+# 也可以上传多个单个源码文件
+curl -X POST http://localhost:8080/api/v1/project-sources \
+  -H "X-API-Key: &lt;key&gt;" \
+  -F "project_name=api-gateway" \
+  -F "release=abc1234" \
+  -F "files=@src/app.ts;filename=src/app.ts" \
+  -F "files=@src/service.ts;filename=src/service.ts"</code></pre>
+        <h3 class="font-medium mb-2 mt-4">响应（201）</h3>
+        <pre><code>{
+  "project": { "id": 3, "name": "api-gateway" },
+  "release": "abc1234",
+  "snapshot_id": 9,
+  "accepted": [
+    { "path": "src/app.ts", "file_size": 2048, "language": "typescript", "storage": "full" },
+    { "path": "src/config.ts", "file_size": 96, "language": "typescript", "storage": "patch" }
+  ],
+  "deduplicated": ["src/unchanged.ts"],
+  "skipped": [{ "path": "assets/logo.png", "reason": "binary content" }]
+}</code></pre>
+        <p class="text-xs text-gray-500 mt-2">任意文本文件均可上传（不限扩展名；同样支持非 Unity 项目）；拒绝绝对路径、<code>..</code> 路径、二进制文件、超大文件及超限解包内容。</p>
+
+        <!-- 源码去重 -->
+        <div class="mt-6 pt-4 border-t border-gray-700">
+          <h2 class="text-lg font-semibold mb-3">
+            <span class="method-badge bg-purple-600 text-white mr-3">POST</span>
+            /api/v1/source-dedup
+          </h2>
+          <p class="text-gray-400 mb-3">对已存储的源码行执行去重扫荡。服务器启动时自动执行一次，也可手动调用（仅 admin）。</p>
+          <ul class="list-disc list-inside text-sm text-gray-400 space-y-1 ml-2 mb-3">
+            <li>回填旧数据的内容哈希（<code>hashes_backfilled</code>）</li>
+            <li>删除 (项目, 路径, 内容) 完全重复的行，保留最新——删除前先物化依赖它的补丁行</li>
+            <li>清理孤儿磁盘文件（<code>disk_files_removed</code>, <code>orphans_removed</code>）</li>
+          </ul>
+          <pre><code>curl -X POST http://localhost:8080/api/v1/source-dedup \
+  -b cookies.txt \
+  -H "X-CSRF-Token: &lt;token&gt;"</code></pre>
+          <h4 class="text-xs text-gray-500 mt-2">响应</h4>
+          <pre><code>{
+  "success": true,
+  "hashes_backfilled": 12,
+  "duplicates_removed": 3,
+  "disk_files_removed": 2,
+  "orphans_removed": 1
+}</code></pre>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- 3. 玩家反馈 -->
+      <!-- ============================================================ -->
+      <section id="feedback" class="section-card mb-6">
+        <h2 class="text-xl font-semibold mb-4">
+          <span class="method-badge bg-green-600 text-white mr-3">POST</span>
+          /api/v1/player-feedback
+        </h2>
+        <p class="text-gray-400 mb-4">提交玩家发起的 bug 报告、建议或其他反馈。该端点与自动崩溃上报分开存储，不参与崩溃分组。支持 JSON，或 multipart/form-data 上传截图和日志附件。</p>
+
+        <h3 class="font-medium mb-2">📥 请求字段</h3>
+        <table class="w-full text-sm border-collapse mb-4">
+          <thead><tr class="border-b border-gray-700 text-gray-500 text-xs uppercase"><th class="text-left py-2 pr-4">字段</th><th class="text-left py-2 pr-4">类型</th><th class="text-left py-2">说明</th></tr></thead>
+          <tbody class="text-gray-400">
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><strong class="text-gray-200">title</strong> <span class="field-required">*必填</span></td><td class="pr-4"><code>string</code></td><td>反馈标题，最大 200 字符</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><strong class="text-gray-200">description</strong> <span class="field-required">*必填</span></td><td class="pr-4"><code>string</code></td><td>玩家描述的复现步骤、预期结果和实际结果</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">category</td><td class="pr-4"><code>string</code></td><td><code>bug</code>（默认）、<code>suggestion</code> 或 <code>other</code></td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">severity</td><td class="pr-4"><code>string</code></td><td><code>low</code>, <code>normal</code>（默认）, <code>high</code>, <code>critical</code></td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">player_id / player_name / contact</td><td class="pr-4"><code>string</code></td><td>可选的玩家 ID、显示名和联系方式</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">app_version / platform / device_model / scene_name</td><td class="pr-4"><code>string</code></td><td>版本与设备上下文，理想情况下由 Unity 自动填充</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">client_timestamp</td><td class="pr-4"><code>string</code></td><td>玩家提交时间（ISO 8601）</td></tr>
+            <tr><td class="py-1.5 pr-4">custom_data</td><td class="pr-4"><code>object | string</code></td><td>任意额外 JSON 数据</td></tr>
+          </tbody>
+        </table>
+
+        <h3 class="font-medium mb-2 mt-4">📋 JSON 示例</h3>
+        <pre><code>curl -X POST http://localhost:8080/api/v1/player-feedback \
+  -H "X-API-Key: &lt;key&gt;" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "title": "Cannot equip new weapon after purchase",
+    "description": "After buying a weapon in the shop, clicking the equip button does nothing.",
+    "category": "bug",
+    "severity": "high",
+    "player_id": "player-123",
+    "app_version": "2.0.0",
+    "platform": "Android",
+    "device_model": "Samsung Galaxy S24",
+    "scene_name": "Shop"
+  }'</code></pre>
+
+        <h3 class="font-medium mb-2 mt-4">📎 上传截图或日志</h3>
+        <p class="text-sm text-gray-400 mb-2">使用 <code>multipart/form-data</code> 时，将完整 JSON 放入 <code>feedback</code> 字段；重复 <code>attachments</code> 文件字段可上传多个文件，最多 10 个，每个受 <code>MAX_ATTACHMENT_SIZE</code> 限制。</p>
+        <pre><code>curl -X POST http://localhost:8080/api/v1/player-feedback \
+  -H "X-API-Key: &lt;key&gt;" \
+  -F 'feedback={"title":"Quest stuck","description":"Cannot continue after finishing the dialogue","category":"bug"};type=application/json' \
+  -F "attachments=@screenshot.png" \
+  -F "attachments=@Player.log"</code></pre>
+
+        <h3 class="font-medium mb-2 mt-4">📤 响应（201 Created）</h3>
+        <pre><code>{
+  "id": 12,
+  "status": "new",
+  "attachments": [{ "id": 8, "filename": "screenshot.png", "file_size": 243901 }]
+}</code></pre>
+
+        <h3 class="font-medium mt-6 mb-3">🔧 管理端点</h3>
+        <div class="overflow-x-auto mb-4">
+          <table class="w-full text-sm border-collapse">
+            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">方法与路径</th><th class="text-left py-2">鉴权</th><th class="text-left py-2">说明</th></tr></thead>
+            <tbody class="text-gray-400">
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /player-feedback</code></td><td>Session</td><td>反馈列表；查询参数：<code>page</code>, <code>page_size</code>（最大 100）, <code>status</code>（<code>new</code>, <code>in_progress</code>, <code>resolved</code>, <code>closed</code>）, <code>category</code>, <code>search</code></td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /player-feedback/:id</code></td><td>Session</td><td>单条反馈及其附件元数据</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>PUT /player-feedback/:id/status</code></td><td>Session + CSRF</td><td>更新状态：<code>new</code>, <code>in_progress</code>, <code>resolved</code>, <code>closed</code></td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>DELETE /player-feedback/:id</code></td><td>Session + CSRF</td><td>删除反馈（仅 admin）</td></tr>
+              <tr><td class="py-1"><code>GET /download/player-feedback/attachment/:id</code></td><td>Session</td><td>下载反馈附件</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- 4. Unity 专属端点 -->
+      <!-- ============================================================ -->
+      <section id="unity" class="section-card mb-6">
+        <h2 class="text-xl font-semibold mb-4">
+          <span class="method-badge bg-purple-600 text-white mr-3">POST</span>
+          /api/v1/unity/crash-report
+        </h2>
+        <p class="text-gray-400 mb-4">Unity 专属崩溃上报端点。自动填充 <code>runtime="unity"</code> 和 <code>framework="unity"</code>，并将 <code>unity_version</code> 映射为 <code>runtime_version</code>。</p>
+
+        <p class="text-sm text-gray-500 mb-3">参数与通用端点完全一致。额外行为：</p>
+        <ul class="list-disc list-inside text-sm text-gray-400 space-y-1 ml-2">
+          <li>自动设置 <code>runtime = "unity"</code></li>
+          <li>自动设置 <code>framework = "unity"</code></li>
+          <li>未提供 <code>runtime_version</code> 时，自动使用 <code>unity_version</code> 的值</li>
+          <li>支持 Unity IL2CPP 堆栈格式的 hash 分组</li>
+        </ul>
+        <p class="text-sm text-gray-400 mt-2">请求头必须包含 Unity User-Agent，或 <code>X-Client-Type: unity</code>。</p>
+
+        <h4 class="text-xs text-gray-500 mb-1 mt-4">示例</h4>
+        <pre><code>curl -X POST http://localhost:8080/api/v1/unity/crash-report \
+  -H "X-API-Key: &lt;key&gt;" \
+  -H "X-Client-Type: unity" \
+  -H "Content-Type: application/json" \
+  -d '{
+    "exception_type": "NullReferenceException",
+    "exception_message": "Object reference not set to an instance of an object",
+    "stack_trace": "at PlayerController.Update () [0x00000] in /Assets/Scripts/PlayerController.cs:42",
+    "unity_version": "2022.3.10f1",
+    "platform": "Android",
+    "device_model": "Samsung Galaxy S24",
+    "os_version": "Android 14",
+    "scene_name": "Level_01",
+    "app_version": "1.2.3",
+    "bundle_id": "com.example.mygame"
+  }'</code></pre>
+
+        <h3 class="font-medium mb-2 mt-4">📤 响应（201 Created）</h3>
+        <pre><code>{
+  "id": 43,
+  "group_id": 8,
+  "is_new_group": true,
+  "runtime": "unity"
+}</code></pre>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- 5. 崩溃分组 -->
+      <!-- ============================================================ -->
+      <section id="groups" class="section-card mb-6">
+        <h2 class="text-xl font-semibold mb-4">
+          <span class="method-badge bg-blue-600 text-white mr-3">GET</span>
+          /api/v1/crash-groups
+        </h2>
+        <p class="text-gray-400 mb-4">获取崩溃分组列表，支持分页和多维筛选。</p>
+
+        <h3 class="font-medium mb-2">🔍 查询参数</h3>
+        <table class="w-full text-sm border-collapse mb-4">
+          <thead>
+            <tr class="border-b border-gray-700 text-gray-500 text-xs uppercase">
+              <th class="text-left py-2 pr-4">参数</th>
+              <th class="text-left py-2 pr-4">类型</th>
+              <th class="text-left py-2 pr-4">默认值</th>
+              <th class="text-left py-2">说明</th>
+            </tr>
+          </thead>
+          <tbody class="text-gray-400">
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>page</code></td><td class="pr-4">number</td><td class="pr-4">1</td><td>页码</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>page_size</code></td><td class="pr-4">number</td><td class="pr-4">20</td><td>每页数量（最大 100）</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>project_id</code></td><td class="pr-4">number</td><td class="pr-4">-</td><td>项目 ID；传 <code>0</code> 只显示 Unassigned</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>status</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>状态筛选：<code>open</code>, <code>resolved</code>, <code>ignored</code></td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>runtime</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>运行时筛选：<code>node</code>, <code>python</code>, <code>go</code>, <code>unity</code>, ...</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>environment</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>环境筛选：<code>production</code>, <code>staging</code>, <code>development</code></td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>error_severity</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>严重级别筛选：<code>warning</code>, <code>error</code>, <code>fatal</code>, <code>crash</code></td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>platform</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>平台筛选：<code>Android</code>, <code>iOS</code>, <code>Windows</code>, ...</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>app_version</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>应用版本筛选</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>search</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>搜索异常类型或消息（模糊匹配）</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>start_date</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>开始日期（ISO 8601）</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>end_date</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>结束日期（ISO 8601）</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>sort_by</code></td><td class="pr-4">string</td><td class="pr-4">last_seen</td><td>排序字段：<code>last_seen</code>, <code>first_seen</code>, <code>total_count</code>, <code>created_at</code>, <code>id</code></td></tr>
+            <tr><td class="py-1.5 pr-4"><code>sort_order</code></td><td class="pr-4">string</td><td class="pr-4">desc</td><td>排序方式：<code>asc</code>, <code>desc</code></td></tr>
+          </tbody>
+        </table>
+
+        <h3 class="font-medium mb-2 mt-4">📤 响应</h3>
+        <pre><code>{
+  "items": [{
+    "id": 7,
+    "crash_hash": "a1b2c3d4e5f6a7b8",
+    "exception_type": "TypeError",
+    "exception_message": "Cannot read properties of undefined",
+    "first_seen": "2026-07-20T08:00:00.000Z",
+    "last_seen": "2026-07-27T12:30:00.000Z",
+    "total_count": 42,
+    "status": "open",
+    "resolved_version": ""
+  }],
+  "total": 1,
+  "page": 1,
+  "page_size": 20,
+  "total_pages": 1
+}</code></pre>
+
+        <!-- 分组详情 -->
+        <div class="mt-6 pt-4 border-t border-gray-700">
+          <h2 class="text-lg font-semibold mb-3">
+            <span class="method-badge bg-blue-600 text-white mr-3">GET</span>
+            /api/v1/crash-groups/:id
+          </h2>
+          <p class="text-gray-400 mb-3">获取单个崩溃分组详情及其最近的崩溃报告。</p>
+          <pre><code>curl http://localhost:8080/api/v1/crash-groups/7</code></pre>
+          <h4 class="text-xs text-gray-500 mb-1 mt-3">响应</h4>
+          <pre><code>{
+  "id": 7,
+  "crash_hash": "a1b2c3d4e5f6a7b8",
+  "exception_type": "TypeError",
+  "exception_message": "...",
+  "first_seen": "...",
+  "last_seen": "...",
+  "total_count": 42,
+  "status": "open",
+  "recent_reports": [ /* CrashReport[] — 最多 20 条 */ ]
+}</code></pre>
+        </div>
+
+        <!-- 更新状态 -->
+        <div class="mt-6 pt-4 border-t border-gray-700">
+          <h2 class="text-lg font-semibold mb-3">
+            <span class="method-badge bg-yellow-600 text-white mr-3">PUT</span>
+            /api/v1/crash-groups/:id/status
+          </h2>
+          <p class="text-gray-400 mb-3">更新崩溃分组状态（resolve/ignore）。</p>
+          <h4 class="text-xs text-gray-500 mb-1">请求体</h4>
+          <pre><code>{ "status": "resolved", "resolved_version": "1.2.5" }</code></pre>
+          <p class="text-xs text-gray-500 mt-2">合法的 <code>status</code> 值：<code>open</code>, <code>resolved</code>, <code>ignored</code>。<code>resolved_version</code> 可选，记录修复版本。</p>
+          <h4 class="text-xs text-gray-500 mb-1 mt-3">示例</h4>
+          <pre><code>curl -X PUT http://localhost:8080/api/v1/crash-groups/7/status \
+  -H "Content-Type: application/json" \
+  -d '{"status": "resolved", "resolved_version": "1.2.5"}'</code></pre>
+          <h4 class="text-xs text-gray-500 mb-1 mt-3">响应</h4>
+          <pre><code>{ "success": true }</code></pre>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- 6. 崩溃报告与分析 -->
+      <!-- ============================================================ -->
+      <section id="reports" class="section-card mb-6">
+        <h2 class="text-xl font-semibold mb-4">
+          <span class="method-badge bg-blue-600 text-white mr-3">GET</span>
+          /api/v1/crash-reports
+        </h2>
+        <p class="text-gray-400 mb-4">获取单条崩溃报告列表，可按分组、平台和版本筛选。</p>
+
+        <h3 class="font-medium mb-2">🔍 查询参数</h3>
+        <table class="w-full text-sm border-collapse mb-4">
+          <thead>
+            <tr class="border-b border-gray-700 text-gray-500 text-xs uppercase">
+              <th class="text-left py-2 pr-4">参数</th>
+              <th class="text-left py-2 pr-4">类型</th>
+              <th class="text-left py-2">说明</th>
+            </tr>
+          </thead>
+          <tbody class="text-gray-400">
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>page</code></td><td class="pr-4">number</td><td>页码（默认 1）</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>page_size</code></td><td class="pr-4">number</td><td>每页数量（默认 20，最大 100）</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>group_id</code></td><td class="pr-4">number</td><td>按崩溃分组 ID 筛选</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>project_id</code></td><td class="pr-4">number</td><td>按项目 ID 筛选；<code>0</code> 表示 Unassigned</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>platform</code></td><td class="pr-4">string</td><td>平台筛选</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>app_version</code></td><td class="pr-4">string</td><td>应用版本筛选</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>start_date</code></td><td class="pr-4">string</td><td>开始日期</td></tr>
+            <tr><td class="py-1.5 pr-4"><code>end_date</code></td><td class="pr-4">string</td><td>结束日期</td></tr>
+          </tbody>
+        </table>
+
+        <div class="mt-6 pt-4 border-t border-gray-700">
+          <h2 class="text-lg font-semibold mb-3">
+            <span class="method-badge bg-blue-600 text-white mr-3">GET</span>
+            /api/v1/crash-reports/:id
+          </h2>
+          <p class="text-gray-400 mb-3">获取单条崩溃报告详情，包括附件列表和 dump 解析信息。</p>
+          <h4 class="text-xs text-gray-500 mb-1">响应</h4>
+          <pre><code>{
+  "id": 42,
+  "group_id": 7,
+  "exception_type": "TypeError",
+  "exception_message": "...",
+  "stack_trace": "...",
+  "runtime": "node",
+  "runtime_version": "20.11.0",
+  "framework": "express",
+  "environment": "production",
+  "server_name": "api-gateway",
+  "release": "abc1234",
+  "error_severity": "error",
+  "platform": "Linux",
+  "app_version": "1.5.2",
+  "dump_info": "...",
+  "created_at": "2026-07-27T12:30:00.000Z",
+  "attachments": [
+    { "id": 1, "filename": "crash.dmp", "content_type": "application/octet-stream",
+      "file_size": 147200, "download_url": "/api/v1/download/attachment/1" }
+  ]
+}</code></pre>
+        </div>
+
+        <div class="mt-6 pt-4 border-t border-gray-700">
+          <h2 class="text-lg font-semibold mb-3"><span class="method-badge bg-blue-600 text-white mr-3">GET</span>/api/v1/crash-reports/:id/analysis</h2>
+          <p class="text-gray-400 mb-3">返回结构化 Crash Analysis：语言检测、文件树、触发点、着色堆栈链、崩溃路径流程、修复建议，以及匹配源码快照后的真实崩溃代码、函数定义、关联文件和根因候选。</p>
+          <p class="text-sm text-gray-500 mb-2">源码匹配要求报告包含 <code>project_name</code> 且项目已通过 <code>/project-sources</code> 上传源码。优先匹配 <code>release</code>；否则 <code>match_type=latest</code>。匹配总是读取项目的「当前状态」（每个路径跨快照的最新一行）。</p>
+          <pre><code>{
+  "report_id": 42,
+  "exception_type": "TypeError",
+  "exception_message": "...",
+  "detected_language": "typescript",
+  "trigger_point": { "file_path": "src/service.ts", "line_number": 42, "function_name": "loadUser" },
+  "stack_chain": [ /* StackFrame[]，severity: trigger/propagation/source/framework */ ],
+  "summary": "...",
+  "crash_path": [ /* CrashPathStep[] — Python 入口→崩溃点→根因流程 */ ],
+  "suggestions": [ /* FixSuggestion[] — Python 崩溃始终返回 */ ],
+  "source_analysis": {
+    "project_name": "api-gateway",
+    "requested_release": "abc1234",
+    "snapshot_release": "abc1234",
+    "snapshot_id": 9,
+    "match_type": "exact",
+    "files_scanned": 24,
+    "crash_source": { "file_path": "src/service.ts", "line_number": 42, "snippet": "..." },
+    "function_definition": { "file_path": "src/service.ts", "line_number": 35, "snippet": "..." },
+    "references": [],
+    "related_functions": [ /* RelatedFunction[]: caller/callee/stack */ ],
+    "related_files": [ /* RelatedSourceFile[] */ ],
+    "warnings": [],
+    "root_cause_candidates": [ /* RootCauseCandidate[]，含 confidence/evidence — 仅 Python */ ],
+    "fixes": [ /* FixSuggestion[]，含 code_before/code_after — 仅 Python */ ],
+    "crash_path": [ /* CrashPathStep[]，终止于根因节点 — 仅 Python */ ]
+  }
+}</code></pre>
+        </div>
+
+        <div class="mt-6 pt-4 border-t border-gray-700">
+          <h2 class="text-lg font-semibold mb-3"><span class="method-badge bg-blue-600 text-white mr-3">GET</span>/api/v1/crash-reports/:id/symbolication</h2>
+          <p class="text-gray-400">返回 Unity/C# 符号化状态、符号化堆栈、Build GUID、匹配的符号 ID 和警告。</p>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- 7. 文件下载 -->
+      <!-- ============================================================ -->
+      <section id="downloads" class="section-card mb-6">
+        <h2 class="text-xl font-semibold mb-4">⬇️ 文件下载端点</h2>
+
+        <div class="overflow-x-auto mb-4">
+          <table class="w-full text-sm border-collapse">
+            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">方法与路径</th><th class="text-left py-2">鉴权</th><th class="text-left py-2">说明</th></tr></thead>
+            <tbody class="text-gray-400">
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /download/report/:id</code></td><td>Session</td><td>崩溃报告完整 JSON（含附件元数据）</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /download/group/:id</code></td><td>Session</td><td>整个崩溃分组的 JSON（分组信息 + 全部报告）</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /download/dump/:reportId</code></td><td>Session</td><td>dump 解析结果 JSON（含附件下载链接）</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /download/attachment/:id</code></td><td>Session</td><td>原始附件文件（dump 文件、日志文件等）</td></tr>
+              <tr><td class="py-1"><code>GET /download/player-feedback/attachment/:id</code></td><td>Session</td><td>玩家反馈附件</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="space-y-4">
+          <div class="border-l-2 border-blue-500 pl-4">
+            <h3 class="font-medium">
+              <span class="method-badge bg-blue-600 text-white mr-2 text-xs">GET</span>
+              /api/v1/download/report/:id
+            </h3>
+            <pre class="mt-2"><code>curl -O http://localhost:8080/api/v1/download/report/42
+# → crash-report-42.json</code></pre>
+          </div>
+
+          <div class="border-l-2 border-blue-500 pl-4">
+            <h3 class="font-medium">
+              <span class="method-badge bg-blue-600 text-white mr-2 text-xs">GET</span>
+              /api/v1/download/group/:id
+            </h3>
+            <pre class="mt-2"><code>curl -O http://localhost:8080/api/v1/download/group/7
+# → crash-group-7.json</code></pre>
+          </div>
+
+          <div class="border-l-2 border-blue-500 pl-4">
+            <h3 class="font-medium">
+              <span class="method-badge bg-blue-600 text-white mr-2 text-xs">GET</span>
+              /api/v1/download/dump/:reportId
+            </h3>
+            <pre class="mt-2"><code>curl -O http://localhost:8080/api/v1/download/dump/42
+# → dump-info-42.json</code></pre>
+          </div>
+
+          <div class="border-l-2 border-blue-500 pl-4">
+            <h3 class="font-medium">
+              <span class="method-badge bg-blue-600 text-white mr-2 text-xs">GET</span>
+              /api/v1/download/attachment/:id
+            </h3>
+            <pre class="mt-2"><code>curl -O http://localhost:8080/api/v1/download/attachment/1
+# → crash.dmp（原始二进制）</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- 8. 符号文件管理 -->
+      <!-- ============================================================ -->
+      <section id="symbols" class="section-card mb-6">
+        <h2 class="text-xl font-semibold mb-4">
+          <span class="method-badge bg-green-600 text-white mr-3">POST</span>
+          /api/v1/symbols
+        </h2>
+        <p class="text-gray-400 mb-4">上传符号文件（multipart/form-data），用于 dump 符号化。</p>
+
+        <h3 class="font-medium mb-2">📥 表单字段</h3>
+        <table class="w-full text-sm border-collapse mb-4">
+          <thead>
+            <tr class="border-b border-gray-700 text-gray-500 text-xs uppercase">
+              <th class="text-left py-2 pr-4">字段</th>
+              <th class="text-left py-2 pr-4">类型</th>
+              <th class="text-left py-2">说明</th>
+            </tr>
+          </thead>
+          <tbody class="text-gray-400">
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><strong class="text-gray-200">file</strong> <span class="field-required">*必填</span></td><td class="pr-4">file</td><td>符号文件（最大 500 MB）</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><strong>build_guid</strong> <span class="field-required">*必填</span></td><td class="pr-4">string</td><td>Build GUID，用于匹配 dump</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">platform</td><td class="pr-4">string</td><td>平台标识（默认 unknown）</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">symbol_type</td><td class="pr-4">string</td><td><code>symbol_map</code>, <code>dsym</code>, <code>elf</code> 或 <code>unknown</code>；省略时按文件名自动识别</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">module_name</td><td class="pr-4">string</td><td>模块/程序集名称</td></tr>
+            <tr><td class="py-1.5 pr-4">architecture</td><td class="pr-4">string</td><td>架构，如 arm64, x86_64</td></tr>
+          </tbody>
+        </table>
+
+        <pre class="mt-2"><code>curl -X POST http://localhost:8080/api/v1/symbols \
+  -F "file=@libil2cpp.sym.so" \
+  -F "build_guid=a1b2c3d4e5f6a7b8" \
+  -F "platform=Android"</code></pre>
+
+        <h3 class="font-medium mt-6 mb-3">🔧 管理端点</h3>
+        <div class="overflow-x-auto mb-4">
+          <table class="w-full text-sm border-collapse">
+            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">方法与路径</th><th class="text-left py-2">鉴权</th><th class="text-left py-2">说明</th></tr></thead>
+            <tbody class="text-gray-400">
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /symbols</code></td><td>Session</td><td>符号列表；查询参数：<code>page</code>, <code>page_size</code>（最大 200）, <code>platform</code>, <code>build_guid</code></td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /symbols/:id/download</code></td><td>Session</td><td>下载已上传的符号文件</td></tr>
+              <tr><td class="py-1"><code>DELETE /symbols/:id</code></td><td>Session + CSRF</td><td>删除符号文件（仅 admin；同时删除磁盘文件）</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <pre><code>curl -O http://localhost:8080/api/v1/symbols/1/download
+curl -X DELETE http://localhost:8080/api/v1/symbols/1</code></pre>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- 9. Dump 解析 -->
+      <!-- ============================================================ -->
+      <section id="dump" class="section-card mb-6">
+        <h2 class="text-xl font-semibold mb-4">🔬 Dump 解析</h2>
+        <p class="text-gray-400 mb-4">服务内置 dump 解析模块；上传的附件会自动检测并解析，结果保存在 <code>dump_info</code> 字段。</p>
+
+        <h3 class="font-medium mb-3">支持的 Dump 格式</h3>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm border-collapse">
+            <thead>
+              <tr class="border-b border-gray-700 text-gray-500 text-xs uppercase">
+                <th class="text-left py-2 pr-4">格式</th>
+                <th class="text-left py-2 pr-4">扩展名</th>
+                <th class="text-left py-2">解析内容</th>
+              </tr>
+            </thead>
+            <tbody class="text-gray-400">
+              <tr class="border-b border-gray-700/30">
+                <td class="py-2 pr-4"><strong class="text-gray-200">Android Tombstone</strong></td>
+                <td class="pr-4"><code>.txt</code>, <code>.tombstone</code></td>
+                <td>信号、故障地址、backtrace、内存映射、构建指纹、abort 消息</td>
+              </tr>
+              <tr class="border-b border-gray-700/30">
+                <td class="py-2 pr-4"><strong class="text-gray-200">iOS/macOS Crash</strong></td>
+                <td class="pr-4"><code>.crash</code>, <code>.ips</code></td>
+                <td>异常类型、信号、崩溃线程、全部线程 backtrace、二进制镜像、寄存器</td>
+              </tr>
+              <tr class="border-b border-gray-700/30">
+                <td class="py-2 pr-4"><strong class="text-gray-200">Windows Minidump</strong></td>
+                <td class="pr-4"><code>.dmp</code>, <code>.mdmp</code></td>
+                <td>系统信息（OS/CPU）、异常记录、线程列表、模块列表</td>
+              </tr>
+              <tr>
+                <td class="py-2 pr-4"><strong class="text-gray-200">Unity Log</strong></td>
+                <td class="pr-4"><code>.log</code>, <code>.txt</code></td>
+                <td>异常行、堆栈、崩溃上下文（周边行）、Fatal Error / 信号标记</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <p class="text-sm text-gray-500 mt-4">解析器通过文件扩展名和内容特征（<em>启发式</em>）自动检测格式。将任意 dump 放入 <code>attachments</code> 字段即可自动解析。</p>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- 10. 项目、统计与工具 -->
+      <!-- ============================================================ -->
+      <section id="stats" class="section-card mb-6">
+        <h2 class="text-xl font-semibold mb-4">📊 项目、统计与工具端点</h2>
+
+        <div class="overflow-x-auto mb-4">
+          <table class="w-full text-sm border-collapse">
+            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">方法与路径</th><th class="text-left py-2">鉴权</th><th class="text-left py-2">说明</th></tr></thead>
+            <tbody class="text-gray-400">
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /projects</code></td><td>Session</td><td>项目列表及每个项目的 <code>crash_count</code></td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /platforms</code></td><td>Session</td><td>全部已知平台（去重）</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /versions</code></td><td>Session</td><td>全部已知版本号（去重，最多 50 个，最新在前）</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /stats/dashboard</code></td><td>Session</td><td>仪表盘统计数据</td></tr>
+              <tr><td class="py-1"><code>POST /clear-crashes</code></td><td>Session + CSRF</td><td>删除全部崩溃组、报告和崩溃附件（仅 admin，不可逆）</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="space-y-4">
+          <div class="border-l-2 border-blue-500 pl-4">
+            <h3 class="font-medium"><span class="method-badge bg-blue-600 text-white mr-2 text-xs">GET</span>/api/v1/projects</h3>
+            <pre class="mt-2"><code>[{ "id": 3, "name": "api-gateway", "crash_count": 42, "created_at": "...", "updated_at": "..." }]</code></pre>
+          </div>
+
+          <div class="border-l-2 border-blue-500 pl-4">
+            <h3 class="font-medium">
+              <span class="method-badge bg-blue-600 text-white mr-2 text-xs">GET</span>
+              /api/v1/stats/dashboard
+            </h3>
+            <p class="text-xs text-gray-500 mt-1">返回：total_crashes, total_groups, open_groups, resolved_groups, crashes_today, crashes_week, top_crashes[], platform_distribution[], version_distribution[], runtime_distribution[], environment_distribution[], daily_trend[]</p>
+          </div>
+
+          <div class="border-l-2 border-blue-500 pl-4">
+            <h3 class="font-medium">
+              <span class="method-badge bg-blue-600 text-white mr-2 text-xs">GET</span>
+              /api/v1/platforms
+            </h3>
+            <pre class="mt-2"><code># → ["Android", "iOS", "Windows", "Linux"]</code></pre>
+          </div>
+
+          <div class="border-l-2 border-blue-500 pl-4">
+            <h3 class="font-medium">
+              <span class="method-badge bg-blue-600 text-white mr-2 text-xs">GET</span>
+              /api/v1/versions
+            </h3>
+            <pre class="mt-2"><code># → ["1.5.2", "1.5.1", "1.5.0"]</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- 11. 导出 / 导入 -->
+      <!-- ============================================================ -->
+      <section id="export" class="section-card mb-6">
+        <h2 class="text-xl font-semibold mb-4">📦 导出 / 导入</h2>
+        <p class="text-gray-400 mb-4">`.crashpkg` 是 tar.gz 包，包含 manifest、报告 JSON 和附件文件。新格式携带项目名；旧数据包仍可导入。</p>
+
+        <div class="border-l-2 border-green-500 pl-4 mb-4">
+          <h3 class="font-medium">
+            <span class="method-badge bg-green-600 text-white mr-2 text-xs">GET</span>
+            /api/v1/export/group/:id
+          </h3>
+          <p class="text-sm text-gray-400 mt-1">将崩溃分组导出为 <code>.crashpkg</code>（tar.gz），包含 manifest.json、全部报告 JSON 和附件文件。</p>
+          <pre class="mt-2"><code>curl http://localhost:8080/api/v1/export/group/1 -o crash-group-1.crashpkg</code></pre>
+        </div>
+
+        <div class="border-l-2 border-purple-500 pl-4">
+          <h3 class="font-medium">
+            <span class="method-badge bg-purple-600 text-white mr-2 text-xs">POST</span>
+            /api/v1/import
+          </h3>
+          <p class="text-sm text-gray-400 mt-1">导入 <code>.crashpkg</code> 崩溃数据包。<strong>查询参数：</strong><code>confirm=true</code> 执行真实写入，<code>confirm=false</code> 为预检（只检查冲突）。支持 multipart 上传、原始二进制或 base64 编码。</p>
+          <pre class="mt-2"><code># 预检
+curl -X POST "http://localhost:8080/api/v1/import?confirm=false" \
+  -F "package=@crash-group-1.crashpkg"
+
+# 真实导入
+curl -X POST "http://localhost:8080/api/v1/import?confirm=true" \
+  -F "package=@crash-group-1.crashpkg"</code></pre>
+          <h4 class="text-xs text-gray-500 mt-3">预检响应</h4>
+          <pre><code>{
+  "dry_run": true,
+  "conflicts": [{ "crash_hash": "a8002ef4f65bcd40", "existing_group_id": 1 }],
+  "new_groups": 0,
+  "new_reports": 5,
+  "new_attachments": 2
+}</code></pre>
+          <h4 class="text-xs text-gray-500 mt-3">真实导入响应</h4>
+          <pre><code>{
+  "dry_run": false,
+  "conflicts": [],
+  "new_groups": 1,
+  "new_reports": 5,
+  "new_attachments": 2,
+  "group_id": 10
+}</code></pre>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- 12. AI 崩溃助手 -->
+      <!-- ============================================================ -->
+      <section id="ai" class="section-card mb-6">
+        <h2 class="text-xl font-semibold mb-4">
+          <span class="tag tag-ai mr-3 align-middle">AI</span>
+          12. AI 崩溃助手
+        </h2>
+        <p class="text-gray-400 mb-3">面向 <strong>session 登录</strong>的 <code>admin</code>/<code>operator</code> 用户的智能崩溃分析助手。每个用户在 Accounts 页面配置自己的 DeepSeek API Key；Key 永不返回给浏览器，服务端使用 <code>AI_ENCRYPTION_KEY</code> 加密保存。</p>
+        <p class="text-sm text-gray-400 mb-3">助手只读取当前用户有权访问的崩溃、确定性分析以及通过 API 上传的源码快照；没有源码时仅基于崩溃信息推断。</p>
+
+        <h3 class="font-medium mb-2">🤖 Agent 工具</h3>
+        <div class="overflow-x-auto mb-4">
+          <table class="w-full text-sm border-collapse">
+            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2 pr-4">工具</th><th class="text-left py-2 pr-4">说明</th><th class="text-left py-2">安全边界</th></tr></thead>
+            <tbody class="text-gray-400">
+              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>read_source_file</code></td><td class="pr-4">读取已上传的项目源码（路径 / 行号范围 / 列表）</td><td>仅限 DB 中的 <code>relative_path</code>——不接受文件系统路径</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>web_fetch</code></td><td class="pr-4">抓取公开网页（官方文档 / 规范）</td><td>SSRF 防护：连接时校验 IP；拦截私网/环回/链路本地/元数据地址；限制跳数和响应体积</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>run_bash</code></td><td class="pr-4">在每会话独立工作目录复现问题</td><td>默认关闭（<code>AI_BASH_ENABLED=true</code> 开启）；30s 超时、输出上限、最小环境变量、无网络隔离</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>update_tasks</code></td><td class="pr-4">维护自身任务列表</td><td>任务列表加密持久化，跨轮次可见</td></tr>
+              <tr><td class="py-1.5 pr-4"><code>spawn_subagent</code></td><td class="pr-4">派子 Agent 调查子问题</td><td>每轮最多 4 个、无嵌套、无 bash；步数计入总预算</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="text-xs text-gray-500 mb-4">循环步数上限：<code>AI_MAX_TOOL_STEPS</code>（默认 12）。Agent 循环会倍增 provider 调用次数，受每用户 <code>AI_RATE_LIMIT</code>（默认 20/分钟）约束。</p>
+
+        <h3 class="font-medium mb-2">🔌 端点</h3>
+        <div class="overflow-x-auto mb-4">
+          <table class="w-full text-sm border-collapse">
+            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">方法与路径</th><th class="text-left py-2">鉴权</th><th class="text-left py-2">说明</th></tr></thead>
+            <tbody class="text-gray-400">
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /ai/status</code></td><td>Session</td><td>AI 可用状态：provider、configured、model、models、会话数</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /ai/crashes</code></td><td>Session</td><td>最近的崩溃分组（25 条），用于绑定会话；查询参数：<code>search</code></td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /ai/crash-context/:groupId</code></td><td>Session</td><td>授权崩溃摘要；查询参数：<code>report_id</code>（可选）</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /ai/conversations</code></td><td>Session</td><td>列出当前用户未过期的会话</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /ai/conversations</code></td><td>Session + CSRF</td><td>创建会话，可选绑定 <code>group_id</code> / <code>report_id</code></td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /ai/conversations/:id/attach</code></td><td>Session + CSRF</td><td>将崩溃绑定到已有会话</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /ai/conversations/:id</code></td><td>Session</td><td>读取自己的会话：<code>messages</code>, <code>events</code>, <code>tasks</code></td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>DELETE /ai/conversations/:id</code></td><td>Session + CSRF</td><td>删除自己的会话（同时删除其 bash 工作目录）</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /ai/conversations/:id/messages</code></td><td>Session + CSRF</td><td>发送消息；以 SSE 流式返回事件</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /auth/ai-provider</code></td><td>Session</td><td>Provider 状态（永不返回 Key）</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>PUT /auth/ai-provider</code></td><td>Session + CSRF</td><td>保存 / 替换 DeepSeek Key</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>DELETE /auth/ai-provider</code></td><td>Session + CSRF</td><td>删除当前用户的 provider</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /auth/ai-provider/keys</code></td><td>Session</td><td>列出已配置的 provider Key（仅元数据）</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /auth/ai-provider/keys</code></td><td>Session + CSRF</td><td>添加 provider Key</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>PATCH /auth/ai-provider/keys/:id</code></td><td>Session + CSRF</td><td>更新 Key（如启用/禁用）</td></tr>
+              <tr><td class="py-1"><code>DELETE /auth/ai-provider/keys/:id</code></td><td>Session + CSRF</td><td>删除 provider Key</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="font-medium mb-2">📡 SSE 流事件（POST /ai/conversations/:id/messages）</h3>
+        <div class="overflow-x-auto mb-4">
+          <table class="w-full text-sm border-collapse">
+            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2 pr-4">事件</th><th class="text-left py-2">载荷</th></tr></thead>
+            <tbody class="text-gray-400">
+              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>delta</code> / <code>reasoning</code></td><td>最终答案 / 思考文本分片</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>tool_call</code></td><td><code>{ id, name, args, group }</code></td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>tool_result</code></td><td><code>{ id, name, status, ok, summary, group }</code></td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>subagent</code></td><td><code>{ id, status, prompt, summary, group }</code></td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>tasks</code></td><td><code>{ tasks }</code></td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>done</code></td><td><code>{ message, context, key_id, tasks }</code></td></tr>
+              <tr><td class="py-1.5 pr-4"><code>error</code></td><td><code>{ error, message }</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="text-xs text-gray-500">会话在 <code>AI_RETENTION_DAYS</code>（默认 30 天）后过期，仅创建者可见。消息正文与 Agent 事件使用 AES-256-GCM 加密保存，受每用户限流、消息长度和消息数量限制。</p>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- 13. 账户、2FA 与 API Key -->
+      <!-- ============================================================ -->
+      <section id="account" class="section-card mb-6">
+        <h2 class="text-xl font-semibold mb-4">
+          <span class="tag tag-auth mr-3 align-middle">Auth</span>
+          13. 账户、2FA 与 API Key
+        </h2>
+        <p class="text-gray-400 mb-3">以下端点均在 <code>/api/v1/auth</code> 下，需要 Session Cookie；修改类请求还需 <code>X-CSRF-Token</code>。访问按角色限制（admin / operator / viewer）。</p>
+
+        <h3 class="font-medium mb-2">🔑 会话与初始化</h3>
+        <div class="overflow-x-auto mb-4">
+          <table class="w-full text-sm border-collapse">
+            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">方法与路径</th><th class="text-left py-2">说明</th></tr></thead>
+            <tbody class="text-gray-400">
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /setup-status</code> · <code>POST /setup</code></td><td>首次运行初始化（UltraAdmin）</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /login</code></td><td>登录；可能返回 <code>email_verification</code> / <code>two_factor</code> 下一步</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /login/verify-email</code> · <code>/login/resend-email</code></td><td>登录邮箱验证步骤（admin）</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /login/totp</code></td><td>登录 TOTP 验证步骤（admin）</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /logout</code> · <code>GET /me</code> · <code>GET /csrf</code></td><td>登出、当前用户信息、CSRF token</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="font-medium mb-2">🛡️ 双因素认证（admin）</h3>
+        <div class="overflow-x-auto mb-4">
+          <table class="w-full text-sm border-collapse">
+            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">方法与路径</th><th class="text-left py-2">说明</th></tr></thead>
+            <tbody class="text-gray-400">
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /2fa/challenge</code> · <code>/2fa/verify</code> · <code>/2fa/resend</code></td><td>敏感账户操作的发起挑战 / 验证 / 重发</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>PATCH /me/two-factor-method</code></td><td>切换 2FA 方式（邮箱 / TOTP）</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>PATCH /me/verify-email-on-login</code></td><td>开关「每次登录邮箱验证」（admin）</td></tr>
+              <tr><td class="py-1"><code>GET /me/totp/setup</code> · <code>POST /me/totp/enable</code> · <code>/me/totp/disable</code></td><td>TOTP 管理</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="font-medium mb-2">📧 邮箱与手机</h3>
+        <div class="overflow-x-auto mb-4">
+          <table class="w-full text-sm border-collapse">
+            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">方法与路径</th><th class="text-left py-2">说明</th></tr></thead>
+            <tbody class="text-gray-400">
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /me/emails</code> · <code>POST /me/emails</code> · <code>DELETE /me/emails/:id</code></td><td>列出 / 添加 / 删除邮箱</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /me/emails/:id/verify</code> · <code>/primary</code> · <code>/resend</code></td><td>验证、设为主邮箱、重发验证</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /me/phones</code> · <code>POST /me/phones</code> · <code>DELETE /me/phones/:id</code></td><td>列出 / 添加 / 删除手机</td></tr>
+              <tr><td class="py-1"><code>POST /me/phones/:id/verify</code> · <code>/primary</code> · <code>/resend</code></td><td>验证、设为主号码、重发验证</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="font-medium mb-2">👥 用户、API Key 与密码</h3>
+        <div class="overflow-x-auto mb-4">
+          <table class="w-full text-sm border-collapse">
+            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">方法与路径</th><th class="text-left py-2">说明</th></tr></thead>
+            <tbody class="text-gray-400">
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /users</code> · <code>POST /users</code> · <code>PATCH /users/:id</code></td><td>用户管理（admin）</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>PUT /users/:id/password</code></td><td>修改密码（自己，或 admin/operator 改他人）</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /forgot-password</code> · <code>/forgot-password/totp</code> · <code>/forgot-password/verify-email</code></td><td>发起密码重置</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /reset-request/:token</code> · <code>POST /reset-request/:token/approve</code></td><td>查看 / 审批重置请求（admin）</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /api-keys</code> · <code>POST /api-keys</code> · <code>DELETE /api-keys/:id</code></td><td>管理 API Key；明文 Key 只在创建时返回一次</td></tr>
+              <tr><td class="py-1"><code>PATCH /api-keys/:id/tier</code> · <code>PATCH /api-keys/:id/limits</code></td><td>修改 Key 层级 / 配额（admin）：<code>minute_limit</code> 和 <code>daily_limit</code>，整数 0–1000000000，<code>0</code> 表示不限量</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="font-medium mb-2">🗂️ 容器（UltraAdmin）</h3>
+        <div class="overflow-x-auto mb-4">
+          <table class="w-full text-sm border-collapse">
+            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">方法与路径</th><th class="text-left py-2">说明</th></tr></thead>
+            <tbody class="text-gray-400">
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /containers</code> · <code>POST /containers</code> · <code>DELETE /containers/:id</code></td><td>容器管理（多租户隔离）</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /containers/active</code> · <code>GET /containers/:id/status</code></td><td>容器状态</td></tr>
+              <tr><td class="py-1"><code>POST /containers/:id/ban</code> · <code>/unban</code> · <code>POST /containers/:id/users</code></td><td>封禁 / 解封容器、添加用户</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="text-xs text-gray-500">API Key 层级：<code>admin</code>, <code>operator</code>, <code>viewer</code>。viewer Key 不能写入；operator/admin Key 可以调用上报端点。</p>
+      </section>
+
+      <!-- 页脚 -->
+      <div class="text-center text-xs text-gray-600 mt-8 pb-8">
+        <p>Crash Report Server · 跨平台崩溃上报服务</p>
+        <p class="mt-1">Base URL: <code class="text-gray-500">http://localhost:8080/api/v1</code></p>
+      </div>
+    </main>
+  </div>
+
+  <!-- 语言页签 + 目录高亮 -->
+  <script>
+    // 语言页签
+    document.querySelectorAll('.lang-tabs').forEach(function (tabs) {
+      var group = tabs.getAttribute('data-tabs');
+      tabs.querySelectorAll('.lang-tab').forEach(function (tab) {
+        tab.addEventListener('click', function () {
+          tabs.querySelectorAll('.lang-tab').forEach(function (t) { t.classList.remove('active'); });
+          tab.classList.add('active');
+          document.querySelectorAll('.lang-pane[data-tabs="' + group + '"]').forEach(function (pane) {
+            pane.classList.toggle('active', pane.getAttribute('data-lang-pane') === tab.getAttribute('data-lang'));
+          });
+        });
+      });
+    });
+
+    // 侧边栏当前章节高亮
+    var sections = document.querySelectorAll('main section[id]');
+    var links = document.querySelectorAll('.toc-link[data-section]');
+    if ('IntersectionObserver' in window) {
+      var observer = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            links.forEach(function (link) {
+              link.classList.toggle('toc-active', link.getAttribute('data-section') === entry.target.id);
+            });
+          }
+        });
+      }, { rootMargin: '-20% 0px -70% 0px' });
+      sections.forEach(function (section) { observer.observe(section); });
+    }
+  </script>
+</body>
+</html>

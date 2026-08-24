@@ -95,4 +95,9 @@ router.get('/api-doc', (_req: Request, res: Response): void => {
   res.type('html').send(html);
 });
 
+router.get('/api-doc-zh', (_req: Request, res: Response): void => {
+  const html = readFileSync(resolve(templatesDir, 'pages', 'app', 'api-doc-zh.html'), 'utf-8');
+  res.type('html').send(html);
+});
+
 export default router;
