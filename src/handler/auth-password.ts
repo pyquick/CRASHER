@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import * as auth from '../auth.js';
+import { config } from '../config.js';
 import { sendResetApprovalEmail, sendVerificationEmail } from '../notification/service.js';
 import { rateLimit, requireApiAuth, requireCsrf, requireRole } from '../middleware.js';
 import { maskEmail } from './auth-common.js';
@@ -61,6 +62,10 @@ router.post('/forgot-password/totp', rateLimit({
   const user = auth.lookupUserByUsername(username);
   if (!user || user.role !== 'admin' || !user.totp_enabled) {
     res.status(400).json({ error: 'Bad Request', message: 'Invalid request' });
+    return;
+  }
+  if (!config.emailEnabled) {
+    res.status(400).json({ error: 'Bad Request', message: 'Email verification is disabled on this server. Contact another administrator for help.' });
     return;
   }
   if (!auth.verifyTotp(user.id, totpCode)) {

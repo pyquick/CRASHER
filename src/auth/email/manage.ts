@@ -2,6 +2,7 @@ import { createHash } from 'crypto';
 import type { UserEmail } from '../../model.js';
 import * as store from '../../database/auth-store.js';
 import * as contactStore from '../../database/auth-contact-store.js';
+import { config } from '../../config.js';
 import { nowSqlDateTimePlusMinutes } from '../../shared/date.js';
 
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -103,6 +104,7 @@ export function isVerifyEmailOnLogin(userId: number): boolean {
 }
 
 export function setVerifyEmailOnLogin(userId: number, enabled: boolean): void {
+  if (!config.emailEnabled) throw new Error('Email verification is disabled on this server');
   const user = store.findUserById(userId);
   if (!user) throw new Error('User not found');
   if (user.role !== 'admin') throw new Error('Only administrators can enable login email verification');

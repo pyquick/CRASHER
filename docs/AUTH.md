@@ -49,6 +49,8 @@ fetch('/api/v1/crash-report?api_key=crs_xxx')  // ❌ 密钥泄露在日志中
 
 登录链：密码校验 → （可选）邮箱身份验证 → （可选）TOTP → 创建会话。两个步骤均为**开关控制**，仅 `admin` 角色可用；其他角色（含 ultraadmin）为纯密码登录。
 
+> `SMTP_HOST`、`SMTP_PORT`、`SMTP_SECURE`、`SMTP_USER`、`SMTP_PASSWORD`、`ALERT_EMAIL_FROM`、`ALERT_EMAIL_TO`、`ALERT_ON_NEW_GROUP`、`ALERT_THRESHOLD_COUNT` 任一未设置时，邮箱验证整体禁用（邮箱管理、登录邮箱验证、邮箱 2FA、管理员自助重置均不可用，UI 中完全隐藏）。
+
 | 步骤 | 开关（Accounts 页） | 开启条件 | 说明 |
 |------|--------------------|----------|------|
 | 邮箱验证 | Verify email on every login | 至少一个已验证邮箱 | 验证码发到主邮箱，证明登录者掌控邮箱 |

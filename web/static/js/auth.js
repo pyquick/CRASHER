@@ -57,6 +57,7 @@
       },
 
       openEmail(mode, opts) {
+        if (!(window.FEATURES && window.FEATURES.emailEnabled)) return;
         opts = opts || {};
         const e = this.email;
         e.open = true;
@@ -208,6 +209,7 @@
     Alpine.data('authFlow', () => ({
       username: '', password: '', email: '', confirmPassword: '',
       containerId: '', containers: [], loading: false, checking: true, needsSetup: false, errorMsg: '',
+      emailEnabled: (window.FEATURES && window.FEATURES.emailEnabled) === true,
 
       async checkSetup() {
         try {
@@ -236,7 +238,7 @@
         this.loading = true;
         try {
           const body = { username: this.username, password: this.password };
-          if (this.email) body.email = this.email;
+          if (this.emailEnabled && this.email) body.email = this.email;
           const res = await fetch('/api/v1/auth/setup', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },

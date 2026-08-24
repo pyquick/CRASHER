@@ -1,7 +1,7 @@
 <div x-data="accountSecurity" x-init="load()" class="space-y-8">
 
   <!-- ── Email Addresses ── -->
-  <section class="bg-surface-900 border border-gray-800 rounded-xl p-5">
+  <section x-show="emailEnabled" class="bg-surface-900 border border-gray-800 rounded-xl p-5">
     <div class="flex items-center justify-between mb-1">
       <h2 class="text-lg font-semibold">Email Addresses</h2>
       <button @click="addEmail" class="btn btn-blue btn-sm">Add Email</button>
@@ -178,11 +178,11 @@
     </div>
   </section>
 
-  <!-- ── AI Provider ── -->
-  <section class="bg-surface-900 border border-gray-800 rounded-xl p-5">
+  <!-- ── AI Provider (hidden unless AI_ENCRYPTION_KEY is configured) ── -->
+  <section x-data="aiProviderSettings" x-init="load()" x-show="serverReady" class="bg-surface-900 border border-gray-800 rounded-xl p-5">
     <h2 class="text-lg font-semibold mb-1">AI Provider</h2>
     <p class="text-sm text-gray-500 mb-4">Add up to 10 DeepSeek API keys. Crash data and uploaded source code may be sent to the provider for analysis. Full keys are never shown again.</p>
-    <div x-data="aiProviderSettings" x-init="load()">
+    <div>
       <div class="grid md:grid-cols-3 gap-3 items-end">
         <label class="text-sm text-gray-400">Provider
           <select x-model="provider" class="fc w-full mt-1"><option value="deepseek">DeepSeek</option></select>
@@ -215,7 +215,6 @@
       </div>
 
       <p x-show="message" x-text="message" class="text-sm mt-3" :class="failed ? 'text-red-400' : 'text-green-400'"></p>
-      <p x-show="!serverReady" class="text-sm mt-3 text-yellow-400">AI is disabled by the server administrator until AI_ENCRYPTION_KEY is configured.</p>
     </div>
   </section>
 

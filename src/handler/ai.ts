@@ -97,7 +97,9 @@ function conversationResponse(userId: number, conversationId: number) {
   const now = nowSqlDateTime();
   const conversation = store.getAiConversationForOwner(conversationId, userId, now);
   if (!conversation) return null;
-  const messages = store.listAiMessages(conversationId, userId, config.aiMaxMessagesPerConversation)
+  // SQLite treats a negative LIMIT as unlimited (AI_MAX_MESSAGES_PER_CONVERSATION = 0).
+  const messageLimit = config.aiMaxMessagesPerConversation > 0 ? config.aiMaxMessagesPerConversation : -1;
+  const messages = store.listAiMessages(conversationId, userId, messageLimit)
     .filter(message => message.encrypted_content)
     .map(message => decryptMessage(userId, message));
   const events = store.listAiAgentEvents(conversationId, userId).map(event => decryptAgentEvent(userId, event));
@@ -159,7 +161,7 @@ router.get('/conversations', requireRole('admin', 'operator'), (req: Request, re
 router.post('/conversations', requireRole('admin', 'operator'), (req: Request, res: Response): void => {
   if (!requireSessionRole(req, res)) return;
   if (!isAiEncryptionConfigured()) { res.status(503).json({ error: 'AI_UNAVAILABLE', message: 'AI encryption is not configured on the server' }); return; }
-  if (store.countAiConversations(req.authUser!.id, nowSqlDateTime()) >= config.aiMaxConversations) {
+  if (config.aiMaxConversations > 0 && store.countAiConversations(req.authUser!.id, nowSqlDateTime()) >= config.aiMaxConversations) {
     res.status(400).json({ error: 'AI_CONVERSATION_LIMIT', message: 'Conversation limit reached' }); return;
   }
   const groupId = req.body?.group_id === null || req.body?.group_id === undefined ? null : parsePositiveId(req.body.group_id);
@@ -218,7 +220,7 @@ router.post('/conversations/:id/messages', aiLimiter, requireRole('admin', 'oper
   const now = nowSqlDateTime();
   const conversation = store.getAiConversationForOwner(id, req.authUser!.id, now);
   if (!conversation) { res.status(404).json({ error: 'Not Found', message: 'Conversation not found or expired' }); return; }
-  if (store.countAiMessages(id, req.authUser!.id) + 2 > config.aiMaxMessagesPerConversation) {
+  if (config.aiMaxMessagesPerConversation > 0 && store.countAiMessages(id, req.authUser!.id) + 2 > config.aiMaxMessagesPerConversation) {
     res.status(400).json({ error: 'AI_MESSAGE_LIMIT', message: 'Conversation message limit reached' }); return;
   }
   const selectedModel = requestedModel && AI_PROVIDER_MODELS.some(model => model.value === requestedModel)

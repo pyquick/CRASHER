@@ -1,6 +1,7 @@
 import type { TwoFactorMethod } from '../../model.js';
 import * as contactStore from '../../database/auth-contact-store.js';
 import { createTokenStore } from '../../shared/verification.js';
+import { config } from '../../config.js';
 import { getUserById } from '../user.js';
 
 // ── MFA session (short-lived, set as a cookie after a successful 2FA verify) ──
@@ -24,7 +25,7 @@ export function getAvailable2FAMethods(userId: number): TwoFactorMethod[] {
   const methods: TwoFactorMethod[] = [];
   const user = getUserById(userId);
   if (user?.role === 'admin' && user.totp_enabled) methods.push('totp');
-  if (contactStore.countVerifiedEmails(userId) > 0) methods.push('email');
+  if (config.emailEnabled && contactStore.countVerifiedEmails(userId) > 0) methods.push('email');
   if (contactStore.countVerifiedPhones(userId) > 0) methods.push('sms');
   return methods;
 }

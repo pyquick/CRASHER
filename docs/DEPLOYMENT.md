@@ -109,6 +109,8 @@ CMD ["node", "dist/main.js"]
 | `ALERT_ON_NEW_GROUP` | 新崩溃组时发送通知 |
 | `ALERT_THRESHOLD_COUNT` | 崩溃达到此数量时告警 |
 
+> 所有 email 功能（邮箱验证、邮件告警、重置审批邮件等）要求 `SMTP_HOST`、`SMTP_PORT`、`SMTP_SECURE`、`SMTP_USER`、`SMTP_PASSWORD`、`ALERT_EMAIL_FROM`、`ALERT_EMAIL_TO`、`ALERT_ON_NEW_GROUP`、`ALERT_THRESHOLD_COUNT` 全部设置；任一未设置时 email 功能自动禁用，并在 UI 中完全隐藏。
+
 ### AI 助手
 
 | 变量 | 默认值 | 说明 |
@@ -117,6 +119,8 @@ CMD ["node", "dist/main.js"]
 | `AI_DEEPSEEK_MODEL` | `deepseek-chat` | 服务端固定使用的 DeepSeek 模型 |
 | `AI_REQUEST_TIMEOUT_MS` | 60000 | 单次上游请求超时 |
 | `AI_RATE_LIMIT` | 20 | 每用户每分钟 AI 请求数 |
+| `AI_MAX_CONVERSATIONS` | 50 | 每用户最大会话数；0 = 不限 |
+| `AI_MAX_MESSAGES_PER_CONVERSATION` | 100 | 每会话最大消息数；0 = 不限 |
 | `AI_RETENTION_DAYS` | 30 | 聊天会话默认保留天数，仅创建者可见 |
 
 AI 只读取授权崩溃和已通过 API 上传的源码快照，不执行命令、不修改文件、不访问远程仓库。配置 DeepSeek 后，相关崩溃/源码内容会发送给 DeepSeek，请按组织的数据处理要求配置。

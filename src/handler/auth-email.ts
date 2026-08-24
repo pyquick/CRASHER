@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import * as auth from '../auth.js';
+import { config } from '../config.js';
 import { sendVerificationEmail } from '../notification/service.js';
 import { requireApiAuth, requireCsrf, requireRole } from '../middleware.js';
 import { resolve2FA } from './auth-common.js';
@@ -7,6 +8,16 @@ import { resolve2FA } from './auth-common.js';
 const router = Router();
 
 // ── Email Management Routes ──
+
+// Email verification requires a fully configured SMTP stack; otherwise the
+// feature is disabled entirely (the UI hides it as well).
+router.use((_req, res, next) => {
+  if (!config.emailEnabled) {
+    res.status(503).json({ error: 'EMAIL_DISABLED', message: 'Email verification is disabled: SMTP is not fully configured' });
+    return;
+  }
+  next();
+});
 
 router.get('/me/emails', requireApiAuth, (req: Request, res: Response): void => {
   res.json({ items: auth.listEmails(req.authUser!.id) });

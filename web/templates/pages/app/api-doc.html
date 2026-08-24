@@ -1,4 +1,3 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -19,171 +18,404 @@
     .tag-unity { background: rgba(167,139,250,0.15); color: #c4b5fd; }
     .tag-device { background: rgba(52,211,153,0.15); color: #6ee7b7; }
     .tag-deprecated { background: rgba(251,191,36,0.15); color: #fcd34d; }
-    .toc-link { transition: color 0.15s; }
+    .tag-ai { background: rgba(244,114,182,0.15); color: #f9a8d4; }
+    .tag-auth { background: rgba(148,163,184,0.15); color: #cbd5e1; }
+    .toc-link { transition: color 0.15s, background 0.15s; display: block; padding: 3px 8px; border-radius: 6px; }
     .toc-link:hover { color: #93c5fd; }
+    .toc-link.toc-active { color: #93c5fd; background: rgba(96,165,250,0.12); }
+    .toc-group { font-size: 0.6875rem; text-transform: uppercase; letter-spacing: 0.08em; color: #64748b; margin: 14px 0 6px; padding-left: 8px; }
+    .lang-tabs { display: flex; gap: 8px; margin-bottom: 8px; }
+    .lang-tab { padding: 3px 12px; border-radius: 6px; font-size: 0.75rem; font-weight: 600; cursor: pointer; background: rgba(148,163,184,0.15); color: #94a3b8; }
+    .lang-tab.active { background: rgba(96,165,250,0.2); color: #93c5fd; }
+    .lang-pane { display: none; }
+    .lang-pane.active { display: block; }
+    html { scroll-behavior: smooth; }
+    .endpoint-row code { font-size: 0.75rem; }
   </style>
 </head>
 <body class="bg-gray-950 text-gray-100 min-h-screen">
-  <div class="max-w-5xl mx-auto px-4 py-8">
-    <div class="mb-8">
-      <h1 class="text-3xl font-bold mb-2">📋 API Documentation</h1>
-      <p class="text-gray-400">Cross-platform crash reporting service · Generic REST API · v1</p>
+
+  <!-- ============ Layout: sidebar + main ============ -->
+  <div class="lg:flex">
+
+    <!-- Sidebar (desktop) -->
+    <aside class="hidden lg:block lg:w-72 lg:shrink-0">
+      <nav class="sticky top-0 h-screen overflow-y-auto border-r border-gray-800 p-5">
+        <div class="mb-4">
+          <h1 class="text-lg font-bold tracking-tight">💥 Crash Reporter</h1>
+          <p class="text-xs text-gray-500 mt-1">API Documentation</p>
+        </div>
+        <p class="text-[11px] text-gray-600 px-2">Base URL: <code class="text-gray-500">/api/v1</code></p>
+
+        <div class="toc-group">Getting Started</div>
+        <ul class="space-y-0.5 text-sm text-gray-400">
+          <li><a href="#auth" class="toc-link" data-section="auth">0. Authentication &amp; Permissions</a></li>
+        </ul>
+
+        <div class="toc-group">Crash Ingest</div>
+        <ul class="space-y-0.5 text-sm text-gray-400">
+          <li><a href="#generic" class="toc-link" data-section="generic">1. Generic Crash Reporting</a></li>
+          <li><a href="#sources" class="toc-link" data-section="sources">2. Project Source Snapshots</a></li>
+          <li><a href="#feedback" class="toc-link" data-section="feedback">3. Player Feedback</a></li>
+          <li><a href="#unity" class="toc-link" data-section="unity">4. Unity-Specific Endpoints</a></li>
+        </ul>
+
+        <div class="toc-group">Query &amp; Analysis</div>
+        <ul class="space-y-0.5 text-sm text-gray-400">
+          <li><a href="#groups" class="toc-link" data-section="groups">5. Crash Groups</a></li>
+          <li><a href="#reports" class="toc-link" data-section="reports">6. Crash Reports &amp; Analysis</a></li>
+          <li><a href="#downloads" class="toc-link" data-section="downloads">7. File Downloads</a></li>
+          <li><a href="#symbols" class="toc-link" data-section="symbols">8. Symbol Management</a></li>
+          <li><a href="#dump" class="toc-link" data-section="dump">9. Dump Parsing</a></li>
+        </ul>
+
+        <div class="toc-group">Data &amp; Tools</div>
+        <ul class="space-y-0.5 text-sm text-gray-400">
+          <li><a href="#stats" class="toc-link" data-section="stats">10. Projects, Stats &amp; Utilities</a></li>
+          <li><a href="#export" class="toc-link" data-section="export">11. Export / Import</a></li>
+        </ul>
+
+        <div class="toc-group">AI Assistant</div>
+        <ul class="space-y-0.5 text-sm text-gray-400">
+          <li><a href="#ai" class="toc-link" data-section="ai">12. AI Crash Assistant</a></li>
+        </ul>
+
+        <div class="toc-group">Account &amp; Security</div>
+        <ul class="space-y-0.5 text-sm text-gray-400">
+          <li><a href="#account" class="toc-link" data-section="account">13. Account, 2FA &amp; API Keys</a></li>
+        </ul>
+      </nav>
+    </aside>
+
+    <!-- Mobile TOC -->
+    <div class="lg:hidden px-4 pt-4">
+      <details class="section-card !p-3 mb-4">
+        <summary class="text-sm font-semibold cursor-pointer">📑 Table of Contents</summary>
+        <ul class="mt-3 space-y-1 text-sm text-gray-400">
+          <li><a href="#auth" class="toc-link">0. Authentication &amp; Permissions</a></li>
+          <li><a href="#generic" class="toc-link">1. Generic Crash Reporting</a></li>
+          <li><a href="#sources" class="toc-link">2. Project Source Snapshots</a></li>
+          <li><a href="#feedback" class="toc-link">3. Player Feedback</a></li>
+          <li><a href="#unity" class="toc-link">4. Unity-Specific Endpoints</a></li>
+          <li><a href="#groups" class="toc-link">5. Crash Groups</a></li>
+          <li><a href="#reports" class="toc-link">6. Crash Reports &amp; Analysis</a></li>
+          <li><a href="#downloads" class="toc-link">7. File Downloads</a></li>
+          <li><a href="#symbols" class="toc-link">8. Symbol Management</a></li>
+          <li><a href="#dump" class="toc-link">9. Dump Parsing</a></li>
+          <li><a href="#stats" class="toc-link">10. Projects, Stats &amp; Utilities</a></li>
+          <li><a href="#export" class="toc-link">11. Export / Import</a></li>
+          <li><a href="#ai" class="toc-link">12. AI Crash Assistant</a></li>
+          <li><a href="#account" class="toc-link">13. Account, 2FA &amp; API Keys</a></li>
+        </ul>
+      </details>
     </div>
 
-    <!-- TOC -->
-    <div class="section-card mb-8">
-      <h2 class="text-lg font-semibold mb-3">📑 Table of Contents</h2>
-      <ul class="grid grid-cols-1 sm:grid-cols-2 gap-1 text-sm text-gray-400">
-        <li><a href="#auth" class="toc-link">0. Authentication &amp; Permissions</a></li>
-        <li><a href="#generic" class="toc-link">1. Generic Crash Reporting</a></li>
-        <li><a href="#sources" class="toc-link">2. Project Source Snapshots</a></li>
-        <li><a href="#feedback" class="toc-link">3. Player Feedback</a></li>
-        <li><a href="#unity" class="toc-link">4. Unity-Specific Endpoints</a></li>
-        <li><a href="#groups" class="toc-link">5. Crash Groups</a></li>
-        <li><a href="#reports" class="toc-link">6. Crash Reports &amp; Analysis</a></li>
-        <li><a href="#downloads" class="toc-link">7. File Downloads</a></li>
-        <li><a href="#symbols" class="toc-link">8. Symbol Management</a></li>
-        <li><a href="#dump" class="toc-link">9. Dump Parsing</a></li>
-        <li><a href="#stats" class="toc-link">10. Projects, Stats &amp; Utilities</a></li>
-        <li><a href="#export" class="toc-link">11. Export / Import</a></li>
-      </ul>
-    </div>
+    <!-- Main content -->
+    <main class="flex-1 max-w-5xl mx-auto px-4 py-8 lg:px-8">
+      <div class="mb-8">
+        <h1 class="text-3xl font-bold mb-2">📋 API Documentation</h1>
+        <p class="text-gray-400">Cross-platform crash reporting service · Generic REST API · v1 · Base URL <code>http://localhost:8080/api/v1</code></p>
+      </div>
 
-    <section id="auth" class="section-card mb-6">
-      <h2 class="text-xl font-semibold mb-4">Authentication &amp; Permissions</h2>
-      <p class="text-gray-400 mb-3">Defaults to <code>API_REQUIRE_KEY=true</code>. The following write endpoints accept <code>Authorization: Bearer &lt;api-key&gt;</code> or <code>X-API-Key: &lt;api-key&gt;</code>: crash reporting, player feedback, Unity reporting, and project source upload. Viewer keys cannot write.</p>
-      <pre><code>curl -H "Authorization: Bearer &lt;api-key&gt;" ...
+      <!-- ============================================================ -->
+      <!-- 0. Authentication -->
+      <!-- ============================================================ -->
+      <section id="auth" class="section-card mb-6">
+        <h2 class="text-xl font-semibold mb-4">0. Authentication &amp; Permissions</h2>
+        <p class="text-gray-400 mb-3">Defaults to <code>API_REQUIRE_KEY=true</code>. The following write endpoints accept <code>Authorization: Bearer &lt;api-key&gt;</code> or <code>X-API-Key: &lt;api-key&gt;</code>: crash reporting, player feedback, Unity reporting, and project source upload. Viewer keys cannot write.</p>
+        <pre><code>curl -H "Authorization: Bearer &lt;api-key&gt;" ...
 # or
 curl -H "X-API-Key: &lt;api-key&gt;" ...</code></pre>
-      <p class="text-sm text-gray-400 mt-3">Query, download, analysis, symbols, and management APIs require a logged-in session Cookie. Mutating requests must also carry the <code>csrf_token</code> Cookie and a matching <code>X-CSRF-Token</code> request header. admin/operator can view crash details; viewer can only access the allowed read-only list pages; deleting symbols, deleting feedback, and clearing crashes are admin-only.</p>
-      <pre><code># Log in and save the auth_token and csrf_token cookies
-curl -c cookies.txt -H "Content-Type: application/json" \\
-  -d '{"username":"admin","password":"..."}' \\
+        <p class="text-sm text-gray-400 mt-3">Query, download, analysis, symbols, and management APIs require a logged-in session Cookie. Mutating requests must also carry the <code>csrf_token</code> Cookie and a matching <code>X-CSRF-Token</code> request header. admin/operator can view crash details; viewer can only access the allowed read-only list pages; deleting symbols, deleting feedback, and clearing crashes are admin-only.</p>
+        <pre><code># Log in and save the auth_token and csrf_token cookies
+curl -c cookies.txt -H "Content-Type: application/json" \
+  -d '{"username":"admin","password":"..."}' \
   http://localhost:8080/api/v1/auth/login
 
 # Get or refresh the CSRF token
 curl -b cookies.txt -c cookies.txt http://localhost:8080/api/v1/auth/csrf</code></pre>
-      <p class="text-xs text-gray-500 mt-2">Account APIs live under <code>/api/v1/auth</code>: <code>/me</code>, <code>/users</code>, <code>/api-keys</code>, user password change, admin password reset, forgot/reset password, and API key tier change.</p>
-      <h3 class="font-medium mt-5 mb-2">Endpoint Overview</h3>
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm border-collapse">
-          <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">Method &amp; Path</th><th class="text-left py-2">Auth</th><th class="text-left py-2">Permissions</th></tr></thead>
+
+        <h3 class="font-medium mt-5 mb-2">Endpoint Overview</h3>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm border-collapse">
+            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">Method &amp; Path</th><th class="text-left py-2">Auth</th><th class="text-left py-2">Permissions</th></tr></thead>
+            <tbody class="text-gray-400">
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /crash-report</code>, <code>/unity/crash-report</code>, <code>/player-feedback</code>, <code>/project-sources</code></td><td>API Key (can be disabled)</td><td>operator/admin key</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /crash-groups</code>, <code>/stats/dashboard</code>, <code>/projects</code>, <code>/platforms</code>, <code>/versions</code></td><td>Session</td><td>Logged-in users</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /crash-groups/:id</code>, <code>/crash-reports*</code>, downloads, import/export</td><td>Session</td><td>admin/operator</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /symbols</code></td><td>Session</td><td>Logged-in users</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /symbols</code>, <code>GET /symbols/:id/download</code></td><td>Session</td><td>admin/operator</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /source-dedup</code></td><td>Session + CSRF</td><td>admin</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>DELETE /symbols/:id</code>, <code>DELETE /player-feedback/:id</code>, <code>POST /clear-crashes</code></td><td>Session + CSRF</td><td>admin</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>/api/v1/ai/*</code></td><td>Session</td><td>admin/operator (session only)</td></tr>
+              <tr><td class="py-1"><code>/auth/users</code>, <code>/auth/api-keys</code>, 2FA, emails, phones, containers, password reset</td><td>Session; CSRF for writes</td><td>Role-restricted per endpoint</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- 1. Generic Crash Report -->
+      <!-- ============================================================ -->
+      <section id="generic" class="section-card mb-6">
+        <h2 class="text-xl font-semibold mb-4">
+          <span class="method-badge bg-green-600 text-white mr-3">POST</span>
+          /api/v1/crash-report
+        </h2>
+        <p class="text-gray-400 mb-4">Submit a crash report. Supports both JSON and multipart/form-data. With multipart you can use plain form fields, or put the full JSON in the <code>report</code> field; attachments use the field name <code>attachments</code>, up to 10. Requires an operator/admin API key by default.</p>
+
+        <h3 class="font-medium mb-3">📥 Request Body Parameters (JSON)</h3>
+
+        <!-- Generic Runtime Fields -->
+        <p class="text-xs text-gray-500 mb-2 mt-4"><span class="tag tag-generic">Generic Runtime</span> Cross-platform common fields</p>
+        <table class="w-full text-sm border-collapse mb-4">
+          <thead>
+            <tr class="border-b border-gray-700 text-gray-500 text-xs uppercase">
+              <th class="text-left py-2 pr-4">Field</th>
+              <th class="text-left py-2 pr-4">Type</th>
+              <th class="text-left py-2">Description</th>
+            </tr>
+          </thead>
           <tbody class="text-gray-400">
-            <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /crash-report</code>, <code>/unity/crash-report</code>, <code>/player-feedback</code>, <code>/project-sources</code></td><td>API Key (can be disabled)</td><td>operator/admin key</td></tr>
-            <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /crash-groups</code>, <code>/stats/dashboard</code>, <code>/projects</code>, <code>/platforms</code>, <code>/versions</code></td><td>Session</td><td>Logged-in users</td></tr>
-            <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /crash-groups/:id</code>, <code>/crash-reports*</code>, downloads, import/export</td><td>Session</td><td>admin/operator</td></tr>
-            <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /symbols</code></td><td>Session</td><td>Logged-in users</td></tr>
-            <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /symbols</code>, <code>GET /symbols/:id/download</code></td><td>Session</td><td>admin/operator</td></tr>
-            <tr class="border-b border-gray-700/30"><td class="py-1"><code>DELETE /symbols/:id</code>, <code>DELETE /player-feedback/:id</code>, <code>POST /clear-crashes</code></td><td>Session + CSRF</td><td>admin</td></tr>
-            <tr><td class="py-1"><code>/auth/users</code>, <code>/auth/api-keys</code>, password reset</td><td>Session; CSRF for writes</td><td>Role-restricted per endpoint</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><strong class="text-gray-200">exception_type</strong> <span class="field-required">*required</span></td><td class="pr-4"><code>string</code></td><td>Exception type, e.g. TypeError, NullReferenceException, SIGSEGV</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><strong>project_name</strong></td><td class="pr-4"><code>string</code></td><td>Project name (optional, max 100 characters). Identical crashes are grouped separately per project; Unassigned when omitted</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">exception_message</td><td class="pr-4"><code>string</code></td><td>Exception message text</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">stack_trace</td><td class="pr-4"><code>string</code></td><td>Stack trace. The full trace participates in the grouping hash — only identical traces group together</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">log_text</td><td class="pr-4"><code>string</code></td><td>Full log text, truncated when it exceeds <code>MAX_LOG_SIZE</code> (default 10 MiB)</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><strong>runtime</strong></td><td class="pr-4"><code>string</code></td><td>Runtime environment: <code>node</code>, <code>browser</code>, <code>python</code>, <code>go</code>, <code>unity</code>, <code>csharp</code>, ...</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">runtime_version</td><td class="pr-4"><code>string</code></td><td>Runtime version, e.g. <code>20.11.0</code>, <code>3.12.3</code>, <code>2022.3.10f1</code></td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">framework</td><td class="pr-4"><code>string</code></td><td>Framework/engine: <code>express</code>, <code>react</code>, <code>django</code>, <code>gin</code>, <code>unity</code>, ...</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">environment</td><td class="pr-4"><code>string</code></td><td>Deployment environment: <code>production</code>, <code>staging</code>, <code>development</code></td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">server_name</td><td class="pr-4"><code>string</code></td><td>Service name / application identifier</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">release</td><td class="pr-4"><code>string</code></td><td>Release version / Git commit hash; used to match a source snapshot</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">error_severity</td><td class="pr-4"><code>string</code></td><td>Severity level: <code>warning</code>, <code>error</code>, <code>fatal</code>, <code>crash</code> (default <code>error</code>)</td></tr>
           </tbody>
         </table>
-      </div>
-    </section>
 
-    <!-- ============================================================ -->
-    <!-- 1. Generic Crash Report -->
-    <!-- ============================================================ -->
-    <section id="generic" class="section-card mb-6">
-      <h2 class="text-xl font-semibold mb-4">
-        <span class="method-badge bg-green-600 text-white mr-3">POST</span>
-        /api/v1/crash-report
-      </h2>
-      <p class="text-gray-400 mb-4">Submit a crash report. Supports both JSON and multipart/form-data. With multipart you can use plain form fields, or put the full JSON in the <code>report</code> field; attachments use the field name <code>attachments</code>, up to 10. Requires an operator/admin API key by default.</p>
+        <!-- Device/Environment Fields -->
+        <p class="text-xs text-gray-500 mb-2 mt-4"><span class="tag tag-device">Device Info</span> Device &amp; environment context</p>
+        <table class="w-full text-sm border-collapse mb-4">
+          <thead>
+            <tr class="border-b border-gray-700 text-gray-500 text-xs uppercase">
+              <th class="text-left py-2 pr-4">Field</th>
+              <th class="text-left py-2 pr-4">Type</th>
+              <th class="text-left py-2">Description</th>
+            </tr>
+          </thead>
+          <tbody class="text-gray-400">
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">platform</td><td class="pr-4"><code>string</code></td><td>Operating system platform: <code>Android</code>, <code>iOS</code>, <code>Windows</code>, <code>Linux</code>, <code>macOS</code>, ...</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">os_version</td><td class="pr-4"><code>string</code></td><td>Operating system version</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">device_model</td><td class="pr-4"><code>string</code></td><td>Device model</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">gpu_name</td><td class="pr-4"><code>string</code></td><td>GPU name</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">cpu_name</td><td class="pr-4"><code>string</code></td><td>CPU name</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">memory_mb</td><td class="pr-4"><code>number</code></td><td>Device memory (MB)</td></tr>
+          </tbody>
+        </table>
 
-      <h3 class="font-medium mb-3">📥 Request Body Parameters (JSON)</h3>
+        <!-- App Fields -->
+        <p class="text-xs text-gray-500 mb-2 mt-4"><span class="tag tag-deprecated">App Info</span> Version &amp; package info</p>
+        <table class="w-full text-sm border-collapse mb-4">
+          <thead>
+            <tr class="border-b border-gray-700 text-gray-500 text-xs uppercase">
+              <th class="text-left py-2 pr-4">Field</th>
+              <th class="text-left py-2 pr-4">Type</th>
+              <th class="text-left py-2">Description</th>
+            </tr>
+          </thead>
+          <tbody class="text-gray-400">
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">app_version</td><td class="pr-4"><code>string</code></td><td>Application version</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">bundle_id</td><td class="pr-4"><code>string</code></td><td>Package name / Bundle ID</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">client_timestamp</td><td class="pr-4"><code>string</code></td><td>Client-side crash timestamp (ISO 8601)</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">custom_data</td><td class="pr-4"><code>object | string</code></td><td>Custom extra data (JSON)</td></tr>
+          </tbody>
+        </table>
 
-      <!-- Generic Runtime Fields -->
-      <p class="text-xs text-gray-500 mb-2 mt-4"><span class="tag tag-generic">Generic Runtime</span> Cross-platform common fields</p>
-      <table class="w-full text-sm border-collapse mb-4">
-        <thead>
-          <tr class="border-b border-gray-700 text-gray-500 text-xs uppercase">
-            <th class="text-left py-2 pr-4">Field</th>
-            <th class="text-left py-2 pr-4">Type</th>
-            <th class="text-left py-2">Description</th>
-          </tr>
-        </thead>
-        <tbody class="text-gray-400">
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><strong class="text-gray-200">exception_type</strong> <span class="field-required">*required</span></td><td class="pr-4"><code>string</code></td><td>Exception type, e.g. TypeError, NullReferenceException, SIGSEGV</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><strong>project_name</strong></td><td class="pr-4"><code>string</code></td><td>Project name (optional, max 100 characters). Identical crashes are grouped separately per project; Unassigned when omitted</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">exception_message</td><td class="pr-4"><code>string</code></td><td>Exception message text</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">stack_trace</td><td class="pr-4"><code>string</code></td><td>Stack trace. The runtime auto-detects the stack format for hash grouping</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">log_text</td><td class="pr-4"><code>string</code></td><td>Full log text, truncated when it exceeds <code>MAX_LOG_SIZE</code> (default 10 MiB)</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><strong>runtime</strong></td><td class="pr-4"><code>string</code></td><td>Runtime environment: <code>node</code>, <code>browser</code>, <code>python</code>, <code>go</code>, <code>unity</code>, <code>csharp</code>, ...</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">runtime_version</td><td class="pr-4"><code>string</code></td><td>Runtime version, e.g. <code>20.11.0</code>, <code>3.12.3</code>, <code>2022.3.10f1</code></td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">framework</td><td class="pr-4"><code>string</code></td><td>Framework/engine: <code>express</code>, <code>react</code>, <code>django</code>, <code>gin</code>, <code>unity</code>, ...</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">environment</td><td class="pr-4"><code>string</code></td><td>Deployment environment: <code>production</code>, <code>staging</code>, <code>development</code></td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">server_name</td><td class="pr-4"><code>string</code></td><td>Service name / application identifier</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">release</td><td class="pr-4"><code>string</code></td><td>Release version / Git commit hash</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">error_severity</td><td class="pr-4"><code>string</code></td><td>Severity level: <code>warning</code>, <code>error</code>, <code>fatal</code>, <code>crash</code> (default <code>error</code>)</td></tr>
-        </tbody>
-      </table>
+        <!-- Unity Fields -->
+        <p class="text-xs text-gray-500 mb-2 mt-4"><span class="tag tag-unity">Unity-Specific</span> Kept for backward compatibility</p>
+        <table class="w-full text-sm border-collapse mb-4">
+          <thead>
+            <tr class="border-b border-gray-700 text-gray-500 text-xs uppercase">
+              <th class="text-left py-2 pr-4">Field</th>
+              <th class="text-left py-2 pr-4">Type</th>
+              <th class="text-left py-2">Description</th>
+            </tr>
+          </thead>
+          <tbody class="text-gray-400">
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">unity_version</td><td class="pr-4"><code>string</code></td><td>Unity engine version, e.g. <code>2022.3.10f1</code></td></tr>
+            <tr><td class="py-1.5 pr-4">scene_name</td><td class="pr-4"><code>string</code></td><td>Name of the scene where the crash occurred</td></tr>
+          </tbody>
+        </table>
 
-      <!-- Device/Environment Fields -->
-      <p class="text-xs text-gray-500 mb-2 mt-4"><span class="tag tag-device">Device Info</span> Device &amp; environment context</p>
-      <table class="w-full text-sm border-collapse mb-4">
-        <thead>
-          <tr class="border-b border-gray-700 text-gray-500 text-xs uppercase">
-            <th class="text-left py-2 pr-4">Field</th>
-            <th class="text-left py-2 pr-4">Type</th>
-            <th class="text-left py-2">Description</th>
-          </tr>
-        </thead>
-        <tbody class="text-gray-400">
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">platform</td><td class="pr-4"><code>string</code></td><td>Operating system platform: <code>Android</code>, <code>iOS</code>, <code>Windows</code>, <code>Linux</code>, <code>macOS</code>, ...</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">os_version</td><td class="pr-4"><code>string</code></td><td>Operating system version</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">device_model</td><td class="pr-4"><code>string</code></td><td>Device model</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">gpu_name</td><td class="pr-4"><code>string</code></td><td>GPU name</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">cpu_name</td><td class="pr-4"><code>string</code></td><td>CPU name</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">memory_mb</td><td class="pr-4"><code>number</code></td><td>Device memory (MB)</td></tr>
-        </tbody>
-      </table>
+        <!-- ==================== SDK Examples ==================== -->
+        <h3 class="font-medium mb-2 mt-6">📋 SDK Examples (C# &amp; Python)</h3>
+        <div class="lang-tabs" data-tabs="crash-report">
+          <button class="lang-tab active" data-lang="csharp">C#</button>
+          <button class="lang-tab" data-lang="python">Python</button>
+          <button class="lang-tab" data-lang="curl">cURL</button>
+        </div>
 
-      <!-- App Fields -->
-      <p class="text-xs text-gray-500 mb-2 mt-4"><span class="tag tag-deprecated">App Info</span> Version &amp; package info</p>
-      <table class="w-full text-sm border-collapse mb-4">
-        <thead>
-          <tr class="border-b border-gray-700 text-gray-500 text-xs uppercase">
-            <th class="text-left py-2 pr-4">Field</th>
-            <th class="text-left py-2 pr-4">Type</th>
-            <th class="text-left py-2">Description</th>
-          </tr>
-        </thead>
-        <tbody class="text-gray-400">
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">app_version</td><td class="pr-4"><code>string</code></td><td>Application version</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">bundle_id</td><td class="pr-4"><code>string</code></td><td>Package name / Bundle ID</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">client_timestamp</td><td class="pr-4"><code>string</code></td><td>Client-side crash timestamp (ISO 8601)</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">custom_data</td><td class="pr-4"><code>object | string</code></td><td>Custom extra data (JSON)</td></tr>
-        </tbody>
-      </table>
+        <!-- C# -->
+        <div class="lang-pane active" data-lang-pane="csharp" data-tabs="crash-report">
+          <p class="text-sm text-gray-400 mb-2">Function-style wrapper using <code>HttpClient</code> — report a crash asynchronously and get back <code>{ id, group_id, is_new_group }</code>.</p>
+          <pre><code>using System;
+using System.IO;
+using System.Net.Http;
+using System.Text;
+using System.Text.Json;
+using System.Text.Json.Serialization;
+using System.Threading.Tasks;
 
-      <!-- Unity Fields -->
-      <p class="text-xs text-gray-500 mb-2 mt-4"><span class="tag tag-unity">Unity-Specific</span> Kept for backward compatibility</p>
-      <table class="w-full text-sm border-collapse mb-4">
-        <thead>
-          <tr class="border-b border-gray-700 text-gray-500 text-xs uppercase">
-            <th class="text-left py-2 pr-4">Field</th>
-            <th class="text-left py-2 pr-4">Type</th>
-            <th class="text-left py-2">Description</th>
-          </tr>
-        </thead>
-        <tbody class="text-gray-400">
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">unity_version</td><td class="pr-4"><code>string</code></td><td>Unity engine version, e.g. <code>2022.3.10f1</code></td></tr>
-          <tr><td class="py-1.5 pr-4">scene_name</td><td class="pr-4"><code>string</code></td><td>Name of the scene where the crash occurred</td></tr>
-        </tbody>
-      </table>
+public static class CrashReporter
+{
+    private static readonly HttpClient Http = new()
+    {
+        BaseAddress = new Uri("http://localhost:8080/api/v1")
+    };
 
-      <!-- Example -->
-      <h3 class="font-medium mb-2 mt-6">📋 Example Request</h3>
-      <h4 class="text-xs text-gray-500 mb-1 mt-3">Node.js (Express) crash</h4>
-      <pre><code>curl -X POST http://localhost:8080/api/v1/crash-report \\
-  -H "X-API-Key: &lt;key&gt;" \\
-  -H "Content-Type: application/json" \\
+    /// &lt;summary&gt;Report a crash as JSON and return { id, group_id, is_new_group }.&lt;/summary&gt;
+    public static async Task&lt;CrashResult&gt; ReportCrashAsync(
+        string apiKey,
+        string exceptionType,
+        string projectName = null,
+        string exceptionMessage = null,
+        string stackTrace = null,
+        string runtime = null,
+        string runtimeVersion = null,
+        string release = null,
+        string platform = null,
+        string appVersion = null,
+        object customData = null)
+    {
+        var payload = new
+        {
+            exception_type = exceptionType,
+            project_name = projectName,
+            exception_message = exceptionMessage,
+            stack_trace = stackTrace,
+            runtime,
+            runtime_version = runtimeVersion,
+            release,
+            platform,
+            app_version = appVersion,
+            custom_data = customData
+        };
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "crash-report")
+        {
+            Content = new StringContent(
+                JsonSerializer.Serialize(payload), Encoding.UTF8, "application/json")
+        };
+        request.Headers.Add("X-API-Key", apiKey);
+
+        using var response = await Http.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        return JsonSerializer.Deserialize&lt;CrashResult&gt;(
+            await response.Content.ReadAsStringAsync());
+    }
+
+    /// &lt;summary&gt;Report a crash with multipart attachment (e.g. a dump file).&lt;/summary&gt;
+    public static async Task&lt;CrashResult&gt; ReportCrashWithAttachmentAsync(
+        string apiKey, string exceptionType, string stackTrace, string attachmentPath)
+    {
+        using var form = new MultipartFormDataContent
+        {
+            { new StringContent(exceptionType), "exception_type" },
+            { new StringContent(stackTrace), "stack_trace" }
+        };
+        var fileBytes = await File.ReadAllBytesAsync(attachmentPath);
+        form.Add(new ByteArrayContent(fileBytes), "attachments", Path.GetFileName(attachmentPath));
+
+        using var request = new HttpRequestMessage(HttpMethod.Post, "crash-report")
+        { Content = form };
+        request.Headers.Add("X-API-Key", apiKey);
+
+        using var response = await Http.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        return JsonSerializer.Deserialize&lt;CrashResult&gt;(
+            await response.Content.ReadAsStringAsync());
+    }
+}
+
+public sealed record CrashResult(
+    [property: JsonPropertyName("id")] long Id,
+    [property: JsonPropertyName("group_id")] long GroupId,
+    [property: JsonPropertyName("is_new_group")] bool IsNewGroup);</code></pre>
+
+          <p class="text-xs text-gray-500 mt-2">Usage: <code>var result = await CrashReporter.ReportCrashAsync(key, "NullReferenceException", stackTrace: "...", runtime: "unity");</code></p>
+        </div>
+
+        <!-- Python -->
+        <div class="lang-pane" data-lang-pane="python" data-tabs="crash-report">
+          <p class="text-sm text-gray-400 mb-2">Function-style wrapper using <code>requests</code> — returns the server response dict <code>{ "id", "group_id", "is_new_group" }</code>.</p>
+          <pre><code>import requests
+from typing import Any, Optional
+
+API_BASE = "http://localhost:8080/api/v1"
+
+
+def report_crash(
+    exception_type: str,
+    project_name: Optional[str] = None,
+    exception_message: Optional[str] = None,
+    stack_trace: Optional[str] = None,
+    runtime: Optional[str] = None,
+    runtime_version: Optional[str] = None,
+    release: Optional[str] = None,
+    platform: Optional[str] = None,
+    app_version: Optional[str] = None,
+    custom_data: Optional[dict] = None,
+    attachments: Optional[list[str]] = None,
+    api_key: str = "",
+    api_base: str = API_BASE,
+) -> dict[str, Any]:
+    """Report a crash and return {id, group_id, is_new_group}.
+
+    Pass a list of file paths in `attachments` to upload them as
+    multipart files (e.g. dump or log files, up to 10 attachments).
+    """
+    headers = {"X-API-Key": api_key} if api_key else {}
+    payload = {
+        "exception_type": exception_type,
+        "project_name": project_name,
+        "exception_message": exception_message,
+        "stack_trace": stack_trace,
+        "runtime": runtime,
+        "runtime_version": runtime_version,
+        "release": release,
+        "platform": platform,
+        "app_version": app_version,
+        "custom_data": custom_data,
+    }
+    payload = {k: v for k, v in payload.items() if v is not None}
+
+    if attachments:
+        files = [("attachments", (path, open(path, "rb"))) for path in attachments]
+        try:
+            resp = requests.post(
+                f"{api_base}/crash-report", headers=headers, data=payload, files=files
+            )
+        finally:
+            for _, handle in files:
+                handle[1].close()
+    else:
+        resp = requests.post(f"{api_base}/crash-report", headers=headers, json=payload)
+
+    resp.raise_for_status()
+    return resp.json()</code></pre>
+          <p class="text-xs text-gray-500 mt-2">Usage: <code>result = report_crash("ValueError", stack_trace=traceback.format_exc(), runtime="python")</code></p>
+        </div>
+
+        <!-- cURL -->
+        <div class="lang-pane" data-lang-pane="curl" data-tabs="crash-report">
+          <h4 class="text-xs text-gray-500 mb-1 mt-3">Node.js (Express) crash</h4>
+          <pre><code>curl -X POST http://localhost:8080/api/v1/crash-report \
+  -H "X-API-Key: &lt;key&gt;" \
+  -H "Content-Type: application/json" \
   -d '{
     "project_name": "api-gateway",
     "exception_type": "TypeError",
     "exception_message": "Cannot read properties of undefined (reading 'id')",
-    "stack_trace": "at UserController.getUser (/app/controllers/user.js:42:15)\\n    at Layer.handle (/app/node_modules/express/lib/router/layer.js:95:5)",
+    "stack_trace": "at UserController.getUser (/app/controllers/user.js:42:15)\n    at Layer.handle (/app/node_modules/express/lib/router/layer.js:95:5)",
     "runtime": "node",
     "runtime_version": "20.11.0",
     "framework": "express",
@@ -193,98 +425,115 @@ curl -b cookies.txt -c cookies.txt http://localhost:8080/api/v1/auth/csrf</code>
     "app_version": "1.5.2"
   }'</code></pre>
 
-      <h4 class="text-xs text-gray-500 mb-1 mt-3">Python crash</h4>
-      <pre><code>curl -X POST http://localhost:8080/api/v1/crash-report \\
-  -H "X-API-Key: &lt;key&gt;" \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "exception_type": "ValueError",
-    "exception_message": "invalid literal for int()",
-    "stack_trace": "Traceback (most recent call last):\\n  File \"/app/main.py\", line 28, in process\\n    count = int(value)\\nValueError: invalid literal for int()",
-    "runtime": "python",
-    "runtime_version": "3.12.3",
-    "framework": "fastapi",
-    "environment": "production"
-  }'</code></pre>
-
-      <h4 class="text-xs text-gray-500 mb-1 mt-3">Multipart form upload (with dump attachment)</h4>
-      <pre><code>curl -X POST http://localhost:8080/api/v1/crash-report \\
-  -H "X-API-Key: &lt;key&gt;" \\
-  -F "exception_type=NullReferenceException" \\
-  -F "stack_trace=at PlayerController.Update () [0x00000] in ..." \\
-  -F "runtime=unity" \\
-  -F "runtime_version=2022.3.10f1" \\
+          <h4 class="text-xs text-gray-500 mb-1 mt-3">Multipart form upload (with dump attachment)</h4>
+          <pre><code>curl -X POST http://localhost:8080/api/v1/crash-report \
+  -H "X-API-Key: &lt;key&gt;" \
+  -F "exception_type=NullReferenceException" \
+  -F "stack_trace=at PlayerController.Update () [0x00000] in ..." \
+  -F "runtime=unity" \
+  -F "runtime_version=2022.3.10f1" \
   -F "attachments=@crash.dmp"</code></pre>
+        </div>
 
-      <h3 class="font-medium mb-2 mt-4">📤 Response (201 Created)</h3>
-      <pre><code>{
+        <h3 class="font-medium mb-2 mt-4">📤 Response (201 Created)</h3>
+        <pre><code>{
   "id": 42,
   "group_id": 7,
   "is_new_group": false
 }</code></pre>
-      <p class="text-xs text-gray-500 mt-2">When no project name is provided, the legacy grouping algorithm is used and the group shows as Unassigned; when a project name is provided, it also participates in the SHA-256 grouping hash, so different projects never mix into the same group.</p>
-    </section>
+        <p class="text-xs text-gray-500 mt-2">Grouping hash: <code>SHA256(exception_type | stack_trace | runtime [| project_name])[0:16]</code>. The full stack trace (trimmed, or <code>no-stack</code> when missing) participates — identical crashes group together. When a project name is provided it also participates, so different projects never mix into the same group.</p>
+      </section>
 
-
-    <section id="sources" class="section-card mb-6">
-      <h2 class="text-xl font-semibold mb-4"><span class="method-badge bg-green-600 text-white mr-3">POST</span>/api/v1/project-sources</h2>
-      <p class="text-gray-400 mb-3">Upload a project source snapshot, used by Crash Analysis to locate the crash line, function definitions, and possible call sites. Source code is only searched as text — it is never executed or compiled.</p>
-      <p class="text-sm text-gray-400 mb-2">multipart fields: <code>project_name</code> required (1–100 characters); <code>release</code> optional (max 200 characters); submit individual files via repeated <code>files</code> fields, or upload a <code>.tar.gz/.tgz</code> project archive via <code>archive</code> — both can be used together. Files whose content is identical to the latest stored version are skipped (<code>deduplicated</code>); when every file is skipped, no snapshot is created and <code>snapshot_id</code> is <code>null</code>.</p>
-      <p class="text-sm text-gray-400 mb-2">During analysis, source matching always reads the project's current state — the latest version of each file across all snapshots — so changed files are matched by their new content, unchanged files stay available, and added files take effect immediately. The reported <code>match_type</code> still reflects the matched snapshot (<code>exact</code> when <code>release</code> matches, otherwise <code>latest</code>). Limits by container tier: T1 10 files/2 MB, T2 500 files/200 MB, T3 50000 files/5 GB, T4/T5 no tier limits; a single source file may be at most 2 MiB.</p>
-      <pre><code>curl -X POST http://localhost:8080/api/v1/project-sources \\
-  -H "X-API-Key: &lt;key&gt;" \\
-  -F "project_name=api-gateway" \\
-  -F "release=abc1234" \\
+      <!-- ============================================================ -->
+      <!-- 2. Project Source Snapshots -->
+      <!-- ============================================================ -->
+      <section id="sources" class="section-card mb-6">
+        <h2 class="text-xl font-semibold mb-4"><span class="method-badge bg-green-600 text-white mr-3">POST</span>/api/v1/project-sources</h2>
+        <p class="text-gray-400 mb-3">Upload a project source snapshot, used by Crash Analysis to locate the crash line, function definitions, and possible call sites. Source code is only searched as text — it is never executed or compiled.</p>
+        <p class="text-sm text-gray-400 mb-2">multipart fields: <code>project_name</code> required (1–100 characters); <code>release</code> optional (max 200 characters); submit individual files via repeated <code>files</code> fields, or upload a <code>.tar.gz/.tgz</code> project archive via <code>archive</code> — both can be used together. Files whose content is identical to the latest stored version are skipped (<code>deduplicated</code>); small changes are stored as patches (<code>accepted[].storage = "patch"</code>); when every file is skipped, no snapshot is created and <code>snapshot_id</code> is <code>null</code>.</p>
+        <p class="text-sm text-gray-400 mb-2">During analysis, source matching always reads the project's current state — the latest version of each file across all snapshots — so changed files are matched by their new content, unchanged files stay available, and added files take effect immediately. The reported <code>match_type</code> still reflects the matched snapshot (<code>exact</code> when <code>release</code> matches, otherwise <code>latest</code>). Limits by container tier: T1 10 files/2 MB, T2 500 files/200 MB, T3 50000 files/5 GB, T4/T5 no tier limits; a single source file may be at most 2 MiB.</p>
+        <pre><code>curl -X POST http://localhost:8080/api/v1/project-sources \
+  -H "X-API-Key: &lt;key&gt;" \
+  -F "project_name=api-gateway" \
+  -F "release=abc1234" \
   -F "archive=@api-gateway.tar.gz"
 
 # You can also upload multiple individual source files
-curl -X POST http://localhost:8080/api/v1/project-sources \\
-  -H "X-API-Key: &lt;key&gt;" \\
-  -F "project_name=api-gateway" \\
-  -F "release=abc1234" \\
-  -F "files=@src/app.ts;filename=src/app.ts" \\
+curl -X POST http://localhost:8080/api/v1/project-sources \
+  -H "X-API-Key: &lt;key&gt;" \
+  -F "project_name=api-gateway" \
+  -F "release=abc1234" \
+  -F "files=@src/app.ts;filename=src/app.ts" \
   -F "files=@src/service.ts;filename=src/service.ts"</code></pre>
-      <h3 class="font-medium mb-2 mt-4">Response (201)</h3>
-      <pre><code>{
+        <h3 class="font-medium mb-2 mt-4">Response (201)</h3>
+        <pre><code>{
   "project": { "id": 3, "name": "api-gateway" },
   "release": "abc1234",
   "snapshot_id": 9,
-  "accepted": [{ "path": "src/app.ts", "file_size": 2048, "language": "typescript", "storage": "full" }],
+  "accepted": [
+    { "path": "src/app.ts", "file_size": 2048, "language": "typescript", "storage": "full" },
+    { "path": "src/config.ts", "file_size": 96, "language": "typescript", "storage": "patch" }
+  ],
   "deduplicated": ["src/unchanged.ts"],
   "skipped": [{ "path": "assets/logo.png", "reason": "binary content" }]
 }</code></pre>
-      <p class="text-xs text-gray-500 mt-2">Any text file can be uploaded (any extension; non-Unity projects are supported too); absolute paths, <code>..</code> paths, binary files, oversized files, and over-limit extracted contents are rejected.</p>
-    </section>
+        <p class="text-xs text-gray-500 mt-2">Any text file can be uploaded (any extension; non-Unity projects are supported too); absolute paths, <code>..</code> paths, binary files, oversized files, and over-limit extracted contents are rejected.</p>
 
-    <!-- ============================================================ -->
-    <!-- 2. Player Feedback -->
-    <!-- ============================================================ -->
-    <section id="feedback" class="section-card mb-6">
-      <h2 class="text-xl font-semibold mb-4">
-        <span class="method-badge bg-green-600 text-white mr-3">POST</span>
-        /api/v1/player-feedback
-      </h2>
-      <p class="text-gray-400 mb-4">Submit player-initiated bug reports, suggestions, or other feedback. This endpoint is stored separately from automatic crash reporting and does not participate in crash grouping. Supports JSON, or multipart/form-data for uploading screenshots and log attachments.</p>
+        <!-- Source dedup -->
+        <div class="mt-6 pt-4 border-t border-gray-700">
+          <h2 class="text-lg font-semibold mb-3">
+            <span class="method-badge bg-purple-600 text-white mr-3">POST</span>
+            /api/v1/source-dedup
+          </h2>
+          <p class="text-gray-400 mb-3">Run a deduplication sweep over stored source rows. Runs automatically once at server startup; can also be invoked manually (admin only).</p>
+          <ul class="list-disc list-inside text-sm text-gray-400 space-y-1 ml-2 mb-3">
+            <li>Backfills content hashes for legacy rows (<code>hashes_backfilled</code>)</li>
+            <li>Deletes fully duplicated (project, path, content) rows, keeping the newest — materializing dependent patch rows first</li>
+            <li>Cleans up orphaned disk files (<code>disk_files_removed</code>, <code>orphans_removed</code>)</li>
+          </ul>
+          <pre><code>curl -X POST http://localhost:8080/api/v1/source-dedup \
+  -b cookies.txt \
+  -H "X-CSRF-Token: &lt;token&gt;"</code></pre>
+          <h4 class="text-xs text-gray-500 mt-2">Response</h4>
+          <pre><code>{
+  "success": true,
+  "hashes_backfilled": 12,
+  "duplicates_removed": 3,
+  "disk_files_removed": 2,
+  "orphans_removed": 1
+}</code></pre>
+        </div>
+      </section>
 
-      <h3 class="font-medium mb-2">📥 Request Fields</h3>
-      <table class="w-full text-sm border-collapse mb-4">
-        <thead><tr class="border-b border-gray-700 text-gray-500 text-xs uppercase"><th class="text-left py-2 pr-4">Field</th><th class="text-left py-2 pr-4">Type</th><th class="text-left py-2">Description</th></tr></thead>
-        <tbody class="text-gray-400">
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><strong class="text-gray-200">title</strong> <span class="field-required">*required</span></td><td class="pr-4"><code>string</code></td><td>Feedback title, max 200 characters</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><strong class="text-gray-200">description</strong> <span class="field-required">*required</span></td><td class="pr-4"><code>string</code></td><td>Reproduction steps, expected results, and actual results described by the player</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">category</td><td class="pr-4"><code>string</code></td><td><code>bug</code> (default), <code>suggestion</code>, or <code>other</code></td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">severity</td><td class="pr-4"><code>string</code></td><td><code>low</code>, <code>normal</code> (default), <code>high</code>, or <code>critical</code></td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">player_id / player_name / contact</td><td class="pr-4"><code>string</code></td><td>Optional player ID, display name, and follow-up contact</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">app_version / platform / device_model / scene_name</td><td class="pr-4"><code>string</code></td><td>Version and device context, ideally auto-filled by Unity</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">client_timestamp</td><td class="pr-4"><code>string</code></td><td>ISO 8601 timestamp of player submission</td></tr>
-          <tr><td class="py-1.5 pr-4">custom_data</td><td class="pr-4"><code>object | string</code></td><td>Any extra JSON data</td></tr>
-        </tbody>
-      </table>
+      <!-- ============================================================ -->
+      <!-- 3. Player Feedback -->
+      <!-- ============================================================ -->
+      <section id="feedback" class="section-card mb-6">
+        <h2 class="text-xl font-semibold mb-4">
+          <span class="method-badge bg-green-600 text-white mr-3">POST</span>
+          /api/v1/player-feedback
+        </h2>
+        <p class="text-gray-400 mb-4">Submit player-initiated bug reports, suggestions, or other feedback. This endpoint is stored separately from automatic crash reporting and does not participate in crash grouping. Supports JSON, or multipart/form-data for uploading screenshots and log attachments.</p>
 
-      <h3 class="font-medium mb-2 mt-4">📋 JSON Example</h3>
-      <pre><code>curl -X POST http://localhost:8080/api/v1/player-feedback \\
-  -H "X-API-Key: &lt;key&gt;" \\
-  -H "Content-Type: application/json" \\
+        <h3 class="font-medium mb-2">📥 Request Fields</h3>
+        <table class="w-full text-sm border-collapse mb-4">
+          <thead><tr class="border-b border-gray-700 text-gray-500 text-xs uppercase"><th class="text-left py-2 pr-4">Field</th><th class="text-left py-2 pr-4">Type</th><th class="text-left py-2">Description</th></tr></thead>
+          <tbody class="text-gray-400">
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><strong class="text-gray-200">title</strong> <span class="field-required">*required</span></td><td class="pr-4"><code>string</code></td><td>Feedback title, max 200 characters</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><strong class="text-gray-200">description</strong> <span class="field-required">*required</span></td><td class="pr-4"><code>string</code></td><td>Reproduction steps, expected results, and actual results described by the player</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">category</td><td class="pr-4"><code>string</code></td><td><code>bug</code> (default), <code>suggestion</code>, or <code>other</code></td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">severity</td><td class="pr-4"><code>string</code></td><td><code>low</code>, <code>normal</code> (default), <code>high</code>, or <code>critical</code></td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">player_id / player_name / contact</td><td class="pr-4"><code>string</code></td><td>Optional player ID, display name, and follow-up contact</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">app_version / platform / device_model / scene_name</td><td class="pr-4"><code>string</code></td><td>Version and device context, ideally auto-filled by Unity</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">client_timestamp</td><td class="pr-4"><code>string</code></td><td>ISO 8601 timestamp of player submission</td></tr>
+            <tr><td class="py-1.5 pr-4">custom_data</td><td class="pr-4"><code>object | string</code></td><td>Any extra JSON data</td></tr>
+          </tbody>
+        </table>
+
+        <h3 class="font-medium mb-2 mt-4">📋 JSON Example</h3>
+        <pre><code>curl -X POST http://localhost:8080/api/v1/player-feedback \
+  -H "X-API-Key: &lt;key&gt;" \
+  -H "Content-Type: application/json" \
   -d '{
     "title": "Cannot equip new weapon after purchase",
     "description": "After buying a weapon in the shop, clicking the equip button does nothing.",
@@ -297,71 +546,60 @@ curl -X POST http://localhost:8080/api/v1/project-sources \\
     "scene_name": "Shop"
   }'</code></pre>
 
-      <h3 class="font-medium mb-2 mt-4">📎 Upload Screenshots or Logs</h3>
-      <p class="text-sm text-gray-400 mb-2">With <code>multipart/form-data</code>, put the full JSON in the <code>feedback</code> field; repeat the <code>attachments</code> file field for multiple files, up to 10 files, each limited by <code>MAX_ATTACHMENT_SIZE</code>.</p>
-      <pre><code>curl -X POST http://localhost:8080/api/v1/player-feedback \\
-  -H "X-API-Key: &lt;key&gt;" \\
-  -F 'feedback={"title":"Quest stuck","description":"Cannot continue after finishing the dialogue","category":"bug"};type=application/json' \\
-  -F "attachments=@screenshot.png" \\
+        <h3 class="font-medium mb-2 mt-4">📎 Upload Screenshots or Logs</h3>
+        <p class="text-sm text-gray-400 mb-2">With <code>multipart/form-data</code>, put the full JSON in the <code>feedback</code> field; repeat the <code>attachments</code> file field for multiple files, up to 10 files, each limited by <code>MAX_ATTACHMENT_SIZE</code>.</p>
+        <pre><code>curl -X POST http://localhost:8080/api/v1/player-feedback \
+  -H "X-API-Key: &lt;key&gt;" \
+  -F 'feedback={"title":"Quest stuck","description":"Cannot continue after finishing the dialogue","category":"bug"};type=application/json' \
+  -F "attachments=@screenshot.png" \
   -F "attachments=@Player.log"</code></pre>
 
-      <h3 class="font-medium mb-2 mt-4">📤 Response (201 Created)</h3>
-      <pre><code>{
+        <h3 class="font-medium mb-2 mt-4">📤 Response (201 Created)</h3>
+        <pre><code>{
   "id": 12,
   "status": "new",
   "attachments": [{ "id": 8, "filename": "screenshot.png", "file_size": 243901 }]
 }</code></pre>
 
-      <div class="mt-6 pt-4 border-t border-gray-700">
-        <h2 class="text-lg font-semibold mb-3"><span class="method-badge bg-blue-600 text-white mr-3">GET</span>/api/v1/player-feedback</h2>
-        <p class="text-gray-400 mb-3">Get the list of player feedback. This admin endpoint requires a logged-in session Cookie.</p>
-        <p class="text-sm text-gray-400 mb-2">Query parameters: <code>page</code> (default 1), <code>page_size</code> (default 20, max 100), <code>status</code> (<code>new</code>, <code>in_progress</code>, <code>resolved</code>, <code>closed</code>), <code>category</code>, and <code>search</code> (title, description, or player name).</p>
-        <pre><code>curl http://localhost:8080/api/v1/player-feedback?status=new&amp;category=bug</code></pre>
-      </div>
+        <h3 class="font-medium mt-6 mb-3">🔧 Management Endpoints</h3>
+        <div class="overflow-x-auto mb-4">
+          <table class="w-full text-sm border-collapse">
+            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">Method &amp; Path</th><th class="text-left py-2">Auth</th><th class="text-left py-2">Description</th></tr></thead>
+            <tbody class="text-gray-400">
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /player-feedback</code></td><td>Session</td><td>List feedback; query: <code>page</code>, <code>page_size</code> (max 100), <code>status</code> (<code>new</code>, <code>in_progress</code>, <code>resolved</code>, <code>closed</code>), <code>category</code>, <code>search</code></td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /player-feedback/:id</code></td><td>Session</td><td>Single feedback entry with attachment metadata</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>PUT /player-feedback/:id/status</code></td><td>Session + CSRF</td><td>Update status: <code>new</code>, <code>in_progress</code>, <code>resolved</code>, <code>closed</code></td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>DELETE /player-feedback/:id</code></td><td>Session + CSRF</td><td>Delete feedback (admin only)</td></tr>
+              <tr><td class="py-1"><code>GET /download/player-feedback/attachment/:id</code></td><td>Session</td><td>Download a feedback attachment</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
 
-      <div class="mt-6 pt-4 border-t border-gray-700">
-        <h2 class="text-lg font-semibold mb-3"><span class="method-badge bg-blue-600 text-white mr-3">GET</span>/api/v1/player-feedback/:id</h2>
-        <p class="text-gray-400 mb-3">Get a single feedback entry with its attachment metadata (login required).</p>
-        <pre><code>curl http://localhost:8080/api/v1/player-feedback/12</code></pre>
-      </div>
+      <!-- ============================================================ -->
+      <!-- 4. Unity Endpoints -->
+      <!-- ============================================================ -->
+      <section id="unity" class="section-card mb-6">
+        <h2 class="text-xl font-semibold mb-4">
+          <span class="method-badge bg-purple-600 text-white mr-3">POST</span>
+          /api/v1/unity/crash-report
+        </h2>
+        <p class="text-gray-400 mb-4">Unity-specific crash reporting endpoint. Auto-fills <code>runtime="unity"</code> and <code>framework="unity"</code>, and maps <code>unity_version</code> to <code>runtime_version</code>.</p>
 
-      <div class="mt-6 pt-4 border-t border-gray-700">
-        <h2 class="text-lg font-semibold mb-3"><span class="method-badge bg-yellow-600 text-white mr-3">PUT</span>/api/v1/player-feedback/:id/status</h2>
-        <p class="text-gray-400 mb-3">Update the feedback processing status (login required).</p>
-        <pre><code>curl -X PUT http://localhost:8080/api/v1/player-feedback/12/status \\
-  -H "Content-Type: application/json" \\
-  -d '{"status":"in_progress"}'</code></pre>
-        <p class="text-xs text-gray-500 mt-2">Valid <code>status</code> values: <code>new</code>, <code>in_progress</code>, <code>resolved</code>, <code>closed</code>.</p>
-      </div>
+        <p class="text-sm text-gray-500 mb-3">Accepts exactly the same parameters as the generic endpoint. Additional behavior:</p>
+        <ul class="list-disc list-inside text-sm text-gray-400 space-y-1 ml-2">
+          <li>Automatically sets <code>runtime = "unity"</code></li>
+          <li>Automatically sets <code>framework = "unity"</code></li>
+          <li>If <code>runtime_version</code> is not provided, the <code>unity_version</code> value is used automatically</li>
+          <li>Supports hash grouping of Unity IL2CPP stack formats</li>
+        </ul>
+        <p class="text-sm text-gray-400 mt-2">The request header must include a Unity User-Agent, or <code>X-Client-Type: unity</code>.</p>
 
-      <div class="mt-6 pt-4 border-t border-gray-700">
-        <h2 class="text-lg font-semibold mb-3"><span class="method-badge bg-blue-600 text-white mr-3">GET</span>/api/v1/download/player-feedback/attachment/:id</h2>
-        <p class="text-gray-400">Download a single attachment uploaded with player feedback (login required).</p>
-      </div>
-    </section>
-
-
-    <!-- ============================================================ -->
-    <section id="unity" class="section-card mb-6">
-      <h2 class="text-xl font-semibold mb-4">
-        <span class="method-badge bg-purple-600 text-white mr-3">POST</span>
-        /api/v1/unity/crash-report
-      </h2>
-      <p class="text-gray-400 mb-4">Unity-specific crash reporting endpoint. Auto-fills <code>runtime="unity"</code> and <code>framework="unity"</code>, and maps <code>unity_version</code> to <code>runtime_version</code>.</p>
-
-      <p class="text-sm text-gray-500 mb-3">Accepts exactly the same parameters as the generic endpoint. Additional behavior:</p>
-      <ul class="list-disc list-inside text-sm text-gray-400 space-y-1 ml-2">
-        <li>Automatically sets <code>runtime = "unity"</code></li>
-        <li>Automatically sets <code>framework = "unity"</code></li>
-        <li>If <code>runtime_version</code> is not provided, the <code>unity_version</code> value is used automatically</li>
-        <li>Supports hash grouping of Unity IL2CPP stack formats</li>
-      </ul>
-
-      <h4 class="text-xs text-gray-500 mb-1 mt-4">Example</h4>
-      <pre><code>curl -X POST http://localhost:8080/api/v1/unity/crash-report \\
-  -H "X-API-Key: &lt;key&gt;" \\
-  -H "X-Client-Type: unity" \\
-  -H "Content-Type: application/json" \\
+        <h4 class="text-xs text-gray-500 mb-1 mt-4">Example</h4>
+        <pre><code>curl -X POST http://localhost:8080/api/v1/unity/crash-report \
+  -H "X-API-Key: &lt;key&gt;" \
+  -H "X-Client-Type: unity" \
+  -H "Content-Type: application/json" \
   -d '{
     "exception_type": "NullReferenceException",
     "exception_message": "Object reference not set to an instance of an object",
@@ -375,54 +613,55 @@ curl -X POST http://localhost:8080/api/v1/project-sources \\
     "bundle_id": "com.example.mygame"
   }'</code></pre>
 
-      <h3 class="font-medium mb-2 mt-4">📤 Response (201 Created)</h3>
-      <pre><code>{
+        <h3 class="font-medium mb-2 mt-4">📤 Response (201 Created)</h3>
+        <pre><code>{
   "id": 43,
   "group_id": 8,
   "is_new_group": true,
   "runtime": "unity"
 }</code></pre>
-    </section>
+      </section>
 
-    <!-- ============================================================ -->
-    <!-- 3. Crash Groups -->
-    <!-- ============================================================ -->
-    <section id="groups" class="section-card mb-6">
-      <h2 class="text-xl font-semibold mb-4">
-        <span class="method-badge bg-blue-600 text-white mr-3">GET</span>
-        /api/v1/crash-groups
-      </h2>
-      <p class="text-gray-400 mb-4">Get the list of crash groups, with pagination and multi-dimensional filters.</p>
+      <!-- ============================================================ -->
+      <!-- 5. Crash Groups -->
+      <!-- ============================================================ -->
+      <section id="groups" class="section-card mb-6">
+        <h2 class="text-xl font-semibold mb-4">
+          <span class="method-badge bg-blue-600 text-white mr-3">GET</span>
+          /api/v1/crash-groups
+        </h2>
+        <p class="text-gray-400 mb-4">Get the list of crash groups, with pagination and multi-dimensional filters.</p>
 
-      <h3 class="font-medium mb-2">🔍 Query Parameters</h3>
-      <table class="w-full text-sm border-collapse mb-4">
-        <thead>
-          <tr class="border-b border-gray-700 text-gray-500 text-xs uppercase">
-            <th class="text-left py-2 pr-4">Parameter</th>
-            <th class="text-left py-2 pr-4">Type</th>
-            <th class="text-left py-2 pr-4">Default</th>
-            <th class="text-left py-2">Description</th>
-          </tr>
-        </thead>
-        <tbody class="text-gray-400">
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>page</code></td><td class="pr-4">number</td><td class="pr-4">1</td><td>Page number</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>page_size</code></td><td class="pr-4">number</td><td class="pr-4">20</td><td>Items per page (max 100)</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>project_id</code></td><td class="pr-4">number</td><td class="pr-4">-</td><td>Project ID; pass <code>0</code> to show only Unassigned</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>status</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>Status filter: <code>open</code>, <code>resolved</code>, <code>ignored</code></td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>runtime</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>Runtime filter: <code>node</code>, <code>python</code>, <code>go</code>, <code>unity</code>, ...</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>environment</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>Environment filter: <code>production</code>, <code>staging</code>, <code>development</code></td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>platform</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>Platform filter: <code>Android</code>, <code>iOS</code>, <code>Windows</code>, ...</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>app_version</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>App version filter</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>search</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>Search exception type or message (fuzzy match)</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>start_date</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>Start date (ISO 8601)</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>end_date</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>End date (ISO 8601)</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>sort_by</code></td><td class="pr-4">string</td><td class="pr-4">last_seen</td><td>Sort field: <code>last_seen</code>, <code>first_seen</code>, <code>total_count</code></td></tr>
-          <tr><td class="py-1.5 pr-4"><code>sort_order</code></td><td class="pr-4">string</td><td class="pr-4">desc</td><td>Sort order: <code>asc</code>, <code>desc</code></td></tr>
-        </tbody>
-      </table>
+        <h3 class="font-medium mb-2">🔍 Query Parameters</h3>
+        <table class="w-full text-sm border-collapse mb-4">
+          <thead>
+            <tr class="border-b border-gray-700 text-gray-500 text-xs uppercase">
+              <th class="text-left py-2 pr-4">Parameter</th>
+              <th class="text-left py-2 pr-4">Type</th>
+              <th class="text-left py-2 pr-4">Default</th>
+              <th class="text-left py-2">Description</th>
+            </tr>
+          </thead>
+          <tbody class="text-gray-400">
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>page</code></td><td class="pr-4">number</td><td class="pr-4">1</td><td>Page number</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>page_size</code></td><td class="pr-4">number</td><td class="pr-4">20</td><td>Items per page (max 100)</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>project_id</code></td><td class="pr-4">number</td><td class="pr-4">-</td><td>Project ID; pass <code>0</code> to show only Unassigned</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>status</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>Status filter: <code>open</code>, <code>resolved</code>, <code>ignored</code></td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>runtime</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>Runtime filter: <code>node</code>, <code>python</code>, <code>go</code>, <code>unity</code>, ...</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>environment</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>Environment filter: <code>production</code>, <code>staging</code>, <code>development</code></td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>error_severity</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>Severity filter: <code>warning</code>, <code>error</code>, <code>fatal</code>, <code>crash</code></td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>platform</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>Platform filter: <code>Android</code>, <code>iOS</code>, <code>Windows</code>, ...</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>app_version</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>App version filter</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>search</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>Search exception type or message (fuzzy match)</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>start_date</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>Start date (ISO 8601)</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>end_date</code></td><td class="pr-4">string</td><td class="pr-4">-</td><td>End date (ISO 8601)</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>sort_by</code></td><td class="pr-4">string</td><td class="pr-4">last_seen</td><td>Sort field: <code>last_seen</code>, <code>first_seen</code>, <code>total_count</code>, <code>created_at</code>, <code>id</code></td></tr>
+            <tr><td class="py-1.5 pr-4"><code>sort_order</code></td><td class="pr-4">string</td><td class="pr-4">desc</td><td>Sort order: <code>asc</code>, <code>desc</code></td></tr>
+          </tbody>
+        </table>
 
-      <h3 class="font-medium mb-2 mt-4">📤 Response</h3>
-      <pre><code>{
+        <h3 class="font-medium mb-2 mt-4">📤 Response</h3>
+        <pre><code>{
   "items": [{
     "id": 7,
     "crash_hash": "a1b2c3d4e5f6a7b8",
@@ -440,17 +679,16 @@ curl -X POST http://localhost:8080/api/v1/project-sources \\
   "total_pages": 1
 }</code></pre>
 
-      <!-- Crash Group Detail -->
-      <div class="mt-6 pt-4 border-t border-gray-700">
-        <h2 class="text-lg font-semibold mb-3">
-          <span class="method-badge bg-blue-600 text-white mr-3">GET</span>
-          /api/v1/crash-groups/:id
-        </h2>
-        <p class="text-gray-400 mb-3">Get a single crash group's details along with its most recent crash reports.</p>
-        <h4 class="text-xs text-gray-500 mb-1">Example</h4>
-        <pre><code>curl http://localhost:8080/api/v1/crash-groups/7</code></pre>
-        <h4 class="text-xs text-gray-500 mb-1 mt-3">Response</h4>
-        <pre><code>{
+        <!-- Crash Group Detail -->
+        <div class="mt-6 pt-4 border-t border-gray-700">
+          <h2 class="text-lg font-semibold mb-3">
+            <span class="method-badge bg-blue-600 text-white mr-3">GET</span>
+            /api/v1/crash-groups/:id
+          </h2>
+          <p class="text-gray-400 mb-3">Get a single crash group's details along with its most recent crash reports.</p>
+          <pre><code>curl http://localhost:8080/api/v1/crash-groups/7</code></pre>
+          <h4 class="text-xs text-gray-500 mb-1 mt-3">Response</h4>
+          <pre><code>{
   "id": 7,
   "crash_hash": "a1b2c3d4e5f6a7b8",
   "exception_type": "TypeError",
@@ -461,66 +699,66 @@ curl -X POST http://localhost:8080/api/v1/project-sources \\
   "status": "open",
   "recent_reports": [ /* CrashReport[] — up to 20 items */ ]
 }</code></pre>
-      </div>
+        </div>
 
-      <!-- Update Status -->
-      <div class="mt-6 pt-4 border-t border-gray-700">
-        <h2 class="text-lg font-semibold mb-3">
-          <span class="method-badge bg-yellow-600 text-white mr-3">PUT</span>
-          /api/v1/crash-groups/:id/status
-        </h2>
-        <p class="text-gray-400 mb-3">Update a crash group's status (resolve/ignore).</p>
-        <h4 class="text-xs text-gray-500 mb-1">Request Body</h4>
-        <pre><code>{ "status": "resolved", "resolved_version": "1.2.5" }</code></pre>
-        <p class="text-xs text-gray-500 mt-2">Valid <code>status</code> values: <code>open</code>, <code>resolved</code>, <code>ignored</code>. <code>resolved_version</code> is optional and records the fixing version.</p>
-        <h4 class="text-xs text-gray-500 mb-1 mt-3">Example</h4>
-        <pre><code>curl -X PUT http://localhost:8080/api/v1/crash-groups/7/status \\
-  -H "Content-Type: application/json" \\
+        <!-- Update Status -->
+        <div class="mt-6 pt-4 border-t border-gray-700">
+          <h2 class="text-lg font-semibold mb-3">
+            <span class="method-badge bg-yellow-600 text-white mr-3">PUT</span>
+            /api/v1/crash-groups/:id/status
+          </h2>
+          <p class="text-gray-400 mb-3">Update a crash group's status (resolve/ignore).</p>
+          <h4 class="text-xs text-gray-500 mb-1">Request Body</h4>
+          <pre><code>{ "status": "resolved", "resolved_version": "1.2.5" }</code></pre>
+          <p class="text-xs text-gray-500 mt-2">Valid <code>status</code> values: <code>open</code>, <code>resolved</code>, <code>ignored</code>. <code>resolved_version</code> is optional and records the fixing version.</p>
+          <h4 class="text-xs text-gray-500 mb-1 mt-3">Example</h4>
+          <pre><code>curl -X PUT http://localhost:8080/api/v1/crash-groups/7/status \
+  -H "Content-Type: application/json" \
   -d '{"status": "resolved", "resolved_version": "1.2.5"}'</code></pre>
-        <h4 class="text-xs text-gray-500 mb-1 mt-3">Response</h4>
-        <pre><code>{ "success": true }</code></pre>
-      </div>
-    </section>
+          <h4 class="text-xs text-gray-500 mb-1 mt-3">Response</h4>
+          <pre><code>{ "success": true }</code></pre>
+        </div>
+      </section>
 
-    <!-- ============================================================ -->
-    <!-- 4. Crash Reports -->
-    <!-- ============================================================ -->
-    <section id="reports" class="section-card mb-6">
-      <h2 class="text-xl font-semibold mb-4">
-        <span class="method-badge bg-blue-600 text-white mr-3">GET</span>
-        /api/v1/crash-reports
-      </h2>
-      <p class="text-gray-400 mb-4">Get the list of individual crash reports, filterable by group, platform, and version.</p>
-
-      <h3 class="font-medium mb-2">🔍 Query Parameters</h3>
-      <table class="w-full text-sm border-collapse mb-4">
-        <thead>
-          <tr class="border-b border-gray-700 text-gray-500 text-xs uppercase">
-            <th class="text-left py-2 pr-4">Parameter</th>
-            <th class="text-left py-2 pr-4">Type</th>
-            <th class="text-left py-2">Description</th>
-          </tr>
-        </thead>
-        <tbody class="text-gray-400">
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>page</code></td><td class="pr-4">number</td><td>Page number (default 1)</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>page_size</code></td><td class="pr-4">number</td><td>Items per page (default 20, max 100)</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>group_id</code></td><td class="pr-4">number</td><td>Filter by crash group ID</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>project_id</code></td><td class="pr-4">number</td><td>Filter by project ID; <code>0</code> means Unassigned</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>platform</code></td><td class="pr-4">string</td><td>Platform filter</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>app_version</code></td><td class="pr-4">string</td><td>App version filter</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>start_date</code></td><td class="pr-4">string</td><td>Start date</td></tr>
-          <tr><td class="py-1.5 pr-4"><code>end_date</code></td><td class="pr-4">string</td><td>End date</td></tr>
-        </tbody>
-      </table>
-
-      <div class="mt-6 pt-4 border-t border-gray-700">
-        <h2 class="text-lg font-semibold mb-3">
+      <!-- ============================================================ -->
+      <!-- 6. Crash Reports -->
+      <!-- ============================================================ -->
+      <section id="reports" class="section-card mb-6">
+        <h2 class="text-xl font-semibold mb-4">
           <span class="method-badge bg-blue-600 text-white mr-3">GET</span>
-          /api/v1/crash-reports/:id
+          /api/v1/crash-reports
         </h2>
-        <p class="text-gray-400 mb-3">Get a single crash report's details, including the attachment list and dump parsing info.</p>
-        <h4 class="text-xs text-gray-500 mb-1">Response</h4>
-        <pre><code>{
+        <p class="text-gray-400 mb-4">Get the list of individual crash reports, filterable by group, platform, and version.</p>
+
+        <h3 class="font-medium mb-2">🔍 Query Parameters</h3>
+        <table class="w-full text-sm border-collapse mb-4">
+          <thead>
+            <tr class="border-b border-gray-700 text-gray-500 text-xs uppercase">
+              <th class="text-left py-2 pr-4">Parameter</th>
+              <th class="text-left py-2 pr-4">Type</th>
+              <th class="text-left py-2">Description</th>
+            </tr>
+          </thead>
+          <tbody class="text-gray-400">
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>page</code></td><td class="pr-4">number</td><td>Page number (default 1)</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>page_size</code></td><td class="pr-4">number</td><td>Items per page (default 20, max 100)</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>group_id</code></td><td class="pr-4">number</td><td>Filter by crash group ID</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>project_id</code></td><td class="pr-4">number</td><td>Filter by project ID; <code>0</code> means Unassigned</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>platform</code></td><td class="pr-4">string</td><td>Platform filter</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>app_version</code></td><td class="pr-4">string</td><td>App version filter</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>start_date</code></td><td class="pr-4">string</td><td>Start date</td></tr>
+            <tr><td class="py-1.5 pr-4"><code>end_date</code></td><td class="pr-4">string</td><td>End date</td></tr>
+          </tbody>
+        </table>
+
+        <div class="mt-6 pt-4 border-t border-gray-700">
+          <h2 class="text-lg font-semibold mb-3">
+            <span class="method-badge bg-blue-600 text-white mr-3">GET</span>
+            /api/v1/crash-reports/:id
+          </h2>
+          <p class="text-gray-400 mb-3">Get a single crash report's details, including the attachment list and dump parsing info.</p>
+          <h4 class="text-xs text-gray-500 mb-1">Response</h4>
+          <pre><code>{
   "id": 42,
   "group_id": 7,
   "exception_type": "TypeError",
@@ -542,278 +780,290 @@ curl -X POST http://localhost:8080/api/v1/project-sources \\
       "file_size": 147200, "download_url": "/api/v1/download/attachment/1" }
   ]
 }</code></pre>
-      </div>
+        </div>
 
-      <div class="mt-6 pt-4 border-t border-gray-700">
-        <h2 class="text-lg font-semibold mb-3"><span class="method-badge bg-blue-600 text-white mr-3">GET</span>/api/v1/crash-reports/:id/analysis</h2>
-        <p class="text-gray-400 mb-3">Returns structured Crash Analysis: language detection, file tree, trigger point, colorized stack chain, and — after matching against a source snapshot — the actual crashing code, function definitions, and up to 20 possible reference locations.</p>
-        <p class="text-sm text-gray-500 mb-2">Source matching requires the report to include <code>project_name</code> and the project's sources to have been uploaded via <code>/project-sources</code>. A matching <code>release</code> is preferred; otherwise <code>match_type=latest</code>.</p>
-        <pre><code>{
+        <div class="mt-6 pt-4 border-t border-gray-700">
+          <h2 class="text-lg font-semibold mb-3"><span class="method-badge bg-blue-600 text-white mr-3">GET</span>/api/v1/crash-reports/:id/analysis</h2>
+          <p class="text-gray-400 mb-3">Returns structured Crash Analysis: language detection, file tree, trigger point, colorized stack chain, crash path flow, fix suggestions, and — after matching against a source snapshot — the actual crashing code, function definitions, related files, and root-cause candidates.</p>
+          <p class="text-sm text-gray-500 mb-2">Source matching requires the report to include <code>project_name</code> and the project's sources to have been uploaded via <code>/project-sources</code>. A matching <code>release</code> is preferred; otherwise <code>match_type=latest</code>. Matching always reads the project's <strong>current state</strong> (latest row per path across snapshots).</p>
+          <pre><code>{
+  "report_id": 42,
+  "exception_type": "TypeError",
+  "exception_message": "...",
   "detected_language": "typescript",
   "trigger_point": { "file_path": "src/service.ts", "line_number": 42, "function_name": "loadUser" },
+  "stack_chain": [ /* StackFrame[] with severity: trigger/propagation/source/framework */ ],
+  "summary": "...",
+  "crash_path": [ /* CrashPathStep[] — Python entry→crash→root-cause flow */ ],
+  "suggestions": [ /* FixSuggestion[] — always present for Python crashes */ ],
   "source_analysis": {
     "project_name": "api-gateway",
     "requested_release": "abc1234",
     "snapshot_release": "abc1234",
+    "snapshot_id": 9,
     "match_type": "exact",
+    "files_scanned": 24,
     "crash_source": { "file_path": "src/service.ts", "line_number": 42, "snippet": "..." },
     "function_definition": { "file_path": "src/service.ts", "line_number": 35, "snippet": "..." },
     "references": [],
-    "warnings": []
+    "related_functions": [ /* RelatedFunction[]: caller/callee/stack */ ],
+    "related_files": [ /* RelatedSourceFile[] */ ],
+    "warnings": [],
+    "root_cause_candidates": [ /* RootCauseCandidate[] with confidence/evidence — Python only */ ],
+    "fixes": [ /* FixSuggestion[] with code_before/code_after — Python only */ ],
+    "crash_path": [ /* CrashPathStep[] ending at the root-cause node — Python only */ ]
   }
 }</code></pre>
-      </div>
+        </div>
 
-      <div class="mt-6 pt-4 border-t border-gray-700">
-        <h2 class="text-lg font-semibold mb-3"><span class="method-badge bg-blue-600 text-white mr-3">GET</span>/api/v1/crash-reports/:id/symbolication</h2>
-        <p class="text-gray-400">Returns Unity/C# symbolication status, symbolicated stack, Build GUID, matched symbol ID, and warnings.</p>
-      </div>
-    </section>
-    <!-- ============================================================ -->
-    <section id="downloads" class="section-card mb-6">
-      <h2 class="text-xl font-semibold mb-4">⬇️ File Download Endpoints</h2>
+        <div class="mt-6 pt-4 border-t border-gray-700">
+          <h2 class="text-lg font-semibold mb-3"><span class="method-badge bg-blue-600 text-white mr-3">GET</span>/api/v1/crash-reports/:id/symbolication</h2>
+          <p class="text-gray-400">Returns Unity/C# symbolication status, symbolicated stack, Build GUID, matched symbol ID, and warnings.</p>
+        </div>
+      </section>
 
-      <div class="space-y-4">
-        <div class="border-l-2 border-blue-500 pl-4">
-          <h3 class="font-medium">
-            <span class="method-badge bg-blue-600 text-white mr-2 text-xs">GET</span>
-            /api/v1/download/report/:id
-          </h3>
-          <p class="text-sm text-gray-400 mt-1">Download the full JSON of a single crash report (including attachment metadata).</p>
-          <pre class="mt-2"><code>curl -O http://localhost:8080/api/v1/download/report/42
+      <!-- ============================================================ -->
+      <!-- 7. File Downloads -->
+      <!-- ============================================================ -->
+      <section id="downloads" class="section-card mb-6">
+        <h2 class="text-xl font-semibold mb-4">⬇️ File Download Endpoints</h2>
+
+        <div class="overflow-x-auto mb-4">
+          <table class="w-full text-sm border-collapse">
+            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">Method &amp; Path</th><th class="text-left py-2">Auth</th><th class="text-left py-2">Description</th></tr></thead>
+            <tbody class="text-gray-400">
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /download/report/:id</code></td><td>Session</td><td>Full JSON of a crash report (incl. attachment metadata)</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /download/group/:id</code></td><td>Session</td><td>JSON of an entire crash group (group info + all reports)</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /download/dump/:reportId</code></td><td>Session</td><td>Dump parsing result JSON (incl. attachment download links)</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /download/attachment/:id</code></td><td>Session</td><td>Raw attachment file (dump files, log files, ...)</td></tr>
+              <tr><td class="py-1"><code>GET /download/player-feedback/attachment/:id</code></td><td>Session</td><td>Player feedback attachment</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="space-y-4">
+          <div class="border-l-2 border-blue-500 pl-4">
+            <h3 class="font-medium">
+              <span class="method-badge bg-blue-600 text-white mr-2 text-xs">GET</span>
+              /api/v1/download/report/:id
+            </h3>
+            <pre class="mt-2"><code>curl -O http://localhost:8080/api/v1/download/report/42
 # → crash-report-42.json</code></pre>
-        </div>
+          </div>
 
-        <div class="border-l-2 border-blue-500 pl-4">
-          <h3 class="font-medium">
-            <span class="method-badge bg-blue-600 text-white mr-2 text-xs">GET</span>
-            /api/v1/download/group/:id
-          </h3>
-          <p class="text-sm text-gray-400 mt-1">Download the JSON of an entire crash group (including group info and all reports).</p>
-          <pre class="mt-2"><code>curl -O http://localhost:8080/api/v1/download/group/7
+          <div class="border-l-2 border-blue-500 pl-4">
+            <h3 class="font-medium">
+              <span class="method-badge bg-blue-600 text-white mr-2 text-xs">GET</span>
+              /api/v1/download/group/:id
+            </h3>
+            <pre class="mt-2"><code>curl -O http://localhost:8080/api/v1/download/group/7
 # → crash-group-7.json</code></pre>
-        </div>
+          </div>
 
-        <div class="border-l-2 border-blue-500 pl-4">
-          <h3 class="font-medium">
-            <span class="method-badge bg-blue-600 text-white mr-2 text-xs">GET</span>
-            /api/v1/download/dump/:reportId
-          </h3>
-          <p class="text-sm text-gray-400 mt-1">Download the dump parsing result JSON for a crash report (including attachment download links).</p>
-          <pre class="mt-2"><code>curl -O http://localhost:8080/api/v1/download/dump/42
+          <div class="border-l-2 border-blue-500 pl-4">
+            <h3 class="font-medium">
+              <span class="method-badge bg-blue-600 text-white mr-2 text-xs">GET</span>
+              /api/v1/download/dump/:reportId
+            </h3>
+            <pre class="mt-2"><code>curl -O http://localhost:8080/api/v1/download/dump/42
 # → dump-info-42.json</code></pre>
-        </div>
+          </div>
 
-        <div class="border-l-2 border-blue-500 pl-4">
-          <h3 class="font-medium">
-            <span class="method-badge bg-blue-600 text-white mr-2 text-xs">GET</span>
-            /api/v1/download/attachment/:id
-          </h3>
-          <p class="text-sm text-gray-400 mt-1">Download the raw attachment file (dump files, log files, etc.).</p>
-          <pre class="mt-2"><code>curl -O http://localhost:8080/api/v1/download/attachment/1
+          <div class="border-l-2 border-blue-500 pl-4">
+            <h3 class="font-medium">
+              <span class="method-badge bg-blue-600 text-white mr-2 text-xs">GET</span>
+              /api/v1/download/attachment/:id
+            </h3>
+            <pre class="mt-2"><code>curl -O http://localhost:8080/api/v1/download/attachment/1
 # → crash.dmp (raw binary)</code></pre>
+          </div>
         </div>
-      </div>
-    </section>
+      </section>
 
-    <!-- ============================================================ -->
-    <!-- 6. Symbols -->
-    <!-- ============================================================ -->
-    <section id="symbols" class="section-card mb-6">
-      <h2 class="text-xl font-semibold mb-4">
-        <span class="method-badge bg-green-600 text-white mr-3">POST</span>
-        /api/v1/symbols
-      </h2>
-      <p class="text-gray-400 mb-4">Upload a symbol file (multipart/form-data) for dump symbolication.</p>
-
-      <h3 class="font-medium mb-2">📥 Form Fields</h3>
-      <table class="w-full text-sm border-collapse mb-4">
-        <thead>
-          <tr class="border-b border-gray-700 text-gray-500 text-xs uppercase">
-            <th class="text-left py-2 pr-4">Field</th>
-            <th class="text-left py-2 pr-4">Type</th>
-            <th class="text-left py-2">Description</th>
-          </tr>
-        </thead>
-        <tbody class="text-gray-400">
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><strong class="text-gray-200">file</strong> <span class="field-required">*required</span></td><td class="pr-4">file</td><td>Symbol file (max 500 MB)</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><strong>build_guid</strong> <span class="field-required">*required</span></td><td class="pr-4">string</td><td>Build GUID, used to match dumps</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">platform</td><td class="pr-4">string</td><td>Platform identifier (default unknown)</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">symbol_type</td><td class="pr-4">string</td><td><code>symbol_map</code>, <code>dsym</code>, <code>elf</code>, or <code>unknown</code>; auto-detected from the filename when omitted</td></tr>
-          <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">module_name</td><td class="pr-4">string</td><td>Module/assembly name</td></tr>
-          <tr><td class="py-1.5 pr-4">architecture</td><td class="pr-4">string</td><td>Architecture, e.g. arm64, x86_64</td></tr>
-        </tbody>
-      </table>
-
-      <pre class="mt-2"><code>curl -X POST http://localhost:8080/api/v1/symbols \\
-  -F "file=@libil2cpp.sym.so" \\
-  -F "build_guid=a1b2c3d4e5f6a7b8" \\
-  -F "platform=Android"</code></pre>
-
-      <div class="mt-6 pt-4 border-t border-gray-700">
-        <h2 class="text-lg font-semibold mb-3">
-          <span class="method-badge bg-blue-600 text-white mr-3">GET</span>
+      <!-- ============================================================ -->
+      <!-- 8. Symbols -->
+      <!-- ============================================================ -->
+      <section id="symbols" class="section-card mb-6">
+        <h2 class="text-xl font-semibold mb-4">
+          <span class="method-badge bg-green-600 text-white mr-3">POST</span>
           /api/v1/symbols
         </h2>
-        <p class="text-gray-400 mb-2">List uploaded symbol files.</p>
-        <p class="text-sm text-gray-500">Query: <code>page</code>, <code>page_size</code>, <code>platform</code>, <code>build_guid</code></p>
-      </div>
+        <p class="text-gray-400 mb-4">Upload a symbol file (multipart/form-data) for dump symbolication.</p>
 
-      <div class="mt-4 pt-4 border-t border-gray-700">
-        <h2 class="text-lg font-semibold mb-3">
-          <span class="method-badge bg-green-600 text-white mr-3">GET</span>
-          /api/v1/symbols/:id/download
-        </h2>
-        <p class="text-gray-400 mb-2">Download an uploaded symbol file.</p>
-        <pre><code>curl -O http://localhost:8080/api/v1/symbols/1/download</code></pre>
-        <h4 class="text-xs text-gray-500 mt-2">Error Response</h4>
-        <pre><code>// 400
-{ "error": "Invalid ID" }
-
-// 404
-{ "error": "Not found" }</code></pre>
-      </div>
-
-      <div class="mt-4 pt-4 border-t border-gray-700">
-        <h2 class="text-lg font-semibold mb-3">
-          <span class="method-badge bg-red-600 text-white mr-3">DELETE</span>
-          /api/v1/symbols/:id
-        </h2>
-        <p class="text-gray-400 mb-2">Delete a symbol file (also removes the file from disk).</p>
-        <pre><code>curl -X DELETE http://localhost:8080/api/v1/symbols/1</code></pre>
-        <h4 class="text-xs text-gray-500 mt-2">Response</h4>
-        <pre><code>{ "success": true }</code></pre>
-      </div>
-    </section>
-
-    <!-- ============================================================ -->
-    <!-- 7. Dump Parsing -->
-    <!-- ============================================================ -->
-    <section id="dump" class="section-card mb-6">
-      <h2 class="text-xl font-semibold mb-4">🔬 Dump Parsing</h2>
-      <p class="text-gray-400 mb-4">The server has a built-in dump parsing module; uploaded attachments are auto-detected and parsed. Results are stored in the <code>dump_info</code> field.</p>
-
-      <h3 class="font-medium mb-3">Supported Dump Formats</h3>
-      <div class="overflow-x-auto">
-        <table class="w-full text-sm border-collapse">
+        <h3 class="font-medium mb-2">📥 Form Fields</h3>
+        <table class="w-full text-sm border-collapse mb-4">
           <thead>
             <tr class="border-b border-gray-700 text-gray-500 text-xs uppercase">
-              <th class="text-left py-2 pr-4">Format</th>
-              <th class="text-left py-2 pr-4">Extension</th>
-              <th class="text-left py-2">Parsed Content</th>
+              <th class="text-left py-2 pr-4">Field</th>
+              <th class="text-left py-2 pr-4">Type</th>
+              <th class="text-left py-2">Description</th>
             </tr>
           </thead>
           <tbody class="text-gray-400">
-            <tr class="border-b border-gray-700/30">
-              <td class="py-2 pr-4"><strong class="text-gray-200">Android Tombstone</strong></td>
-              <td class="pr-4"><code>.txt</code>, <code>.tombstone</code></td>
-              <td>Signal, fault address, backtrace, memory map, build fingerprint, abort message</td>
-            </tr>
-            <tr class="border-b border-gray-700/30">
-              <td class="py-2 pr-4"><strong class="text-gray-200">iOS/macOS Crash</strong></td>
-              <td class="pr-4"><code>.crash</code>, <code>.ips</code></td>
-              <td>Exception type, signal, crashed thread, all thread backtraces, binary images, registers</td>
-            </tr>
-            <tr class="border-b border-gray-700/30">
-              <td class="py-2 pr-4"><strong class="text-gray-200">Windows Minidump</strong></td>
-              <td class="pr-4"><code>.dmp</code>, <code>.mdmp</code></td>
-              <td>System info (OS/CPU), exception record, thread list, module list</td>
-            </tr>
-            <tr>
-              <td class="py-2 pr-4"><strong class="text-gray-200">Unity Log</strong></td>
-              <td class="pr-4"><code>.log</code>, <code>.txt</code></td>
-              <td>Exception lines, stack traces, crash context (surrounding lines), Fatal Error / signal markers</td>
-            </tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><strong class="text-gray-200">file</strong> <span class="field-required">*required</span></td><td class="pr-4">file</td><td>Symbol file (max 500 MB)</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><strong>build_guid</strong> <span class="field-required">*required</span></td><td class="pr-4">string</td><td>Build GUID, used to match dumps</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">platform</td><td class="pr-4">string</td><td>Platform identifier (default unknown)</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">symbol_type</td><td class="pr-4">string</td><td><code>symbol_map</code>, <code>dsym</code>, <code>elf</code>, or <code>unknown</code>; auto-detected from the filename when omitted</td></tr>
+            <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4">module_name</td><td class="pr-4">string</td><td>Module/assembly name</td></tr>
+            <tr><td class="py-1.5 pr-4">architecture</td><td class="pr-4">string</td><td>Architecture, e.g. arm64, x86_64</td></tr>
           </tbody>
         </table>
-      </div>
 
-      <p class="text-sm text-gray-500 mt-4">The parser auto-detects the format via file extension and content characteristics (<em>heuristics</em>). Upload any dump in the <code>attachments</code> field and it will be parsed automatically.</p>
-    </section>
+        <pre class="mt-2"><code>curl -X POST http://localhost:8080/api/v1/symbols \
+  -F "file=@libil2cpp.sym.so" \
+  -F "build_guid=a1b2c3d4e5f6a7b8" \
+  -F "platform=Android"</code></pre>
 
-    <!-- ============================================================ -->
-    <!-- 8. Stats & Utilities -->
-    <!-- ============================================================ -->
-    <section id="stats" class="section-card mb-6">
-      <h2 class="text-xl font-semibold mb-4">📊 Projects, Stats &amp; Utilities Endpoints</h2>
+        <h3 class="font-medium mt-6 mb-3">🔧 Management Endpoints</h3>
+        <div class="overflow-x-auto mb-4">
+          <table class="w-full text-sm border-collapse">
+            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">Method &amp; Path</th><th class="text-left py-2">Auth</th><th class="text-left py-2">Description</th></tr></thead>
+            <tbody class="text-gray-400">
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /symbols</code></td><td>Session</td><td>List symbols; query: <code>page</code>, <code>page_size</code> (max 200), <code>platform</code>, <code>build_guid</code></td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /symbols/:id/download</code></td><td>Session</td><td>Download an uploaded symbol file</td></tr>
+              <tr><td class="py-1"><code>DELETE /symbols/:id</code></td><td>Session + CSRF</td><td>Delete a symbol file (admin; also removes the file from disk)</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <pre><code>curl -O http://localhost:8080/api/v1/symbols/1/download
+curl -X DELETE http://localhost:8080/api/v1/symbols/1</code></pre>
+      </section>
 
-      <div class="space-y-4">
-        <div class="border-l-2 border-blue-500 pl-4">
-          <h3 class="font-medium"><span class="method-badge bg-blue-600 text-white mr-2 text-xs">GET</span>/api/v1/projects</h3>
-          <p class="text-sm text-gray-400 mt-1">Returns the list of projects with each project's <code>crash_count</code>, for use with the <code>project_id</code> filter.</p>
-          <pre class="mt-2"><code>[{ "id": 3, "name": "api-gateway", "crash_count": 42, "created_at": "...", "updated_at": "..." }]</code></pre>
+      <!-- ============================================================ -->
+      <!-- 9. Dump Parsing -->
+      <!-- ============================================================ -->
+      <section id="dump" class="section-card mb-6">
+        <h2 class="text-xl font-semibold mb-4">🔬 Dump Parsing</h2>
+        <p class="text-gray-400 mb-4">The server has a built-in dump parsing module; uploaded attachments are auto-detected and parsed. Results are stored in the <code>dump_info</code> field.</p>
+
+        <h3 class="font-medium mb-3">Supported Dump Formats</h3>
+        <div class="overflow-x-auto">
+          <table class="w-full text-sm border-collapse">
+            <thead>
+              <tr class="border-b border-gray-700 text-gray-500 text-xs uppercase">
+                <th class="text-left py-2 pr-4">Format</th>
+                <th class="text-left py-2 pr-4">Extension</th>
+                <th class="text-left py-2">Parsed Content</th>
+              </tr>
+            </thead>
+            <tbody class="text-gray-400">
+              <tr class="border-b border-gray-700/30">
+                <td class="py-2 pr-4"><strong class="text-gray-200">Android Tombstone</strong></td>
+                <td class="pr-4"><code>.txt</code>, <code>.tombstone</code></td>
+                <td>Signal, fault address, backtrace, memory map, build fingerprint, abort message</td>
+              </tr>
+              <tr class="border-b border-gray-700/30">
+                <td class="py-2 pr-4"><strong class="text-gray-200">iOS/macOS Crash</strong></td>
+                <td class="pr-4"><code>.crash</code>, <code>.ips</code></td>
+                <td>Exception type, signal, crashed thread, all thread backtraces, binary images, registers</td>
+              </tr>
+              <tr class="border-b border-gray-700/30">
+                <td class="py-2 pr-4"><strong class="text-gray-200">Windows Minidump</strong></td>
+                <td class="pr-4"><code>.dmp</code>, <code>.mdmp</code></td>
+                <td>System info (OS/CPU), exception record, thread list, module list</td>
+              </tr>
+              <tr>
+                <td class="py-2 pr-4"><strong class="text-gray-200">Unity Log</strong></td>
+                <td class="pr-4"><code>.log</code>, <code>.txt</code></td>
+                <td>Exception lines, stack traces, crash context (surrounding lines), Fatal Error / signal markers</td>
+              </tr>
+            </tbody>
+          </table>
         </div>
 
-        <div class="border-l-2 border-blue-500 pl-4">
+        <p class="text-sm text-gray-500 mt-4">The parser auto-detects the format via file extension and content characteristics (<em>heuristics</em>). Upload any dump in the <code>attachments</code> field and it will be parsed automatically.</p>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- 10. Stats & Utilities -->
+      <!-- ============================================================ -->
+      <section id="stats" class="section-card mb-6">
+        <h2 class="text-xl font-semibold mb-4">📊 Projects, Stats &amp; Utilities Endpoints</h2>
+
+        <div class="overflow-x-auto mb-4">
+          <table class="w-full text-sm border-collapse">
+            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">Method &amp; Path</th><th class="text-left py-2">Auth</th><th class="text-left py-2">Description</th></tr></thead>
+            <tbody class="text-gray-400">
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /projects</code></td><td>Session</td><td>Projects with each project's <code>crash_count</code></td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /platforms</code></td><td>Session</td><td>All known platforms (deduplicated)</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /versions</code></td><td>Session</td><td>All known version numbers (deduplicated, at most 50, newest first)</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /stats/dashboard</code></td><td>Session</td><td>Dashboard statistics</td></tr>
+              <tr><td class="py-1"><code>POST /clear-crashes</code></td><td>Session + CSRF</td><td>Delete all crash groups, reports and crash attachments (admin, irreversible)</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="space-y-4">
+          <div class="border-l-2 border-blue-500 pl-4">
+            <h3 class="font-medium"><span class="method-badge bg-blue-600 text-white mr-2 text-xs">GET</span>/api/v1/projects</h3>
+            <pre class="mt-2"><code>[{ "id": 3, "name": "api-gateway", "crash_count": 42, "created_at": "...", "updated_at": "..." }]</code></pre>
+          </div>
+
+          <div class="border-l-2 border-blue-500 pl-4">
+            <h3 class="font-medium">
+              <span class="method-badge bg-blue-600 text-white mr-2 text-xs">GET</span>
+              /api/v1/stats/dashboard
+            </h3>
+            <p class="text-xs text-gray-500 mt-1">Returns: total_crashes, total_groups, open_groups, resolved_groups, crashes_today, crashes_week, top_crashes[], platform_distribution[], version_distribution[], runtime_distribution[], environment_distribution[], daily_trend[]</p>
+          </div>
+
+          <div class="border-l-2 border-blue-500 pl-4">
+            <h3 class="font-medium">
+              <span class="method-badge bg-blue-600 text-white mr-2 text-xs">GET</span>
+              /api/v1/platforms
+            </h3>
+            <pre class="mt-2"><code># → ["Android", "iOS", "Windows", "Linux"]</code></pre>
+          </div>
+
+          <div class="border-l-2 border-blue-500 pl-4">
+            <h3 class="font-medium">
+              <span class="method-badge bg-blue-600 text-white mr-2 text-xs">GET</span>
+              /api/v1/versions
+            </h3>
+            <pre class="mt-2"><code># → ["1.5.2", "1.5.1", "1.5.0"]</code></pre>
+          </div>
+        </div>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- 11. Export / Import -->
+      <!-- ============================================================ -->
+      <section id="export" class="section-card mb-6">
+        <h2 class="text-xl font-semibold mb-4">📦 Export / Import</h2>
+        <p class="text-gray-400 mb-4">`.crashpkg` is a tar.gz containing a manifest, report JSONs and attachment files. New packages carry the project name; old packages can still be imported.</p>
+
+        <div class="border-l-2 border-green-500 pl-4 mb-4">
           <h3 class="font-medium">
-            <span class="method-badge bg-blue-600 text-white mr-2 text-xs">GET</span>
-            /api/v1/stats/dashboard
+            <span class="method-badge bg-green-600 text-white mr-2 text-xs">GET</span>
+            /api/v1/export/group/:id
           </h3>
-          <p class="text-sm text-gray-400 mt-1">Get dashboard statistics.</p>
-          <p class="text-xs text-gray-500 mt-1">Returns: total_crashes, total_groups, open_groups, resolved_groups, crashes_today, crashes_week, top_crashes[], platform_distribution[], version_distribution[], runtime_distribution[], environment_distribution[], daily_trend[]</p>
-          <pre class="mt-2"><code>curl http://localhost:8080/api/v1/stats/dashboard</code></pre>
+          <p class="text-sm text-gray-400 mt-1">Export a crash group as <code>.crashpkg</code> (tar.gz), containing manifest.json, all report JSONs, and attachment files.</p>
+          <pre class="mt-2"><code>curl http://localhost:8080/api/v1/export/group/1 -o crash-group-1.crashpkg</code></pre>
         </div>
 
-        <div class="border-l-2 border-blue-500 pl-4">
+        <div class="border-l-2 border-purple-500 pl-4">
           <h3 class="font-medium">
-            <span class="method-badge bg-blue-600 text-white mr-2 text-xs">GET</span>
-            /api/v1/platforms
+            <span class="method-badge bg-purple-600 text-white mr-2 text-xs">POST</span>
+            /api/v1/import
           </h3>
-          <p class="text-sm text-gray-400 mt-1">Get the list of all known platforms (deduplicated).</p>
-          <pre class="mt-2"><code>curl http://localhost:8080/api/v1/platforms
-# → ["Android", "iOS", "Windows", "Linux"]</code></pre>
-        </div>
-
-        <div class="border-l-2 border-blue-500 pl-4">
-          <h3 class="font-medium">
-            <span class="method-badge bg-blue-600 text-white mr-2 text-xs">GET</span>
-            /api/v1/versions
-          </h3>
-          <p class="text-sm text-gray-400 mt-1">Get the list of all known version numbers (deduplicated, at most 50, newest first).</p>
-          <pre class="mt-2"><code>curl http://localhost:8080/api/v1/versions
-# → ["1.5.2", "1.5.1", "1.5.0"]</code></pre>
-        </div>
-      </div>
-    </section>
-
-    <!-- ============================================================ -->
-    <!-- 10. Export / Import -->
-    <!-- ============================================================ -->
-    <section id="export" class="section-card mb-6">
-      <h2 class="text-xl font-semibold mb-4">📦 Export / Import</h2>
-
-      <div class="border-l-2 border-green-500 pl-4 mb-4">
-        <h3 class="font-medium">
-          <span class="method-badge bg-green-600 text-white mr-2 text-xs">GET</span>
-          /api/v1/export/group/:id
-        </h3>
-        <p class="text-sm text-gray-400 mt-1">Export a crash group as <code>.crashpkg</code> (tar.gz), containing manifest.json, all report JSONs, and attachment files.</p>
-        <pre class="mt-2"><code>curl http://localhost:8080/api/v1/export/group/1 -o crash-group-1.crashpkg</code></pre>
-      </div>
-
-      <div class="border-l-2 border-purple-500 pl-4">
-        <h3 class="font-medium">
-          <span class="method-badge bg-purple-600 text-white mr-2 text-xs">POST</span>
-          /api/v1/import
-        </h3>
-        <p class="text-sm text-gray-400 mt-1">Import a <code>.crashpkg</code> crash data package. <strong>Query:</strong> <code>confirm=true</code> performs the real write, <code>confirm=false</code> is a dry run (checks conflicts only). Supports multipart upload, raw binary, or base64 encoding.</p>
-        <pre class="mt-2"><code># Dry run
-curl -X POST "http://localhost:8080/api/v1/import?confirm=false" \\
+          <p class="text-sm text-gray-400 mt-1">Import a <code>.crashpkg</code> crash data package. <strong>Query:</strong> <code>confirm=true</code> performs the real write, <code>confirm=false</code> is a dry run (checks conflicts only). Supports multipart upload, raw binary, or base64 encoding.</p>
+          <pre class="mt-2"><code># Dry run
+curl -X POST "http://localhost:8080/api/v1/import?confirm=false" \
   -F "package=@crash-group-1.crashpkg"
 
 # Real import
-curl -X POST "http://localhost:8080/api/v1/import?confirm=true" \\
+curl -X POST "http://localhost:8080/api/v1/import?confirm=true" \
   -F "package=@crash-group-1.crashpkg"</code></pre>
-        <h4 class="text-xs text-gray-500 mt-3">Dry-run response</h4>
-        <pre><code>{
+          <h4 class="text-xs text-gray-500 mt-3">Dry-run response</h4>
+          <pre><code>{
   "dry_run": true,
   "conflicts": [{ "crash_hash": "a8002ef4f65bcd40", "existing_group_id": 1 }],
   "new_groups": 0,
   "new_reports": 5,
   "new_attachments": 2
 }</code></pre>
-        <h4 class="text-xs text-gray-500 mt-3">Real import response</h4>
-        <pre><code>{
+          <h4 class="text-xs text-gray-500 mt-3">Real import response</h4>
+          <pre><code>{
   "dry_run": false,
   "conflicts": [],
   "new_groups": 1,
@@ -821,15 +1071,196 @@ curl -X POST "http://localhost:8080/api/v1/import?confirm=true" \\
   "new_attachments": 2,
   "group_id": 10
 }</code></pre>
-      </div>
-    </section>
+        </div>
+      </section>
 
-    <!-- Footer -->
-    <div class="text-center text-xs text-gray-600 mt-8 pb-8">
-      <p>Crash Report Server · Cross-platform crash reporting service</p>
-      <p class="mt-1">Base URL: <code class="text-gray-500">http://localhost:8080/api/v1</code></p>
-    </div>
+      <!-- ============================================================ -->
+      <!-- 12. AI Crash Assistant -->
+      <!-- ============================================================ -->
+      <section id="ai" class="section-card mb-6">
+        <h2 class="text-xl font-semibold mb-4">
+          <span class="tag tag-ai mr-3 align-middle">AI</span>
+          12. AI Crash Assistant
+        </h2>
+        <p class="text-gray-400 mb-3">An agentic crash-analysis assistant available to <strong>session-logged-in</strong> <code>admin</code>/<code>operator</code> users. Each user configures their own DeepSeek API key on the Accounts page; keys are never returned to the browser and are stored encrypted with <code>AI_ENCRYPTION_KEY</code>.</p>
+        <p class="text-sm text-gray-400 mb-3">The assistant only reads crashes the current user is authorized to access, deterministic analyses, and source snapshots uploaded via the API. Without sources it infers from the crash information alone.</p>
+
+        <h3 class="font-medium mb-2">🤖 Agent Tools</h3>
+        <div class="overflow-x-auto mb-4">
+          <table class="w-full text-sm border-collapse">
+            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2 pr-4">Tool</th><th class="text-left py-2 pr-4">Description</th><th class="text-left py-2">Safety Boundary</th></tr></thead>
+            <tbody class="text-gray-400">
+              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>read_source_file</code></td><td class="pr-4">Read uploaded project sources (path / line range / listing)</td><td>DB <code>relative_path</code> only — no filesystem paths</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>web_fetch</code></td><td class="pr-4">Fetch public web pages (official docs / specs)</td><td>SSRF guard: IP validated at connect time; private/loopback/link-local/metadata addresses blocked; redirect and response-size limits</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>run_bash</code></td><td class="pr-4">Reproduce issues in a per-conversation workspace</td><td>Off by default (<code>AI_BASH_ENABLED=true</code>); 30s timeout, output cap, minimal env, no network isolation</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>update_tasks</code></td><td class="pr-4">Maintain its own task list</td><td>Task list persisted encrypted, visible across turns</td></tr>
+              <tr><td class="py-1.5 pr-4"><code>spawn_subagent</code></td><td class="pr-4">Delegate focused sub-investigations</td><td>Max 4 per turn, no nesting, no bash; steps count toward the budget</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="text-xs text-gray-500 mb-4">Loop step limit: <code>AI_MAX_TOOL_STEPS</code> (default 12). The agent loop multiplies provider calls, bounded per-user by <code>AI_RATE_LIMIT</code> (default 20/min).</p>
+
+        <h3 class="font-medium mb-2">🔌 Endpoints</h3>
+        <div class="overflow-x-auto mb-4">
+          <table class="w-full text-sm border-collapse">
+            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">Method &amp; Path</th><th class="text-left py-2">Auth</th><th class="text-left py-2">Description</th></tr></thead>
+            <tbody class="text-gray-400">
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /ai/status</code></td><td>Session</td><td>AI availability: provider, configured, model, models, conversation count</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /ai/crashes</code></td><td>Session</td><td>Recent crash groups (25) for attaching to a conversation; query: <code>search</code></td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /ai/crash-context/:groupId</code></td><td>Session</td><td>Authorized crash summary; query: <code>report_id</code> (optional)</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /ai/conversations</code></td><td>Session</td><td>List the current user's unexpired conversations</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /ai/conversations</code></td><td>Session + CSRF</td><td>Create a conversation, optionally bound to <code>group_id</code> / <code>report_id</code></td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /ai/conversations/:id/attach</code></td><td>Session + CSRF</td><td>Attach a crash to an existing conversation</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /ai/conversations/:id</code></td><td>Session</td><td>Read own conversation: <code>messages</code>, <code>events</code>, <code>tasks</code></td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>DELETE /ai/conversations/:id</code></td><td>Session + CSRF</td><td>Delete own conversation (also drops its bash workspace)</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /ai/conversations/:id/messages</code></td><td>Session + CSRF</td><td>Send a message; streams back SSE events</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /auth/ai-provider</code></td><td>Session</td><td>Provider status (never returns the key)</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>PUT /auth/ai-provider</code></td><td>Session + CSRF</td><td>Save / replace the DeepSeek key</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>DELETE /auth/ai-provider</code></td><td>Session + CSRF</td><td>Delete the current user's provider</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /auth/ai-provider/keys</code></td><td>Session</td><td>List configured provider keys (metadata only)</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /auth/ai-provider/keys</code></td><td>Session + CSRF</td><td>Add a provider key</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>PATCH /auth/ai-provider/keys/:id</code></td><td>Session + CSRF</td><td>Update a key (e.g. enable/disable)</td></tr>
+              <tr><td class="py-1"><code>DELETE /auth/ai-provider/keys/:id</code></td><td>Session + CSRF</td><td>Delete a provider key</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="font-medium mb-2">📡 SSE Stream Events (POST /ai/conversations/:id/messages)</h3>
+        <div class="overflow-x-auto mb-4">
+          <table class="w-full text-sm border-collapse">
+            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2 pr-4">Event</th><th class="text-left py-2">Payload</th></tr></thead>
+            <tbody class="text-gray-400">
+              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>delta</code> / <code>reasoning</code></td><td>Final answer / thinking text chunks</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>tool_call</code></td><td><code>{ id, name, args, group }</code></td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>tool_result</code></td><td><code>{ id, name, status, ok, summary, group }</code></td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>subagent</code></td><td><code>{ id, status, prompt, summary, group }</code></td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>tasks</code></td><td><code>{ tasks }</code></td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>done</code></td><td><code>{ message, context, key_id, tasks }</code></td></tr>
+              <tr><td class="py-1.5 pr-4"><code>error</code></td><td><code>{ error, message }</code></td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="text-xs text-gray-500">Conversations expire after <code>AI_RETENTION_DAYS</code> (default 30 days) and are visible only to their creator. Message bodies and agent events are stored AES-256-GCM encrypted, bounded by per-user rate limits, message length, and message-count limits.</p>
+      </section>
+
+      <!-- ============================================================ -->
+      <!-- 13. Account & Security -->
+      <!-- ============================================================ -->
+      <section id="account" class="section-card mb-6">
+        <h2 class="text-xl font-semibold mb-4">
+          <span class="tag tag-auth mr-3 align-middle">Auth</span>
+          13. Account, 2FA &amp; API Keys
+        </h2>
+        <p class="text-gray-400 mb-3">All endpoints below live under <code>/api/v1/auth</code> and require a session Cookie; mutating requests additionally require <code>X-CSRF-Token</code>. Access is restricted per role (admin / operator / viewer).</p>
+
+        <h3 class="font-medium mb-2">🔑 Session &amp; Setup</h3>
+        <div class="overflow-x-auto mb-4">
+          <table class="w-full text-sm border-collapse">
+            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">Method &amp; Path</th><th class="text-left py-2">Description</th></tr></thead>
+            <tbody class="text-gray-400">
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /setup-status</code> · <code>POST /setup</code></td><td>First-run initialization (UltraAdmin)</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /login</code></td><td>Login; may return <code>email_verification</code> / <code>two_factor</code> next step</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /login/verify-email</code> · <code>/login/resend-email</code></td><td>Login email verification step (admin)</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /login/totp</code></td><td>Login TOTP verification step (admin)</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /logout</code> · <code>GET /me</code> · <code>GET /csrf</code></td><td>Logout, current user info, CSRF token</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="font-medium mb-2">🛡️ Two-Factor Authentication (admin)</h3>
+        <div class="overflow-x-auto mb-4">
+          <table class="w-full text-sm border-collapse">
+            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">Method &amp; Path</th><th class="text-left py-2">Description</th></tr></thead>
+            <tbody class="text-gray-400">
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /2fa/challenge</code> · <code>/2fa/verify</code> · <code>/2fa/resend</code></td><td>Challenge / verify / resend for sensitive account operations</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>PATCH /me/two-factor-method</code></td><td>Switch 2FA method (email / TOTP)</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>PATCH /me/verify-email-on-login</code></td><td>Toggle "verify email on every login" (admin)</td></tr>
+              <tr><td class="py-1"><code>GET /me/totp/setup</code> · <code>POST /me/totp/enable</code> · <code>/me/totp/disable</code></td><td>TOTP management</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="font-medium mb-2">📧 Emails &amp; Phones</h3>
+        <div class="overflow-x-auto mb-4">
+          <table class="w-full text-sm border-collapse">
+            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">Method &amp; Path</th><th class="text-left py-2">Description</th></tr></thead>
+            <tbody class="text-gray-400">
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /me/emails</code> · <code>POST /me/emails</code> · <code>DELETE /me/emails/:id</code></td><td>List / add / remove emails</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /me/emails/:id/verify</code> · <code>/primary</code> · <code>/resend</code></td><td>Verify, set primary, resend verification</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /me/phones</code> · <code>POST /me/phones</code> · <code>DELETE /me/phones/:id</code></td><td>List / add / remove phones</td></tr>
+              <tr><td class="py-1"><code>POST /me/phones/:id/verify</code> · <code>/primary</code> · <code>/resend</code></td><td>Verify, set primary, resend verification</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="font-medium mb-2">👥 Users, API Keys &amp; Password</h3>
+        <div class="overflow-x-auto mb-4">
+          <table class="w-full text-sm border-collapse">
+            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">Method &amp; Path</th><th class="text-left py-2">Description</th></tr></thead>
+            <tbody class="text-gray-400">
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /users</code> · <code>POST /users</code> · <code>PATCH /users/:id</code></td><td>User management (admin)</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>PUT /users/:id/password</code></td><td>Change password (self, or admin/operator for others)</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /forgot-password</code> · <code>/forgot-password/totp</code> · <code>/forgot-password/verify-email</code></td><td>Initiate password reset</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /reset-request/:token</code> · <code>POST /reset-request/:token/approve</code></td><td>View / approve a reset request (admin)</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /api-keys</code> · <code>POST /api-keys</code> · <code>DELETE /api-keys/:id</code></td><td>Manage API keys; the plaintext key is returned only once at creation</td></tr>
+              <tr><td class="py-1"><code>PATCH /api-keys/:id/tier</code> · <code>PATCH /api-keys/:id/limits</code></td><td>Change key tier / quota (admin): <code>minute_limit</code> and <code>daily_limit</code>, integers 0–1000000000, <code>0</code> = unlimited</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <h3 class="font-medium mb-2">🗂️ Containers (UltraAdmin)</h3>
+        <div class="overflow-x-auto mb-4">
+          <table class="w-full text-sm border-collapse">
+            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">Method &amp; Path</th><th class="text-left py-2">Description</th></tr></thead>
+            <tbody class="text-gray-400">
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /containers</code> · <code>POST /containers</code> · <code>DELETE /containers/:id</code></td><td>Container management (multi-tenant isolation)</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /containers/active</code> · <code>GET /containers/:id/status</code></td><td>Container status</td></tr>
+              <tr><td class="py-1"><code>POST /containers/:id/ban</code> · <code>/unban</code> · <code>POST /containers/:id/users</code></td><td>Ban / unban a container, add users</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <p class="text-xs text-gray-500">API Key tiers: <code>admin</code>, <code>operator</code>, <code>viewer</code>. Viewer keys cannot write; operator/admin keys can call the ingest endpoints.</p>
+      </section>
+
+      <!-- Footer -->
+      <div class="text-center text-xs text-gray-600 mt-8 pb-8">
+        <p>Crash Report Server · Cross-platform crash reporting service</p>
+        <p class="mt-1">Base URL: <code class="text-gray-500">http://localhost:8080/api/v1</code></p>
+      </div>
+    </main>
   </div>
+
+  <!-- Language tabs + TOC active highlight -->
+  <script>
+    // Language tabs
+    document.querySelectorAll('.lang-tabs').forEach(function (tabs) {
+      var group = tabs.getAttribute('data-tabs');
+      tabs.querySelectorAll('.lang-tab').forEach(function (tab) {
+        tab.addEventListener('click', function () {
+          tabs.querySelectorAll('.lang-tab').forEach(function (t) { t.classList.remove('active'); });
+          tab.classList.add('active');
+          document.querySelectorAll('.lang-pane[data-tabs="' + group + '"]').forEach(function (pane) {
+            pane.classList.toggle('active', pane.getAttribute('data-lang-pane') === tab.getAttribute('data-lang'));
+          });
+        });
+      });
+    });
+
+    // Active section highlight in the sidebar
+    var sections = document.querySelectorAll('main section[id]');
+    var links = document.querySelectorAll('.toc-link[data-section]');
+    if ('IntersectionObserver' in window) {
+      var observer = new IntersectionObserver(function (entries) {
+        entries.forEach(function (entry) {
+          if (entry.isIntersecting) {
+            links.forEach(function (link) {
+              link.classList.toggle('toc-active', link.getAttribute('data-section') === entry.target.id);
+            });
+          }
+        });
+      }, { rootMargin: '-20% 0px -70% 0px' });
+      sections.forEach(function (section) { observer.observe(section); });
+    }
+  </script>
 </body>
 </html>
-  

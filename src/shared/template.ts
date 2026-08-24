@@ -1,10 +1,15 @@
 import { readFileSync } from 'fs';
 import { resolve, dirname } from 'path';
 import { fileURLToPath } from 'url';
+import { config } from '../config.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const rootDir = resolve(__dirname, '..', '..');
 const templatesDir = resolve(rootDir, 'web', 'templates');
+
+// Server-rendered feature flags. Replaces {{FEATURES_JSON}} in every page so
+// the UI can hide disabled features without depending on an API response.
+const featuresJson = JSON.stringify({ emailEnabled: config.emailEnabled });
 
 const ROUTE_MAP: Record<string, string> = {
   'pages/app/dashboard.html': '/web/',
@@ -60,7 +65,8 @@ export function renderTemplate(templatePath: string, title: string): string {
       .replace('{{TITLE}}', title)
       .replace('{{SUBTITLE}}', title)
       .replace('{{CONTENT}}', templateToRoute(templatePath))
-      .replace('{{BODY}}', body));
+      .replace('{{BODY}}', body))
+      .replaceAll('{{FEATURES_JSON}}', featuresJson);
   } catch (err) {
     return `<!DOCTYPE html><html><body><h1>Error: Template not found: ${templatePath}</h1><pre>${err}</pre></body></html>`;
   }
@@ -74,7 +80,7 @@ export function renderStandalone(templatePath: string, title: string): string {
   try {
     const page = readFileSync(resolve(templatesDir, templatePath), 'utf-8');
     const headPartial = loadPartial('head.html').replace('__TITLE__', title);
-    return processIncludes(page.replace('{{HEAD}}', headPartial));
+    return processIncludes(page.replace('{{HEAD}}', headPartial)).replaceAll('{{FEATURES_JSON}}', featuresJson);
   } catch {
     return `<!DOCTYPE html><html><body><h1>Error: Template not found: ${templatePath}</h1></body></html>`;
   }

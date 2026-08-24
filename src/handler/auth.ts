@@ -197,6 +197,7 @@ router.get('/me', requireApiAuth, (req: Request, res: Response): void => {
       two_factor_method: full?.two_factor_method ?? 'totp',
       verify_email_on_login: full?.verify_email_on_login ?? 0,
       has_verified_email: auth.hasVerifiedEmail(u.id),
+      email_verification_enabled: config.emailEnabled,
       available_2fa_methods: methods,
     },
   });

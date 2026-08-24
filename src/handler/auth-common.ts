@@ -50,7 +50,7 @@ export async function continueLogin(
   }
 
   if (full.role === 'admin') {
-    if (!skipEmailVerification && full.verify_email_on_login === 1 && auth.hasVerifiedEmail(userId)) {
+    if (!skipEmailVerification && config.emailEnabled && full.verify_email_on_login === 1 && auth.hasVerifiedEmail(userId)) {
       const session = auth.createLoginEmailVerificationSession(userId);
       if (session) {
         const sendResult = await sendVerificationEmail(session.email, session.code);

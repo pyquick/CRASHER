@@ -193,7 +193,7 @@ export function insertAiMessageExchange(
 ): AiMessage {
   return getDb().transaction(() => {
     const count = countAiMessages(conversationId, ownerUserId);
-    if (count + 2 > maxMessages) throw new Error('AI_MESSAGE_LIMIT');
+    if (maxMessages > 0 && count + 2 > maxMessages) throw new Error('AI_MESSAGE_LIMIT');
     insertAiMessage(conversationId, ownerUserId, 'user', encryptedUserContent, null, now);
     const assistant = insertAiMessage(conversationId, ownerUserId, 'assistant', encryptedAssistantContent, encryptedAssistantReasoning, now);
     touchAiConversation(conversationId, ownerUserId, now, expiresAt);

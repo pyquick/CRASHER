@@ -25,7 +25,7 @@
         <input type="text" x-model="username" required autocomplete="off" class="fc w-full"
                placeholder="e.g. super_admin@2024!">
       </div>
-      <div>
+      <div x-show="emailEnabled">
         <label class="block text-xs text-gray-500 mb-1">Email (for password reset verification)</label>
         <input type="email" x-model="email" autocomplete="email" class="fc w-full" placeholder="you@example.com">
       </div>

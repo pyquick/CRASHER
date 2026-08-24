@@ -30,7 +30,7 @@ export async function sendResetApprovalEmail(
 ): Promise<SendResult> {
   const transporter = getTransporter();
   const approvalUrl = `${config.baseUrl || 'http://localhost:8080'}/web/approve-reset/${token}`;
-  if (!transporter || !config.alertEmailFrom) {
+  if (!config.emailEnabled || !transporter || !config.alertEmailFrom) {
     console.log(`[email] Reset approval for ${requesterUsername}: ${approvalUrl}`);
     return { ok: false, method: 'console', error: 'SMTP not configured' };
   }
@@ -92,7 +92,7 @@ export interface SendResult {
  */
 export async function sendVerificationEmail(to: string, code: string): Promise<SendResult> {
   const transporter = getTransporter();
-  if (!transporter || !config.alertEmailFrom) {
+  if (!config.emailEnabled || !transporter || !config.alertEmailFrom) {
     console.log(`[email] Verification code for ${to}: ${code} (SMTP not configured — check console)`);
     return { ok: false, method: 'console', error: 'SMTP not configured' };
   }
@@ -169,7 +169,7 @@ async function sendWebhook(payload: AlertPayload): Promise<void> {
 }
 
 async function sendEmail(payload: AlertPayload): Promise<void> {
-  if (!config.smtpHost || !config.alertEmailFrom || !config.alertEmailTo) return;
+  if (!config.emailEnabled || !config.smtpHost || !config.alertEmailFrom || !config.alertEmailTo) return;
   const transporter = getTransporter();
   if (!transporter) return;
   try {

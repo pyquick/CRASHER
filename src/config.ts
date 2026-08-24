@@ -27,6 +27,7 @@ export interface Config {
   apiRateLimit: number;
   webhookUrl: string;
   webhookTimeoutMs: number;
+  emailEnabled: boolean;
   smtpHost: string;
   smtpPort: number;
   smtpSecure: boolean;
@@ -128,6 +129,10 @@ function loadConfig(): Config {
     apiRateLimit: Math.max(1, envInt('API_RATE_LIMIT', 600)),
     webhookUrl: env('WEBHOOK_URL', ''),
     webhookTimeoutMs: envInt('WEBHOOK_TIMEOUT_MS', 5000),
+    // Email functionality is only enabled when every SMTP/ALERT env var is set.
+    emailEnabled: !!(process.env.SMTP_HOST && process.env.SMTP_PORT && process.env.SMTP_SECURE
+      && process.env.SMTP_USER && process.env.SMTP_PASSWORD && process.env.ALERT_EMAIL_FROM && process.env.ALERT_EMAIL_TO
+      && process.env.ALERT_ON_NEW_GROUP && process.env.ALERT_THRESHOLD_COUNT),
     smtpHost: env('SMTP_HOST', ''),
     smtpPort: envInt('SMTP_PORT', 587),
     smtpSecure: envBool('SMTP_SECURE', false),
@@ -151,8 +156,9 @@ function loadConfig(): Config {
     aiSourceMaxFiles: Math.max(1, envInt('AI_SOURCE_MAX_FILES', 20)),
     aiHistoryMaxChars: Math.max(1000, envInt('AI_HISTORY_MAX_CHARS', 40000)),
     aiRateLimit: Math.max(1, envInt('AI_RATE_LIMIT', 20)),
-    aiMaxConversations: Math.max(1, envInt('AI_MAX_CONVERSATIONS', 50)),
-    aiMaxMessagesPerConversation: Math.max(2, envInt('AI_MAX_MESSAGES_PER_CONVERSATION', 100)),
+    // 0 = unlimited
+    aiMaxConversations: Math.max(0, envInt('AI_MAX_CONVERSATIONS', 50)),
+    aiMaxMessagesPerConversation: Math.max(0, envInt('AI_MAX_MESSAGES_PER_CONVERSATION', 100)),
     aiRetentionDays: Math.max(1, envInt('AI_RETENTION_DAYS', 30)),
     aiBashEnabled: envBool('AI_BASH_ENABLED', false),
     aiBashTimeoutMs: Math.max(1000, envInt('AI_BASH_TIMEOUT_MS', 30000)),

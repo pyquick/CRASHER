@@ -110,6 +110,8 @@
       newUser: { username: '', password: '', role: 'viewer' },
       // Login email-verification preference
       hasVerifiedEmail: false, verifyEmailOnLogin: 0,
+      // Server-rendered gate; defaults to false so a missing flag never shows the section.
+      emailEnabled: (window.FEATURES && window.FEATURES.emailEnabled) === true,
       // TOTP
       totpEnabled: false, totpCode: '',
       totpSetup: { show: false, loading: false, secret: '', error: '' },
@@ -142,6 +144,7 @@
           this.isAdmin = me.user.role === 'admin';
           this.hasVerifiedEmail = !!me.user.has_verified_email;
           this.verifyEmailOnLogin = me.user.verify_email_on_login || 0;
+          if (me.user.email_verification_enabled !== undefined) this.emailEnabled = me.user.email_verification_enabled === true;
         } catch (e) { this.notify(e.message, true); }
         this.loading = false;
       },
