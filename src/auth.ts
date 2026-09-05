@@ -16,7 +16,7 @@ export {
   createLoginEmailVerificationSession, consumeLoginEmailVerificationSession, resendLoginEmailVerificationCode,
   generateTotpSecret, enableTotp, disableTotp, verifyTotp,
   createTotpTempToken, consumeTotpTempToken,
-  createOperation2FASession, consumeOperation2FASession, resendOperation2FACode,
+  createOperation2FASession, consumeOperation2FASession, resendOperation2FACode, sendOperation2FACode,
   createMfaSession, validateMfaSession, getAvailable2FAMethods,
   listPhones, addPhone, resendPhoneVerificationCode, verifyPhoneCode, setPrimaryPhone,
   deletePhone, getPrimaryPhone, hasVerifiedPhone, maskPhone,

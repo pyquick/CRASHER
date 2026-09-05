@@ -87,7 +87,7 @@ containers
 | `ai_provider_configs` | 每用户的 DeepSeek 配置；API Key 只保存 AES-256-GCM 密文 |
 | `ai_conversations` | 仅创建者可见的崩溃绑定会话，默认 30 天过期 |
 | `ai_messages` | 会话消息；正文使用 AES-256-GCM 密文保存，外键级联删除 |
-| `ai_agent_events` | Agent 活动日志（tool_call/tool_result/subagent/task_update）；`payload` 使用 AES-256-GCM 密文保存，`message_id` 关联所属助手消息（轮次结束后回填），`group_id` 嵌套子 Agent 内的事件 |
+| `ai_agent_events` | Agent 活动日志（tool_call/tool_result/subagent/task_update/reasoning）；`payload` 使用 AES-256-GCM 密文保存，`message_id` 关联所属助手消息（轮次结束后回填），`group_id` 嵌套子 Agent 内的事件；`reasoning` 记录工具调用后继续思考的片段，供 UI 在工具步骤下方回放 |
 
 聊天数据按 owner 查询，不按容器共享；启动时清理过期会话（Agent 事件随会话级联删除）。`AI_ENCRYPTION_KEY` 更换后旧 provider/chat/事件密文无法解密，部署时必须备份并稳定保存该密钥。
 
@@ -127,6 +127,7 @@ containers
 | v17 | provider 配置可选 DeepSeek 模型 |
 | v18 | 加密多 Key AI provider 存储 + reasoning 消息 |
 | v19 | AI Agent 事件日志 (ai_agent_events) |
+| v20 | ai_agent_events 允许 reasoning 事件（重建表扩展 kind CHECK） |
 
 ### 添加新迁移
 

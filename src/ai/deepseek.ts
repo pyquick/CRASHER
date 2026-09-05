@@ -21,9 +21,15 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null;
 }
 
-function buildRequestBody(request: AiProviderRequest, stream: boolean): string {
+// Exported for tests. DeepSeek v4 API: thinking is controlled with
+// "thinking": {"type": "enabled" | "disabled"} and defaults to ENABLED — so a
+// request must always state it explicitly, otherwise reasoning appears even
+// when the user turned it off.
+export function buildRequestBody(request: AiProviderRequest, stream: boolean): string {
+  const modelId = (request.model || config.aiDeepseekModel).trim();
   return JSON.stringify({
-    model: (request.model || config.aiDeepseekModel).replace('[1m]', ''),
+    ...(modelId ? { model: modelId.replace('[1m]', '') } : {}),
+    ...(request.thinking !== undefined ? { thinking: { type: request.thinking ? 'enabled' : 'disabled' } } : {}),
     // In-memory messages keep tool calls flattened; the provider wire format
     // nests them under type/function and carries tool_call_id separately.
     messages: request.messages.map(message => ({
@@ -69,6 +75,8 @@ const DSML_NAME_ALIASES: Record<string, string> = {
   webfetch: 'web_fetch',
   runbash: 'run_bash',
   updatetasks: 'update_tasks',
+  listcrashes: 'list_crashes',
+  updatecrashstatus: 'update_crash_status',
   spawnsubagent: 'spawn_subagent',
 };
 

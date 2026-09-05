@@ -289,3 +289,69 @@ test('subagent limit turns further dispatches into an error result', async () =>
   assert.ok(second);
   assert.equal(second.status, 'error');
 });
+
+test('reasoning after a tool turn is persisted between that tool and the next tool call', async () => {
+  let turn = 0;
+  const h = harness(async () => {
+    turn++;
+    if (turn === 1) return toolTurn('c1', 'read_source_file', { list: true });
+    if (turn === 2) {
+      return [
+        { type: 'reasoning', content: 'The list looks incomplete, checking more.' },
+        { type: 'delta', content: 'Digging deeper.' },
+        { type: 'done', toolCalls: [{ id: 'c2', name: 'update_tasks', arguments: JSON.stringify({ tasks: [{ id: 't1', title: 'verify', status: 'in_progress' }] }) }] },
+      ];
+    }
+    return final('done');
+  });
+  const result = await runAgentLoop(h.params);
+  assert.equal(result.content, 'done');
+  const reasoningEntries = h.persisted.filter(entry => entry.kind === 'reasoning');
+  assert.equal(reasoningEntries.length, 1);
+  assert.deepEqual(reasoningEntries[0].payload, { text: 'The list looks incomplete, checking more.' });
+  // The reasoning row lands after c1's events and before c2's tool_call, so
+  // replay attaches it to the previous tool step.
+  const reasoningIndex = h.persisted.findIndex(entry => entry.kind === 'reasoning');
+  const callIndexes = h.persisted
+    .map((entry, index) => entry.kind === 'tool_call' ? index : -1)
+    .filter(index => index >= 0);
+  assert.ok(reasoningIndex > callIndexes[0], 'reasoning must follow the first tool call');
+  assert.ok(reasoningIndex < callIndexes[1], 'reasoning must precede the next tool call');
+});
+
+test('reasoning before any tool call is not persisted', async () => {
+  let turn = 0;
+  const h = harness(async () => {
+    turn++;
+    if (turn === 1) {
+      return [
+        { type: 'reasoning', content: 'initial thinking' },
+        { type: 'delta', content: 'Let me check the sources.' },
+        { type: 'done', toolCalls: [{ id: 'c1', name: 'read_source_file', arguments: JSON.stringify({ list: true }) }] },
+      ];
+    }
+    return final('done');
+  });
+  await runAgentLoop(h.params);
+  assert.equal(h.persisted.filter(entry => entry.kind === 'reasoning').length, 0);
+});
+
+test('sub-agent reasoning is not persisted', async () => {
+  let mainTurns = 0;
+  const h = harness(async (_messages, _model, tools) => {
+    if (tools.length < 5) {
+      return [
+        { type: 'reasoning', content: 'sub thinking' },
+        { type: 'delta', content: 'sub report: the bug is on line 3' },
+        { type: 'done' },
+      ];
+    }
+    mainTurns++;
+    if (mainTurns === 1) return toolTurn('sub1', 'spawn_subagent', { prompt: 'trace callers of Bug()' });
+    return [{ type: 'reasoning', content: 'main thinking after the sub-agent' }, ...final('main answer')];
+  });
+  await runAgentLoop(h.params);
+  const reasoningEntries = h.persisted.filter(entry => entry.kind === 'reasoning');
+  assert.equal(reasoningEntries.length, 1);
+  assert.deepEqual(reasoningEntries[0].payload, { text: 'main thinking after the sub-agent' });
+});

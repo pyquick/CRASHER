@@ -7,6 +7,8 @@ import { parsePositiveId } from '../shared/string.js';
 import { resolve2FA } from './auth-common.js';
 import { decryptAiValue, encryptAiValue, isAiEncryptionConfigured } from '../ai/crypto.js';
 import { writeAuditLog } from '../auth.js';
+import { config } from '../config.js';
+import { parseBashPolicy } from '../ai/bash-policy.js';
 import type { AiProvider } from '../model.js';
 
 const router = Router();
@@ -45,6 +47,31 @@ function validateApiKey(value: unknown): string | null {
   return value;
 }
 
+function bashConfig() {
+  const settings = store.getAiBashSettings();
+  const parsed = parseBashPolicy(settings.policy_json);
+  return { enabled: Boolean(settings.enabled), policy: parsed, updated_at: settings.updated_at };
+}
+
+router.get('/ai-bash', requireRole('admin', 'operator'), (req, res): void => {
+  if (!sessionOnly(req, res)) return;
+  res.json(bashConfig());
+});
+
+router.put('/ai-bash', requireRole('admin', 'operator'), requireCsrf, (req, res): void => {
+  if (!sessionOnly(req, res)) return;
+  const enabled = req.body?.enabled === true;
+  const policy = req.body?.policy;
+  if (!policy || typeof policy !== 'object') { res.status(400).json({ error: 'Bad Request', message: 'A policy object is required' }); return; }
+  const raw = JSON.stringify(policy);
+  const parsed = parseBashPolicy(raw);
+  if (raw.length > 50000 || (!['allow', 'deny'].includes(parsed.default))) { res.status(400).json({ error: 'Bad Request', message: 'Invalid Bash policy' }); return; }
+  const saved = store.updateAiBashSettings(enabled, JSON.stringify(parsed), req.authUser!.id, nowSqlDateTime());
+  config.aiBashEnabled = Boolean(saved.enabled);
+  config.aiBashPolicy = saved.policy_json;
+  writeAuditLog(req.authUser!.id, 'ai_bash.updated', 'ai_bash_settings', '1', req.ip ?? '', { enabled });
+  res.json(bashConfig());
+});
 router.get('/ai-provider', requireRole('admin', 'operator'), (req, res): void => {
   if (!sessionOnly(req, res)) return;
   res.json(viewConfig(req.authUser!.id));

@@ -1,70 +1,50 @@
-<!-- ── Email verification widget (login identity check / accounts add & verify) ── -->
-<div x-data="{ e: $store.authSteps.email, s: $store.authSteps }" x-show="e.open" x-cloak
+<!-- ── Unified verification window (operation 2FA · login email/TOTP · email manage) ── -->
+<div x-data="{ v: $store.authSteps.verify, s: $store.authSteps }" x-show="v.open" x-cloak
      class="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm">
   <div class="bg-surface-900 border border-gray-700 rounded-xl p-6 w-full max-w-sm mx-4 shadow-2xl">
-    <h3 class="text-sm font-semibold mb-1" x-text="e.title"></h3>
-    <p x-show="e.step === 'input'" class="text-xs text-gray-500 mb-4">A verification code will be sent to this address.</p>
-    <p x-show="e.step === 'code'" class="text-xs text-gray-500 mb-4" x-text="e.message || 'Enter the 6-digit verification code.'"></p>
+    <h3 class="text-sm font-semibold mb-1" x-text="v.context === 'login-email' || v.context === 'email-add' || v.context === 'email-verify' ? 'Email Verification' : 'Two-Factor Authentication'"></h3>
 
-    <!-- Add mode: email input step -->
-    <div x-show="e.mode === 'add' && e.step === 'input'" class="space-y-3">
-      <input type="email" x-model="e.emailInput" placeholder="your@email.com" autocomplete="off"
-             class="fc w-full" @keyup.enter="s.emailSubmit()">
-      <p x-show="e.error" class="text-sm text-red-400" x-text="e.error"></p>
-      <div class="flex justify-end gap-3">
-        <button type="button" class="btn btn-gray" @click="s.closeEmail()" :disabled="e.loading">Cancel</button>
-        <button type="button" class="btn btn-blue" @click="s.emailSubmit()" :disabled="e.loading">
-          <span x-show="!e.loading">Send Code</span>
-          <span x-show="e.loading">Sending...</span>
+    <!-- Method tabs: email/SMS for operations; hidden for login TOTP -->
+    <div x-show="v.context !== 'login-2fa' && v.tabs.length > 1" class="flex gap-1 mb-3">
+      <template x-for="m in v.tabs" :key="m">
+        <button type="button" class="flex-1 rounded-lg border px-3 py-1.5 text-xs font-medium transition-colors"
+                :class="v.tab === m
+                  ? 'bg-blue-600/20 border-blue-700/60 text-blue-300'
+                  : 'border-gray-700 text-gray-400 hover:text-gray-200 hover:border-gray-600'"
+                :aria-selected="String(v.tab === m)" role="tab" @click="s.verifySelect(m)">
+          <span x-text="m === 'email' ? 'Email 邮箱' : 'SMS 短信'"></span>
         </button>
-      </div>
+      </template>
     </div>
 
-    <!-- Code entry step (all modes) -->
-    <div x-show="e.step === 'code'" class="space-y-3">
-      <input type="text" x-model="e.code" maxlength="6" inputmode="numeric" autocomplete="one-time-code"
-             placeholder="000000" class="fc w-full text-center font-mono tracking-[0.3em]"
-             @keyup.enter="s.emailSubmit()">
-      <p x-show="e.error" class="text-sm text-red-400" x-text="e.error"></p>
-      <div class="flex justify-end gap-3">
-        <button type="button" class="btn btn-gray" @click="s.closeEmail()" :disabled="e.loading"
-                x-text="e.mode === 'login' ? 'Back to Login' : 'Cancel'"></button>
-        <button type="button" class="btn btn-gray" @click="s.emailResend()" :disabled="e.loading || e.resendCooldown > 0">
-          <span x-show="e.resendCooldown === 0">Resend</span>
-          <span x-show="e.resendCooldown > 0" x-text="'Resend (' + e.resendCooldown + 's)'"></span>
-        </button>
-        <button type="button" class="btn btn-blue" @click="s.emailSubmit()" :disabled="e.loading">
-          <span x-show="!e.loading" x-text="e.mode === 'login' ? 'Verify' : 'Confirm'"></span>
-          <span x-show="e.loading">Verifying...</span>
-        </button>
-      </div>
+    <!-- Email add: enter the new address first -->
+    <div x-show="v.context === 'email-add' && v.step === 'input'" class="space-y-3 mb-4">
+      <input type="email" x-model="v.emailInput" placeholder="your@email.com" autocomplete="off"
+             class="fc w-full" @keyup.enter="s.verifySend()">
     </div>
-  </div>
-</div>
 
-<!-- ── 2FA widget (login TOTP step / operation 2FA challenge) ── -->
-<div x-data="{ t: $store.authSteps.twoFactor, s: $store.authSteps }" x-show="t.open" x-cloak
-     class="fixed inset-0 z-[70] flex items-center justify-center bg-black/60 backdrop-blur-sm">
-  <div class="bg-surface-900 border border-gray-700 rounded-xl p-6 w-full max-w-sm mx-4 shadow-2xl">
-    <h3 class="text-sm font-semibold mb-1">Two-Factor Authentication</h3>
-    <p class="text-xs text-gray-500 mb-4"
-       x-text="t.method === 'totp' ? 'Enter the 6-digit code from your authenticator app.' : (t.message || 'A verification code has been sent to ' + t.hint + '.')"></p>
+    <p x-show="v.context !== 'email-add' || v.step === 'code'" class="text-xs text-gray-500 mb-4" x-text="v.context === 'login-2fa'
+      ? 'Enter the 6-digit code from your authenticator app.'
+      : v.sent
+        ? (v.message || (v.tab === 'sms' ? 'Verification code sent to ' + (v.hint || 'your phone') + '.' : 'Verification code sent to ' + (v.hint || 'your email') + '.'))
+        : (v.message || (v.tab === 'sms' ? 'A verification code will be sent to your verified phone number. Click send code to request it.' : 'A verification code will be sent to your verified email address. Click send code to request it.'))"></p>
+
     <div class="space-y-3">
-      <input type="text" x-model="t.code" maxlength="6" inputmode="numeric" autocomplete="one-time-code"
+      <input type="text" x-model="v.code" maxlength="6" inputmode="numeric" autocomplete="one-time-code"
              placeholder="000000" class="fc w-full text-center font-mono tracking-[0.3em]"
-             @keyup.enter="s.twoFactorSubmit()">
-      <p x-show="t.error" class="text-sm text-red-400" x-text="t.error"></p>
+             @keyup.enter="s.verifySubmit()">
+      <p x-show="v.error" class="text-sm text-red-400" x-text="v.error"></p>
       <div class="flex justify-end gap-3">
-        <button type="button" class="btn btn-gray" @click="s.close2FA()" :disabled="t.loading"
-                x-text="t.context === 'login' ? 'Back to Login' : 'Cancel'"></button>
-        <button type="button" class="btn btn-gray" x-show="t.method !== 'totp'" @click="s.twoFactorResend()"
-                :disabled="t.loading || t.resendCooldown > 0">
-          <span x-show="t.resendCooldown === 0">Resend</span>
-          <span x-show="t.resendCooldown > 0" x-text="'Resend (' + t.resendCooldown + 's)'"></span>
+        <button type="button" class="btn btn-gray" @click="s.closeVerify()" :disabled="v.loading"
+                x-text="v.context === 'login-2fa' ? 'Back to Login' : 'Cancel'"></button>
+        <button type="button" class="btn btn-gray" x-show="v.context !== 'login-2fa'" @click="s.verifySend()"
+                :disabled="v.loading || v.resendCooldown > 0">
+          <span x-show="v.resendCooldown > 0" x-text="'Resend (' + v.resendCooldown + 's)'"></span>
+          <span x-show="v.resendCooldown === 0" x-text="v.context === 'email-add' && v.step === 'input' ? 'Send code' : (v.sent ? 'Resend' : 'Send code')"></span>
         </button>
-        <button type="button" class="btn btn-blue" @click="s.twoFactorSubmit()" :disabled="t.loading">
-          <span x-show="!t.loading">Verify</span>
-          <span x-show="t.loading">Verifying...</span>
+        <button type="button" class="btn btn-blue" @click="s.verifySubmit()" :disabled="v.loading">
+          <span x-show="!v.loading">Verify</span>
+          <span x-show="v.loading">Verifying...</span>
         </button>
       </div>
     </div>

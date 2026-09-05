@@ -1099,6 +1099,8 @@ curl -X POST "http://localhost:8080/api/v1/import?confirm=true" \
               <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>web_fetch</code></td><td class="pr-4">Fetch public web pages (official docs / specs)</td><td>SSRF guard: IP validated at connect time; private/loopback/link-local/metadata addresses blocked; redirect and response-size limits</td></tr>
               <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>run_bash</code></td><td class="pr-4">Reproduce issues in a per-conversation workspace</td><td>Off by default (<code>AI_BASH_ENABLED=true</code>); 30s timeout, output cap, minimal env, no network isolation</td></tr>
               <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>update_tasks</code></td><td class="pr-4">Maintain its own task list</td><td>Task list persisted encrypted, visible across turns</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>list_crashes</code></td><td class="pr-4">List crash groups across the whole library (optional search/status/limit) to find crash ids</td><td>Container-scoped query; summary fields only</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>update_crash_status</code></td><td class="pr-4">Change a crash's status (open/resolved/ignored, optional resolved_version); without group_id changes the bound crash, with group_id the specified one</td><td>group_id re-checked against the container scope before writing; sub-agents cannot use it</td></tr>
               <tr><td class="py-1.5 pr-4"><code>spawn_subagent</code></td><td class="pr-4">Delegate focused sub-investigations</td><td>Max 4 per turn, no nesting, no bash; steps count toward the budget</td></tr>
             </tbody>
           </table>
@@ -1145,7 +1147,7 @@ curl -X POST "http://localhost:8080/api/v1/import?confirm=true" \
             </tbody>
           </table>
         </div>
-        <p class="text-xs text-gray-500">Conversations expire after <code>AI_RETENTION_DAYS</code> (default 30 days) and are visible only to their creator. Message bodies and agent events are stored AES-256-GCM encrypted, bounded by per-user rate limits, message length, and message-count limits.</p>
+        <p class="text-xs text-gray-500">Conversations expire after <code>AI_RETENTION_DAYS</code> (default 30 days) and are visible only to their creator. Message bodies and agent events are stored AES-256-GCM encrypted, bounded by per-user rate limits, message length, and message-count limits. Reasoning produced after a tool call is persisted as <code>kind=reasoning</code> agent events, so the UI replays a "Reasoning returned by DeepSeek" dropdown below the corresponding tool step; pre-tool reasoning stays only in the message's <code>reasoning</code> field.</p>
       </section>
 
       <!-- ============================================================ -->

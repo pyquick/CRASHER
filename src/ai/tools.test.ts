@@ -11,6 +11,7 @@ import type { AiToolCall } from './types.js';
 process.env.AI_BASH_ENABLED = 'true';
 process.env.AI_BASH_TIMEOUT_MS = '1000';
 process.env.AI_BASH_MAX_OUTPUT = '1024';
+process.env.AI_BASH_POLICY = JSON.stringify({ default: 'allow' });
 
 const { runTool, AGENT_TOOLS } = await import('./tools.js');
 import type { ToolContext } from './tools.js';
@@ -56,9 +57,9 @@ after(() => {
   rmSync(filesDir, { recursive: true, force: true });
 });
 
-test('AGENT_TOOLS defines all five tools with JSON schemas', () => {
+test('AGENT_TOOLS defines all seven tools with JSON schemas', () => {
   const names = AGENT_TOOLS.map(entry => (entry as { function: { name: string } }).function.name);
-  assert.deepEqual(names, ['read_source_file', 'web_fetch', 'run_bash', 'update_tasks', 'spawn_subagent']);
+  assert.deepEqual(names, ['read_source_file', 'web_fetch', 'run_bash', 'update_tasks', 'list_crashes', 'update_crash_status', 'spawn_subagent']);
 });
 
 test('read_source_file lists all project files', async () => {
@@ -131,4 +132,94 @@ test('run_bash caps output size and kills the process', async () => {
   assert.equal(result.ok, false);
   assert.ok(result.output.includes('truncated'), result.output);
   assert.ok(result.output.length < 2048);
+});
+
+test('update_crash_status is unavailable when not injected', async () => {
+  const result = await runTool(call('update_crash_status', { status: 'resolved' }), ctx());
+  assert.equal(result.ok, false);
+  assert.ok(result.output.includes('not available in this context'));
+});
+
+test('update_crash_status rejects invalid statuses', async () => {
+  const result = await runTool(call('update_crash_status', { status: 'bogus' }), ctx({
+    updateCrashStatus: async () => ({ ok: true, output: 'updated' }),
+  }));
+  assert.equal(result.ok, false);
+  assert.ok(result.output.includes('open, resolved, ignored'));
+});
+
+test('update_crash_status delegates validated input to the injected callback', async () => {
+  const updates: Array<{ groupId: number | null; status: string; resolvedVersion?: string }> = [];
+  const result = await runTool(call('update_crash_status', { status: 'resolved', resolved_version: ' 1.2.3 ' }), ctx({
+    updateCrashStatus: async (groupId, status, resolvedVersion) => {
+      updates.push({ groupId, status, resolvedVersion });
+      return { ok: true, output: 'Crash #1 status updated' };
+    },
+  }));
+  assert.equal(result.ok, true);
+  assert.deepEqual(updates, [{ groupId: null, status: 'resolved', resolvedVersion: '1.2.3' }]);
+});
+
+test('update_crash_status passes an explicit group_id through', async () => {
+  const updates: Array<{ groupId: number | null; status: string }> = [];
+  const result = await runTool(call('update_crash_status', { group_id: 42, status: 'ignored' }), ctx({
+    updateCrashStatus: async (groupId, status) => {
+      updates.push({ groupId, status });
+      return { ok: true, output: 'updated' };
+    },
+  }));
+  assert.equal(result.ok, true);
+  assert.deepEqual(updates, [{ groupId: 42, status: 'ignored' }]);
+});
+
+test('update_crash_status rejects malformed group ids', async () => {
+  const ctxWith = ctx({ updateCrashStatus: async () => ({ ok: true, output: 'updated' }) });
+  for (const groupId of [0, -1, 1.5, '12']) {
+    const result = await runTool(call('update_crash_status', { group_id: groupId, status: 'resolved' }), ctxWith);
+    assert.equal(result.ok, false, `group_id ${groupId} must be rejected`);
+    assert.ok(result.output.includes('positive integer'), result.output);
+  }
+});
+
+test('list_crashes is unavailable when not injected', async () => {
+  const result = await runTool(call('list_crashes', {}), ctx());
+  assert.equal(result.ok, false);
+  assert.ok(result.output.includes('not available in this context'));
+});
+
+test('list_crashes rejects an invalid status filter', async () => {
+  const result = await runTool(call('list_crashes', { status: 'bogus' }), ctx({
+    listCrashes: async () => ({ total: 0, items: [] }),
+  }));
+  assert.equal(result.ok, false);
+  assert.ok(result.output.includes('open, resolved, ignored'));
+});
+
+test('list_crashes forwards filters and formats the returned groups', async () => {
+  const requests: Array<{ search?: string; status?: string; limit?: number }> = [];
+  const result = await runTool(call('list_crashes', { search: 'NullRef', status: 'open', limit: 10 }), ctx({
+    listCrashes: async (search, status, limit) => {
+      requests.push({ search, status, limit });
+      return {
+        total: 2,
+        items: [
+          { id: 7, project_name: 'Game', exception_type: 'NullReferenceException', exception_message: 'Object reference not set', total_count: 42, last_seen: '2026-08-29 10:00:00', status: 'open', resolved_version: '' },
+          { id: 9, project_name: 'Game', exception_type: 'ArgumentException', exception_message: '', total_count: 3, last_seen: '2026-08-28 09:00:00', status: 'resolved', resolved_version: '1.2.0' },
+        ],
+      };
+    },
+  }));
+  assert.equal(result.ok, true);
+  assert.deepEqual(requests, [{ search: 'NullRef', status: 'open', limit: 10 }]);
+  assert.ok(result.output.includes('2 of 2 crash groups matching "NullRef"'));
+  assert.ok(result.output.includes('#7 · Game · NullReferenceException: Object reference not set · 42x · last seen 2026-08-29 10:00:00 · status: open'));
+  assert.ok(result.output.includes('#9 · Game · ArgumentException · 3x · last seen 2026-08-28 09:00:00 · status: resolved (fixed in 1.2.0)'));
+});
+
+test('list_crashes reports an empty library', async () => {
+  const result = await runTool(call('list_crashes', {}), ctx({
+    listCrashes: async () => ({ total: 0, items: [] }),
+  }));
+  assert.equal(result.ok, true);
+  assert.ok(result.output.includes('No crash groups found'));
 });

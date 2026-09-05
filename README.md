@@ -531,6 +531,8 @@ AI 以 **Agent 循环**运行：模型可调用工具逐步分析——
 | `web_fetch` | 抓取公开网页（官方文档/规范） | SSRF 防护：连接时校验 IP，拦截私网/环回/链路本地/元数据地址，限制跳数与响应体积 |
 | `run_bash` | 在每会话独立工作目录复现问题 | 默认关闭（`AI_BASH_ENABLED=true` 开启）；超时 30s、输出上限、最小环境变量、无网络隔离 |
 | `update_tasks` | 维护自身任务列表 | 任务列表加密持久化，跨轮次可见 |
+| `list_crashes` | 列出用户有权访问的整个崩溃库（可选 search/status/limit 过滤），用于查找崩溃 id | 按容器作用域查询，仅返回摘要字段 |
+| `update_crash_status` | 修改崩溃状态 (open/resolved/ignored，可选 resolved_version)；不带 group_id 时作用于会话绑定崩溃，带 group_id 时作用于指定崩溃 | group_id 写入前按容器作用域复核（getGroupByIdScoped），子 Agent 不可用 |
 | `spawn_subagent` | 派子 Agent 调查子问题 | 每轮最多 4 个、无嵌套、无 bash，步数计入总预算 |
 
 循环步数上限 `AI_MAX_TOOL_STEPS`（默认 12）。Agent 循环会倍增 provider 调用次数，受每用户 `AI_RATE_LIMIT`（20/分钟）约束。
@@ -556,7 +558,7 @@ POST   /ai/conversations/:id/messages
 
 会话默认保留 30 天，仅创建者可见；消息正文与 Agent 事件（工具调用/结果、子 Agent 轨迹、任务更新）使用 AES-256-GCM 加密保存，并受每用户限流、消息长度和会话消息数量限制。
 
-`POST /ai/conversations/:id/messages` 以 SSE 流式返回：`delta` / `reasoning`（最终答案与思考）、`tool_call` `{id, name, args, group}`、`tool_result` `{id, name, status, ok, summary, group}`、`subagent` `{id, status, prompt, summary, group}`、`tasks` `{tasks}`、`done` `{message, context, key_id, tasks}`、`error` `{error, message}`。
+`POST /ai/conversations/:id/messages` 以 SSE 流式返回：`delta` / `reasoning`（最终答案与思考）、`tool_call` `{id, name, args, group}`、`tool_result` `{id, name, status, ok, summary, group}`、`subagent` `{id, status, prompt, summary, group}`、`tasks` `{tasks}`、`done` `{message, context, key_id, tasks}`、`error` `{error, message}`。工具调用之后继续产生的思考作为 `kind=reasoning` 的 Agent 事件持久化，UI 据此在对应工具步骤下方显示 "Reasoning returned by DeepSeek" 下拉框。
 
 ### 13. 数据清理和健康检查
 

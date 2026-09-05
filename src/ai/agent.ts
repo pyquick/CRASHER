@@ -20,7 +20,7 @@ export type AgentSseEvent =
   | { type: 'reasoning'; content: string };
 
 export interface PersistEntry {
-  kind: 'tool_call' | 'tool_result' | 'subagent' | 'task_update';
+  kind: 'tool_call' | 'tool_result' | 'subagent' | 'task_update' | 'reasoning';
   name: string;
   status: AgentEventStatus;
   groupId: number | null;
@@ -56,6 +56,11 @@ export interface AgentLoopParams {
   // pass advanceTranscript: false so their events keep the spawn offset.
   transcriptOffset?: { value: number };
   advanceTranscript?: boolean;
+  actorUserId?: number;
+  // Crash-library access provided by the handler with the user's container
+  // scope applied; sub-agents are blocked from both (see executeToolCall gating).
+  listCrashes?: (search?: string, status?: string, limit?: number) => Promise<{ total: number; items: Array<{ id: number; project_name: string; exception_type: string; exception_message: string; total_count: number; last_seen: string; status: string; resolved_version: string }> }>;
+  updateCrashStatus?: (groupId: number | null, status: string, resolvedVersion?: string) => { ok: boolean; output: string } | Promise<{ ok: boolean; output: string }>;
 }
 
 export interface AgentTurnResult {
@@ -113,6 +118,10 @@ export async function runAgentLoop(params: AgentLoopParams): Promise<AgentTurnRe
   let reasoning = '';
   let transcript = '';
   let toolChars = 0;
+  // Post-tool reasoning chunks, persisted once per turn so the UI can show a
+  // "Reasoning returned by DeepSeek" dropdown below the preceding tool step.
+  let pendingReasoning = '';
+  let toolRan = false;
 
   try {
     while (true) {
@@ -135,6 +144,7 @@ export async function runAgentLoop(params: AgentLoopParams): Promise<AgentTurnRe
             params.emit({ type: 'delta', content: event.content });
           } else if (event.type === 'reasoning') {
             reasoning += event.content;
+            pendingReasoning += event.content;
             params.emit({ type: 'reasoning', content: event.content });
           } else if (event.type === 'done') {
             finished = true;
@@ -146,6 +156,16 @@ export async function runAgentLoop(params: AgentLoopParams): Promise<AgentTurnRe
         await gen.return(undefined).catch(() => {});
       }
       if (!finished) throw new AiProviderError('The AI provider stream ended unexpectedly', 'AI_PROVIDER_RESPONSE');
+      // Persist this turn's reasoning only when tools ran earlier: the client
+      // replays it below the last tool step (event ids order it after the
+      // previous tool's events). Pre-tool and sub-agent reasoning are not
+      // persisted; they stay in the message's top-level reasoning only.
+      if (pendingReasoning && toolRan && params.eventGroupId == null) {
+        params.persist({ kind: 'reasoning', name: 'reasoning', status: 'ok', groupId: null, payload: { text: cap(pendingReasoning, 10000) } });
+      }
+      // Clear at every turn end so pre-tool reasoning is never re-attributed
+      // to a later turn once tools have run.
+      pendingReasoning = '';
       if (params.signal?.aborted) throw new AiProviderError('AI generation was stopped', 'AI_CANCELLED');
       if (!toolCalls || toolCalls.length === 0) {
         if (!content.trim()) throw new AiProviderError('The AI provider returned no answer', 'AI_PROVIDER_RESPONSE');
@@ -163,6 +183,7 @@ export async function runAgentLoop(params: AgentLoopParams): Promise<AgentTurnRe
         messages.push({ role: 'tool', content: result.output, tool_call_id: call.id });
         toolChars = trimToolHistory(messages, toolChars + result.output.length);
       }
+      toolRan = true;
     }
   } catch (error) {
     if (params.signal?.aborted || error instanceof AiProviderError && error.code === 'AI_CANCELLED') throw error;
@@ -191,10 +212,19 @@ async function executeToolCall(call: AiToolCall, params: AgentLoopParams): Promi
     const ctx: ToolContext = {
       convId: 0,
       workspaceDir: params.workspaceDir,
+      actorUserId: params.actorUserId,
       signal: params.signal,
       loadSourceFiles: params.loadSourceFiles,
       spawnSubagent: call.name === 'spawn_subagent' && params.allowSubagents
         ? prompt => spawnSubagent(prompt, params)
+        : undefined,
+      // Only the main loop may touch the crash library; models can emit tool
+      // names that were never advertised, so gate on both name and loop.
+      listCrashes: call.name === 'list_crashes' && params.eventGroupId == null
+        ? params.listCrashes
+        : undefined,
+      updateCrashStatus: call.name === 'update_crash_status' && params.eventGroupId == null
+        ? params.updateCrashStatus
         : undefined,
     };
     let output: string;

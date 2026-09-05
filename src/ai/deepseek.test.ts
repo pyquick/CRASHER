@@ -55,6 +55,28 @@ test('DeepSeek adapter rejects empty responses without tool calls', async () => 
   );
 });
 
+test('DeepSeek adapter sends the thinking object per the official v4 API', async () => {
+  let capturedBody = '';
+  const fakeFetch = async (_input: string | URL | Request, init?: RequestInit) => {
+    capturedBody = String(init?.body ?? '');
+    return new Response(JSON.stringify({ choices: [{ message: { content: 'ok' } }] }), { status: 200 });
+  };
+  // Enabled: thinking {"type":"enabled"}.
+  await completeWithDeepSeek('test-key', { ...request, thinking: true }, fakeFetch);
+  const enabledBody = JSON.parse(capturedBody) as { thinking?: { type: string } };
+  assert.deepEqual(enabledBody.thinking, { type: 'enabled' });
+
+  // Disabled: the provider defaults to enabled, so the toggle must be explicit.
+  await completeWithDeepSeek('test-key', { ...request, thinking: false }, fakeFetch);
+  const disabledBody = JSON.parse(capturedBody) as { thinking?: { type: string } };
+  assert.deepEqual(disabledBody.thinking, { type: 'disabled' });
+
+  // Unset: no field at all.
+  await completeWithDeepSeek('test-key', request, fakeFetch);
+  const omittingBody = JSON.parse(capturedBody) as { thinking?: unknown };
+  assert.ok(!('thinking' in omittingBody));
+});
+
 test('DeepSeek adapter sends tools and tool_choice only when provided', async () => {
   let capturedBody = '';
   const fakeFetch = async (_input: string | URL | Request, init?: RequestInit) => {

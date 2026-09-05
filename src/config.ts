@@ -45,6 +45,7 @@ export interface Config {
   aiEncryptionKey: string;
   aiDeepseekModel: string;
   aiDeepseekEndpoint: string;
+  aiDeepseekModelsUrl: string;
   aiRequestTimeoutMs: number;
   aiMessageMaxLength: number;
   aiContextMaxChars: number;
@@ -57,6 +58,7 @@ export interface Config {
   aiBashEnabled: boolean;
   aiBashTimeoutMs: number;
   aiBashMaxOutput: number;
+  aiBashPolicy: string;
   aiMaxToolSteps: number;
   aiSubagentMax: number;
   aiSubagentMaxSteps: number;
@@ -148,8 +150,10 @@ function loadConfig(): Config {
     smsApiSecret: env('SMS_API_SECRET', ''),
     smsFrom: env('SMS_FROM', ''),
     aiEncryptionKey: env('AI_ENCRYPTION_KEY', ''),
-    aiDeepseekModel: env('AI_DEEPSEEK_MODEL', 'deepseek-chat'),
+    // Empty = provider default; models are discovered dynamically.
+    aiDeepseekModel: env('AI_DEEPSEEK_MODEL', ''),
     aiDeepseekEndpoint: env('AI_DEEPSEEK_ENDPOINT', 'https://api.deepseek.com/chat/completions'),
+    aiDeepseekModelsUrl: env('AI_DEEPSEEK_MODELS_URL', ''),
     aiRequestTimeoutMs: Math.max(1000, envInt('AI_REQUEST_TIMEOUT_MS', 60000)),
     aiMessageMaxLength: Math.max(100, envInt('AI_MESSAGE_MAX_LENGTH', 10000)),
     aiContextMaxChars: Math.max(10000, envInt('AI_CONTEXT_MAX_CHARS', 120000)),
@@ -163,10 +167,11 @@ function loadConfig(): Config {
     aiBashEnabled: envBool('AI_BASH_ENABLED', false),
     aiBashTimeoutMs: Math.max(1000, envInt('AI_BASH_TIMEOUT_MS', 30000)),
     aiBashMaxOutput: Math.max(1024, envInt('AI_BASH_MAX_OUTPUT', 65536)),
+    aiBashPolicy: env('AI_BASH_POLICY', ''),
     aiMaxToolSteps: Math.max(1, envInt('AI_MAX_TOOL_STEPS', 12)),
     aiSubagentMax: Math.max(1, envInt('AI_SUBAGENT_MAX', 4)),
     aiSubagentMaxSteps: Math.max(1, envInt('AI_SUBAGENT_MAX_STEPS', 8)),
-    aiSubagentModel: env('AI_SUBAGENT_MODEL', '') || env('AI_DEEPSEEK_MODEL', 'deepseek-chat'),
+    aiSubagentModel: env('AI_SUBAGENT_MODEL', '') || env('AI_DEEPSEEK_MODEL', ''),
     aiWebFetchTimeoutMs: Math.max(1000, envInt('AI_WEBFETCH_TIMEOUT_MS', 15000)),
     aiWebFetchMaxBytes: Math.max(1024, envInt('AI_WEBFETCH_MAX_BYTES', 262144)),
     aiToolResultMaxChars: Math.max(1000, envInt('AI_TOOL_RESULT_MAX_CHARS', 20000)),

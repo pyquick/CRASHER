@@ -94,14 +94,14 @@ export function createVerificationStore<T = Record<string, unknown>>(
     return session.data as unknown as T2;
   }
 
-  function resend(token: string): string | null {
+  function resend(token: string, force = false): string | null {
     cleanup();
     const session = store.get(token);
     if (!session || session.expires < Date.now()) {
       store.delete(token);
       return null;
     }
-    if (Date.now() - session.lastResentAt < resendCooldownMs) {
+    if (!force && Date.now() - session.lastResentAt < resendCooldownMs) {
       return null;
     }
     const code = generateCode();

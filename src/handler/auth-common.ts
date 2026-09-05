@@ -53,17 +53,13 @@ export async function continueLogin(
     if (!skipEmailVerification && config.emailEnabled && full.verify_email_on_login === 1 && auth.hasVerifiedEmail(userId)) {
       const session = auth.createLoginEmailVerificationSession(userId);
       if (session) {
-        const sendResult = await sendVerificationEmail(session.email, session.code);
-        console.log(`[login] EMAIL-VERIFICATION code for ${full.username} (${session.email}): ${session.code}`);
         auth.writeAuditLog(userId, 'login.email_verification_required', 'user', String(userId), req.ip ?? '', {});
         res.json({
           success: true,
           email_verification: {
             temp_token: session.tempToken,
             email_hint: maskEmail(session.email),
-            message: sendResult.ok
-              ? `A verification code has been sent to ${maskEmail(session.email)}.`
-              : 'SMTP unavailable. Check console for the verification code.',
+            message: `A verification code will be sent to ${maskEmail(session.email)}. Click send code to request it.`,
           },
         });
         return;
@@ -81,9 +77,20 @@ export async function continueLogin(
 }
 
 /**
+ * Operation 2FA only accepts email/SMS verification, per the account
+ * operation standard (the unified verification window). TOTP remains a login
+ * step; it is used here only as a fallback when no verified contact exists.
+ */
+export function operation2FAMethods(methods: TwoFactorMethod[]): TwoFactorMethod[] {
+  const contactMethods = methods.filter(method => method === 'email' || method === 'sms');
+  return contactMethods.length > 0 ? contactMethods : methods;
+}
+
+/**
  * Resolve 2FA for account operations.
  * If the user has 2FA methods available and hasn't provided a valid MFA token,
- * initiates a 2FA challenge and returns 403.
+ * initiates a 2FA challenge and returns 403. The challenge never sends the
+ * code automatically — the client requests it explicitly via /2fa/send.
  */
 export async function resolve2FA(
   req: Request,
@@ -98,7 +105,7 @@ export async function resolve2FA(
   }
 
   const user = req.authUser!;
-  const methods = auth.getAvailable2FAMethods(user.id);
+  const methods = operation2FAMethods(auth.getAvailable2FAMethods(user.id));
 
   // No 2FA methods available — allow the operation
   if (methods.length === 0) {
@@ -129,19 +136,6 @@ export async function resolve2FA(
     return;
   }
 
-  // Send code for email/sms methods
-  let emailHint: string | undefined;
-  let phoneHint: string | undefined;
-  if (method === 'email' && session.email && session.code) {
-    await sendVerificationEmail(session.email!, session.code!);
-    console.log(`[2fa] EMAIL code for ${user.username} (${session.email}): ${session.code}`);
-    emailHint = maskEmail(session.email!);
-  } else if (method === 'sms' && session.phone && session.code) {
-    await sendSmsCode(session.phone!, session.code!);
-    console.log(`[2fa] SMS code for ${user.username} (${session.phone}): ${session.code}`);
-    phoneHint = maskPhone(session.phone!);
-  }
-
   auth.writeAuditLog(user.id, '2fa.challenged', 'user', String(user.id), req.ip ?? '', {
     method,
     action: actionName,
@@ -153,11 +147,9 @@ export async function resolve2FA(
     temp_token: session.tempToken,
     method,
     available_methods: methods,
-    email_hint: emailHint,
-    phone_hint: phoneHint,
     message: method === 'totp'
       ? 'Enter your authenticator code to continue.'
-      : `A verification code has been sent to your ${method}.`,
+      : `Choose ${method === 'email' ? 'email or SMS' : 'SMS or email'} verification and request a code.`,
   });
 }
 

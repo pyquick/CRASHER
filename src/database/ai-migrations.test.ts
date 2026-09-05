@@ -18,7 +18,7 @@ test('fresh database includes AI key, encrypted reasoning and agent event schema
     for (const column of ['conversation_id', 'message_id', 'owner_user_id', 'kind', 'name', 'status', 'group_id', 'encrypted_payload', 'created_at']) {
       assert.ok(eventColumns.some(entry => entry.name === column), `ai_agent_events.${column} missing`);
     }
-    assert.equal(version, 19);
+    assert.equal(version, 21);
   } finally {
     db.close();
   }
@@ -65,7 +65,8 @@ test('ai_agent_events enforces kind/status CHECKs and cascades with conversation
     }, /CHECK/i);
 
     insert.run('tool_call');
-    assert.equal((db.prepare('SELECT COUNT(*) AS count FROM ai_agent_events').get() as { count: number }).count, 1);
+    insert.run('reasoning');
+    assert.equal((db.prepare('SELECT COUNT(*) AS count FROM ai_agent_events').get() as { count: number }).count, 2);
     db.prepare('DELETE FROM ai_conversations WHERE id = 1').run();
     assert.equal((db.prepare('SELECT COUNT(*) AS count FROM ai_agent_events').get() as { count: number }).count, 0);
   } finally {

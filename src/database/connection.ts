@@ -24,6 +24,11 @@ export function initDb(): Database.Database {
   db.pragma('foreign_keys = ON');
 
   runMigrations(db);
+  const bashSettings = db.prepare('SELECT enabled, policy_json FROM ai_bash_settings WHERE id = 1').get() as { enabled: number; policy_json: string } | undefined;
+  if (bashSettings) {
+    config.aiBashEnabled = bashSettings.enabled === 1;
+    config.aiBashPolicy = bashSettings.policy_json;
+  }
   return db;
 }
 

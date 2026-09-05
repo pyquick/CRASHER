@@ -218,6 +218,22 @@
     </div>
   </section>
 
+  <!-- ── AI Bash policy ── -->
+  <section x-data="aiBashSettings" x-init="load()" class="bg-surface-900 border border-gray-800 rounded-xl p-5">
+    <h2 class="text-lg font-semibold mb-1">AI Bash execution</h2>
+    <p class="text-sm text-gray-500 mb-4">Configure the server-side command policy. Deny rules always take precedence; the default is deny.</p>
+    <div class="flex items-center justify-between gap-3 p-3 bg-surface-950 rounded-lg border border-gray-800 mb-4">
+      <div><span class="text-sm">Enable run_bash</span><p class="text-xs text-gray-500 mt-0.5">Commands still require an allow rule unless the default is allow.</p></div>
+      <button type="button" role="switch" :aria-checked="String(enabled)" @click="enabled = !enabled" class="relative inline-flex h-5 w-9 shrink-0 items-center rounded-full" :class="enabled ? 'bg-blue-600' : 'bg-gray-700'"><span class="inline-block h-3.5 w-3.5 transform rounded-full bg-white" :class="enabled ? 'translate-x-[18px]' : 'translate-x-0.5'"></span></button>
+    </div>
+    <label class="text-sm text-gray-400">Default decision<select x-model="policy.default" class="fc fc-sm ml-2"><option value="deny">Deny</option><option value="allow">Allow</option></select></label>
+    <div class="grid md:grid-cols-2 gap-4 mt-4">
+      <label class="text-sm text-gray-400">Allow rules (JSON)<textarea x-model="allowText" rows="5" class="fc w-full mt-1 font-mono text-xs" placeholder='[{"id":"tests","command":"npm test","match":"prefix"}]'></textarea></label>
+      <label class="text-sm text-gray-400">Deny rules (JSON)<textarea x-model="denyText" rows="5" class="fc w-full mt-1 font-mono text-xs" placeholder='[{"id":"network","command":"curl","match":"prefix"}]'></textarea></label>
+    </div>
+    <div class="flex items-center gap-3 mt-4"><button type="button" @click="save" :disabled="loading" class="btn btn-blue btn-sm">Save Bash policy</button><span x-show="message" x-text="message" class="text-sm" :class="failed ? 'text-red-400' : 'text-green-400'"></span></div>
+  </section>
+
   {{INCLUDE:auth.html}}
 </div>
 

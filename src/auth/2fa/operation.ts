@@ -71,3 +71,28 @@ export function resendOperation2FACode(tempToken: string): { code: string; email
   if (!code) return null;
   return { code, email: data.email, phone: data.phone };
 }
+
+/**
+ * Send a code for an operation 2FA challenge. The code is generated on first
+ * send (force) or on re-send within the cooldown window. Switching to another
+ * method (email/sms) creates a fresh challenge carrying a new token; TOTP can
+ * not be switched to (the authenticator checks its own code).
+ */
+export function sendOperation2FACode(
+  tempToken: string,
+  method: 'email' | 'sms',
+  force = false
+): { tempToken: string; code: string; email?: string; phone?: string } | null {
+  const data = store.get<Operation2FAData>(tempToken);
+  if (!data) return null;
+  if (method !== data.method) {
+    const contact = method === 'email' ? getPrimaryEmail(data.userId) : getPrimaryPhone(data.userId);
+    if (!contact) return null;
+    const switched: Operation2FAData = { ...data, method, email: method === 'email' ? contact : undefined, phone: method === 'sms' ? contact : undefined };
+    const { token, code } = store.createWithCode(switched);
+    return { tempToken: token, code, email: switched.email, phone: switched.phone };
+  }
+  const code = store.resend(tempToken, force);
+  if (!code) return null;
+  return { tempToken, code, email: data.email, phone: data.phone };
+}

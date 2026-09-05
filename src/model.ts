@@ -1,12 +1,9 @@
 export type UserRole = 'ultraadmin' | 'admin' | 'operator' | 'viewer';
 export type ApiKeyTier = 'admin' | 'operator' | 'viewer';
 export type AiProvider = 'deepseek';
-export type AiProviderModel = 'deepseek-chat' | 'deepseek-v4-pro[1m]' | 'deepseek-v4-flash[1m]';
-export const AI_PROVIDER_MODELS: Array<{ value: AiProviderModel; label: string }> = [
-  { value: 'deepseek-chat', label: 'deepseek-chat' },
-  { value: 'deepseek-v4-pro[1m]', label: 'deepseek-v4-pro' },
-  { value: 'deepseek-v4-flash[1m]', label: 'deepseek-v4-flash' },
-];
+// Model ids are provider-driven only: they come from the DeepSeek /models
+// endpoint and are never hardcoded here.
+export type AiProviderModel = string;
 export type AiMessageRole = 'user' | 'assistant';
 export type TwoFactorMethod = 'totp' | 'email' | 'sms' | 'none';
 export type ContainerTier = 1 | 2 | 3 | 4 | 5;
@@ -413,7 +410,7 @@ export interface AiAgentEvent {
   conversation_id: number;
   message_id: number | null;
   owner_user_id: number;
-  kind: 'tool_call' | 'tool_result' | 'subagent' | 'task_update';
+  kind: 'tool_call' | 'tool_result' | 'subagent' | 'task_update' | 'reasoning';
   name: string;
   status: 'running' | 'ok' | 'error' | 'cancelled';
   group_id: number | null;

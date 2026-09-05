@@ -4,7 +4,10 @@
 
 ---
 
-## 技术栈
+## AI Bash execution boundary
+
+AI shell calls pass through `src/ai/bash-policy.ts` immediately before spawning the constrained shell. Policy is parsed from `AI_BASH_POLICY`, defaults to deny, normalizes whitespace, gives deny rules precedence, and uses stable rule IDs. The child process receives a minimal fixed environment (`PATH`, workspace `HOME`, locale, and dumb terminal), and audit records contain only decision metadata and a SHA-256 command hash.
+
 
 | 层 | 技术 |
 |----|------|
@@ -87,7 +90,7 @@ src/
 ├── ai/                             # AI 助手（DeepSeek 客户端 + Agent 循环 + 工具）
 │   ├── deepseek.ts                 #   provider 调用（支持 function calling）
 │   ├── agent.ts                    #   Agent 循环编排（工具执行/子 Agent/预算）
-│   ├── tools.ts                    #   5 个工具：read_source_file/web_fetch/run_bash/update_tasks/spawn_subagent
+│   ├── tools.ts                    #   7 个工具：read_source_file/web_fetch/run_bash/update_tasks/list_crashes/update_crash_status/spawn_subagent
 │   ├── ssrf.ts                     #   SSRF 安全抓取（undici 连接时 IP 校验）
 │   ├── context.ts / crypto.ts      #   崩溃上下文装配 / AES-256-GCM
 └── cli/                            # 命令行工具
@@ -143,12 +146,14 @@ POST /api/v1/ai/conversations/:id/messages (SSE)
         │ 无 tool_calls（最终答案）                    ├─ web_fetch（SSRF 防护）
         ▼                                            ├─ run_bash（AI_BASH_ENABLED 门控 + 工作目录/超时/输出上限）
   SSE: delta + done + tasks                          ├─ update_tasks（任务列表持久化）
+        │                                            ├─ list_crashes（崩溃库查询，容器作用域）
+        │                                            ├─ update_crash_status（绑定或指定崩溃，子 Agent 不可用）
         │                                            └─ spawn_subagent（受限工具集，深度 1，计入父预算）
         ▼
 [持久化] insertAiMessageExchange + ai_agent_events（工具活动加密入库，message_id 回填关联）
 ```
 
-所有 Agent 事件（tool_call/tool_result/subagent/task_update）通过 SSE 实时推送到聊天面板并加密持久化（`ai_agent_events` 表），刷新页面后按 `message_id` 回放、任务列表按最新 `task_update` 恢复。
+所有 Agent 事件（tool_call/tool_result/subagent/task_update/reasoning）通过 SSE 实时推送到聊天面板并加密持久化（`ai_agent_events` 表），刷新页面后按 `message_id` 回放、任务列表按最新 `task_update` 恢复。工具调用后继续产生的思考以 `reasoning` 事件按轮次持久化，回放时显示在对应工具步骤下方。
 
 ## 认证流
 

@@ -39,7 +39,10 @@ export function consumeLoginEmailVerificationSession(tempToken: string, code: st
 export function resendLoginEmailVerificationCode(tempToken: string): { code: string; email: string } | null {
   const data = store.get<LoginEmailVerificationData>(tempToken);
   if (!data) return null;
-  const code = store.resend(tempToken);
+  // First send after the challenge is explicit (user clicks send); the code is
+  // never sent automatically. Cooldown protection still applies to re-sends
+  // once a code has been delivered.
+  const code = store.resend(tempToken, true);
   if (!code) return null;
   return { code, email: data.email };
 }

@@ -297,6 +297,59 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 20,
+    description: 'Allow reasoning events in the AI agent event log',
+    up: (db) => {
+      // SQLite cannot alter a CHECK constraint, so rebuild the table. The
+      // self-referential group_id FK is written against the temporary name
+      // and fixed up by the rename; rows copy in id order so parent events
+      // (always lower ids) satisfy the immediate FK checks.
+      const kindConstraint = db.prepare(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='ai_agent_events'"
+      ).get() as { sql: string } | undefined;
+      if (kindConstraint && !kindConstraint.sql.includes("'reasoning'")) {
+        db.exec(`
+          CREATE TABLE ai_agent_events_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            conversation_id INTEGER NOT NULL REFERENCES ai_conversations(id) ON DELETE CASCADE,
+            message_id INTEGER REFERENCES ai_messages(id) ON DELETE SET NULL,
+            owner_user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+            kind TEXT NOT NULL CHECK(kind IN ('tool_call','tool_result','subagent','task_update','reasoning')),
+            name TEXT NOT NULL DEFAULT '',
+            status TEXT NOT NULL DEFAULT 'running' CHECK(status IN ('running','ok','error','cancelled')),
+            group_id INTEGER REFERENCES ai_agent_events_new(id) ON DELETE CASCADE,
+            encrypted_payload TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+          );
+          INSERT INTO ai_agent_events_new
+            (id, conversation_id, message_id, owner_user_id, kind, name, status, group_id, encrypted_payload, created_at)
+            SELECT id, conversation_id, message_id, owner_user_id, kind, name, status, group_id, encrypted_payload, created_at
+            FROM ai_agent_events ORDER BY id;
+          DROP TABLE ai_agent_events;
+          ALTER TABLE ai_agent_events_new RENAME TO ai_agent_events;
+          CREATE INDEX IF NOT EXISTS idx_ai_agent_events_conversation ON ai_agent_events(conversation_id, id);
+          CREATE INDEX IF NOT EXISTS idx_ai_agent_events_message ON ai_agent_events(message_id);
+        `);
+      }
+    },
+  },
+  {
+    version: 21,
+    description: 'Add persisted AI Bash policy settings',
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS ai_bash_settings (
+          id INTEGER PRIMARY KEY CHECK(id = 1),
+          enabled INTEGER NOT NULL DEFAULT 0 CHECK(enabled IN (0,1)),
+          policy_json TEXT NOT NULL DEFAULT '{"default":"deny","allow":[],"deny":[]}',
+          updated_by INTEGER REFERENCES users(id) ON DELETE SET NULL,
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT OR IGNORE INTO ai_bash_settings (id) VALUES (1);
+      `);
+    },
+  },
 ];
 
 function addColumn(db: Database.Database, table: string, column: string, definition: string): void {

@@ -13,7 +13,8 @@
       return new Promise((resolve, reject) => {
         Alpine.store('authSteps').open2FA({
           context: 'operation',
-          method: data.method || 'totp',
+          method: data.method || 'email',
+          available_methods: data.available_methods || [],
           tempToken: data.temp_token || '',
           hint: data.email_hint || data.phone_hint || '',
           message: data.message || '',
@@ -99,6 +100,32 @@
         if (key.last_failure_code === 'AI_PROVIDER_QUOTA') return 'quota exhausted';
         if (key.retry_after_at) return 'cooling down until ' + formatDate(key.retry_after_at);
         return 'ready';
+      },
+    }));
+    Alpine.data('aiBashSettings', () => ({
+      enabled: false, policy: { default: 'deny', allow: [], deny: [] }, allowText: '[]', denyText: '[]', loading: false, message: '', failed: false,
+      async load() {
+        try { const data = await this.request('/api/v1/auth/ai-bash'); this.apply(data); }
+        catch (error) { this.message = error.message; this.failed = true; }
+      },
+      apply(data) { this.enabled = !!data.enabled; this.policy = data.policy || this.policy; this.allowText = JSON.stringify(this.policy.allow || [], null, 2); this.denyText = JSON.stringify(this.policy.deny || [], null, 2); },
+      // No 2FA for Bash policy saves: the global fetch wrapper injects CSRF.
+      async request(url, options = {}) {
+        const response = await fetch(url, options);
+        let data = {};
+        try { data = await response.json(); } catch {}
+        if (!response.ok) throw new Error(data.message || 'Request failed');
+        return data;
+      },
+      async save() {
+        this.loading = true; this.message = ''; this.failed = false;
+        try {
+          const allow = JSON.parse(this.allowText || '[]'); const deny = JSON.parse(this.denyText || '[]');
+          if (!Array.isArray(allow) || !Array.isArray(deny)) throw new Error('Allow and deny rules must be JSON arrays');
+          const data = await this.request('/api/v1/auth/ai-bash', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ enabled: this.enabled, policy: { default: this.policy.default, allow, deny } }) });
+          this.apply(data); this.message = 'Bash policy saved';
+        } catch (error) { this.message = error.message; this.failed = true; }
+        this.loading = false;
       },
     }));
     Alpine.data('accountSecurity', () => ({

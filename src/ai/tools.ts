@@ -11,6 +11,8 @@ import { normalizeSourcePath } from '../source.js';
 import { fetchWithSsrfProtection } from './ssrf.js';
 import type { AiToolCall } from './types.js';
 import type { AiAgentTask, SourceFile } from '../model.js';
+import { evaluateBashPolicy, parseBashPolicy } from './bash-policy.js';
+import { writeAuditLog } from '../auth/audit.js';
 
 export interface AgentToolResult {
   ok: boolean;
@@ -18,14 +20,32 @@ export interface AgentToolResult {
   tasks?: AiAgentTask[];
 }
 
+export interface CrashGroupBrief {
+  id: number;
+  project_name: string;
+  exception_type: string;
+  exception_message: string;
+  total_count: number;
+  last_seen: string;
+  status: string;
+  resolved_version: string;
+}
+
 export interface ToolContext {
   convId: number;
   workspaceDir: string;
+  actorUserId?: number;
   signal?: AbortSignal;
   // Resolved by the caller (agent loop) so tools stay testable: current
   // state of the bound project's source files.
   loadSourceFiles: () => Promise<SourceFile[]>;
   spawnSubagent?: (prompt: string) => Promise<{ ok: boolean; output: string }>;
+  // Injected by the handler with the user's container scope applied; absent
+  // when the tool runs inside a sub-agent.
+  listCrashes?: (search?: string, status?: string, limit?: number) => Promise<{ total: number; items: CrashGroupBrief[] }>;
+  // groupId null means the crash bound to this conversation; a provided
+  // groupId must be authorized for the user (handler re-checks scope).
+  updateCrashStatus?: (groupId: number | null, status: string, resolvedVersion?: string) => AgentToolResult | Promise<AgentToolResult>;
 }
 
 function cap(value: string, max: number): string {
@@ -104,12 +124,30 @@ const BASH_SHELL = existsSync('/bin/bash') ? '/bin/bash' : '/bin/sh';
 
 function runBash(args: Record<string, unknown>, ctx: ToolContext): Promise<AgentToolResult> {
   const command = typeof args.command === 'string' ? args.command : '';
-  if (!config.aiBashEnabled) {
-    return Promise.resolve({ ok: false, output: 'The bash tool is disabled on this server (AI_BASH_ENABLED is not set).' });
-  }
   if (!command.trim() || command.length > 4000) {
     return Promise.resolve({ ok: false, output: 'command is required and must be at most 4000 characters' });
   }
+  const decision = evaluateBashPolicy(parseBashPolicy(config.aiBashPolicy), command);
+  const auditDecision = (allowed: boolean, reason?: string): void => {
+    if (ctx.actorUserId === undefined) return;
+    try {
+      writeAuditLog(ctx.actorUserId, 'ai.bash.policy_decision', 'ai_conversation', String(ctx.convId), '', {
+        rule_id: decision.ruleId,
+        decision: allowed ? 'allow' : 'deny',
+        command_hash: decision.commandHash,
+        ...(reason ? { reason } : {}),
+      });
+    } catch {}
+  };
+  if (!config.aiBashEnabled) {
+    auditDecision(false, 'disabled');
+    return Promise.resolve({ ok: false, output: 'The bash tool is disabled on this server (AI_BASH_ENABLED is not set).' });
+  }
+  if (!decision.allowed) {
+    auditDecision(false, 'policy');
+    return Promise.resolve({ ok: false, output: `Bash command denied by policy${decision.ruleId ? ` (${decision.ruleId})` : ''}.` });
+  }
+  auditDecision(true);
   mkdirSync(ctx.workspaceDir, { recursive: true });
   return new Promise<AgentToolResult>((resolve) => {
     const child = spawn(BASH_SHELL, ['-c', command], {
@@ -198,6 +236,50 @@ function updateTasks(args: Record<string, unknown>): AgentToolResult {
   return { ok: true, tasks, output: `Task list updated (${tasks.length} tasks):\n${summary}` };
 }
 
+// ----- list_crashes -----
+
+const MAX_CRASH_LIST_LENGTH = 100;
+const CRASH_STATUSES = new Set(['open', 'resolved', 'ignored']);
+
+async function listCrashes(args: Record<string, unknown>, ctx: ToolContext): Promise<AgentToolResult> {
+  if (!ctx.listCrashes) return { ok: false, output: 'list_crashes is not available in this context' };
+  const search = typeof args.search === 'string' ? args.search.trim() : '';
+  const status = typeof args.status === 'string' ? args.status.trim() : '';
+  if (status && !CRASH_STATUSES.has(status)) return { ok: false, output: 'status filter must be one of: open, resolved, ignored' };
+  const limit = typeof args.limit === 'number' && Number.isFinite(args.limit) && args.limit >= 1
+    ? Math.min(Math.floor(args.limit), MAX_CRASH_LIST_LENGTH)
+    : 25;
+  const { total, items } = await ctx.listCrashes(search || undefined, status || undefined, limit);
+  if (items.length === 0) return { ok: true, output: 'No crash groups found.' };
+  const lines = items.map(group => {
+    const message = group.exception_message ? `: ${truncate(group.exception_message, 120)}` : '';
+    const fixed = group.resolved_version ? ` (fixed in ${group.resolved_version})` : '';
+    return `#${group.id} · ${group.project_name || 'Unassigned'} · ${group.exception_type}${message} · ${group.total_count}x · last seen ${group.last_seen} · status: ${group.status}${fixed}`;
+  });
+  return { ok: true, output: cap(`${items.length} of ${total} crash groups${search ? ` matching "${truncate(search, 60)}"` : ''}:\n${lines.join('\n')}`, config.aiToolResultMaxChars) };
+}
+
+// ----- update_crash_status -----
+
+const MAX_RESOLVED_VERSION_LENGTH = 100;
+
+async function updateCrashStatus(args: Record<string, unknown>, ctx: ToolContext): Promise<AgentToolResult> {
+  if (!ctx.updateCrashStatus) return { ok: false, output: 'update_crash_status is not available in this context' };
+  const status = typeof args.status === 'string' ? args.status.trim() : '';
+  if (!CRASH_STATUSES.has(status)) return { ok: false, output: 'status must be one of: open, resolved, ignored' };
+  // DeepSeek can emit DSML parameter names without underscores.
+  const rawVersion = typeof args.resolved_version === 'string' ? args.resolved_version : typeof args.resolvedversion === 'string' ? args.resolvedversion : '';
+  const resolvedVersion = rawVersion.trim().slice(0, MAX_RESOLVED_VERSION_LENGTH);
+  let groupId: number | null = null;
+  if (args.group_id !== undefined && args.group_id !== null) {
+    if (typeof args.group_id !== 'number' || !Number.isInteger(args.group_id) || args.group_id < 1) {
+      return { ok: false, output: 'group_id must be a positive integer' };
+    }
+    groupId = args.group_id;
+  }
+  return ctx.updateCrashStatus(groupId, status, resolvedVersion || undefined);
+}
+
 // ----- dispatcher + definitions -----
 
 export async function runTool(call: AiToolCall, ctx: ToolContext): Promise<AgentToolResult> {
@@ -213,6 +295,8 @@ export async function runTool(call: AiToolCall, ctx: ToolContext): Promise<Agent
     case 'web_fetch': return webFetch(args, ctx);
     case 'run_bash': return runBash(args, ctx);
     case 'update_tasks': return updateTasks(args);
+    case 'list_crashes': return listCrashes(args, ctx);
+    case 'update_crash_status': return updateCrashStatus(args, ctx);
     case 'spawn_subagent': {
       const prompt = typeof args.prompt === 'string' ? args.prompt.trim() : '';
       if (!prompt) return { ok: false, output: 'prompt is required' };
@@ -273,6 +357,26 @@ export const AGENT_TOOLS: unknown[] = [
       },
     },
     ['tasks'],
+  ),
+  tool(
+    'list_crashes',
+    'List crash groups you are authorized to access across the whole crash library, newest activity first. Use it to find crash ids, e.g. when the user names a crash by its exception or asks to operate on crashes without attaching one. Optionally filter by search text (exception type/message) and/or status.',
+    {
+      search: { type: 'string', description: 'Optional search text matched against exception type and message' },
+      status: { type: 'string', enum: ['open', 'resolved', 'ignored'], description: 'Optional status filter' },
+      limit: { type: 'integer', minimum: 1, maximum: 100, description: 'Maximum results (default 25)' },
+    },
+    [],
+  ),
+  tool(
+    'update_crash_status',
+    'Change the status of a crash group. Use it when the user asks to mark a crash as resolved, ignored, or reopened, or when your analysis concludes a fix. If group_id is omitted, the crash attached to this conversation is changed; otherwise the crash with that id is changed (find ids with list_crashes). resolved_version records the version that contains the fix.',
+    {
+      group_id: { type: 'integer', minimum: 1, description: 'Optional crash group id; omit to change the crash attached to this conversation' },
+      status: { type: 'string', enum: ['open', 'resolved', 'ignored'], description: 'New status for the crash group' },
+      resolved_version: { type: 'string', description: 'Optional version that contains the fix (meaningful when status is resolved)' },
+    },
+    ['status'],
   ),
   tool(
     'spawn_subagent',

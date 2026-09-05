@@ -1099,6 +1099,8 @@ curl -X POST "http://localhost:8080/api/v1/import?confirm=true" \
               <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>web_fetch</code></td><td class="pr-4">抓取公开网页（官方文档 / 规范）</td><td>SSRF 防护：连接时校验 IP；拦截私网/环回/链路本地/元数据地址；限制跳数和响应体积</td></tr>
               <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>run_bash</code></td><td class="pr-4">在每会话独立工作目录复现问题</td><td>默认关闭（<code>AI_BASH_ENABLED=true</code> 开启）；30s 超时、输出上限、最小环境变量、无网络隔离</td></tr>
               <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>update_tasks</code></td><td class="pr-4">维护自身任务列表</td><td>任务列表加密持久化，跨轮次可见</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>list_crashes</code></td><td class="pr-4">列出用户有权访问的整个崩溃库（可选 search/status/limit 过滤），用于查找崩溃 id</td><td>按容器作用域查询；仅返回摘要字段</td></tr>
+              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>update_crash_status</code></td><td class="pr-4">修改崩溃状态（open/resolved/ignored，可选 resolved_version）；不带 group_id 时作用于会话绑定崩溃，带 group_id 时作用于指定崩溃</td><td>group_id 写入前按容器作用域复核；子 Agent 不可用</td></tr>
               <tr><td class="py-1.5 pr-4"><code>spawn_subagent</code></td><td class="pr-4">派子 Agent 调查子问题</td><td>每轮最多 4 个、无嵌套、无 bash；步数计入总预算</td></tr>
             </tbody>
           </table>
@@ -1145,7 +1147,7 @@ curl -X POST "http://localhost:8080/api/v1/import?confirm=true" \
             </tbody>
           </table>
         </div>
-        <p class="text-xs text-gray-500">会话在 <code>AI_RETENTION_DAYS</code>（默认 30 天）后过期，仅创建者可见。消息正文与 Agent 事件使用 AES-256-GCM 加密保存，受每用户限流、消息长度和消息数量限制。</p>
+        <p class="text-xs text-gray-500">会话在 <code>AI_RETENTION_DAYS</code>（默认 30 天）后过期，仅创建者可见。消息正文与 Agent 事件使用 AES-256-GCM 加密保存，受每用户限流、消息长度和消息数量限制。工具调用之后继续产生的思考会作为 <code>kind=reasoning</code> 的 Agent 事件持久化，UI 据此在对应工具步骤下方回放 "Reasoning returned by DeepSeek" 下拉框；工具调用前的思考仅保存在消息的 <code>reasoning</code> 字段中。</p>
       </section>
 
       <!-- ============================================================ -->

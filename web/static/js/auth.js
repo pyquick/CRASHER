@@ -43,166 +43,170 @@
   }
 
   document.addEventListener('alpine:init', () => {
-    // ── Shared widget store ──
+    // ── Shared verification window store ──
+    // One widget serves every verification flow: operation 2FA (email/SMS
+    // tabs), login email identity check, login TOTP, and email management
+    // (add/verify). Codes are always requested explicitly (click send).
     Alpine.store('authSteps', {
-      email: {
-        open: false, mode: 'login', step: 'code', title: '', message: '',
-        emailId: null, emailInput: '', tempToken: '', code: '',
-        loading: false, error: '', resendCooldown: 0, onDone: null, onCancel: null, _timer: null,
-      },
-      twoFactor: {
-        open: false, context: 'operation', method: 'totp', tempToken: '',
-        hint: '', message: '', code: '',
-        loading: false, error: '', resendCooldown: 0, onSuccess: null, onCancel: null, _timer: null,
+      verify: {
+        open: false, context: 'operation', tabs: [], tab: 'email',
+        step: 'code', tempToken: '', emailId: null, emailInput: '',
+        hint: '', message: '', code: '', sent: false,
+        loading: false, error: '', resendCooldown: 0,
+        onSuccess: null, onCancel: null, onDone: null, _timer: null,
       },
 
+      // Compat delegates: callers keep using openEmail/open2FA; both open the
+      // same unified window.
       openEmail(mode, opts) {
         if (!(window.FEATURES && window.FEATURES.emailEnabled)) return;
         opts = opts || {};
-        const e = this.email;
-        e.open = true;
-        e.mode = mode;
-        e.step = mode === 'add' ? 'input' : 'code';
-        e.title = opts.title || (mode === 'add' ? 'Add Email Address' : 'Verify your email');
-        e.message = opts.message || '';
-        e.emailId = opts.emailId || null;
-        e.tempToken = opts.tempToken || '';
-        e.emailInput = '';
-        e.code = '';
-        e.error = '';
-        e.loading = false;
-        e.onDone = opts.onDone || null;
-        e.onCancel = opts.onCancel || null;
-        stopCooldown(e);
-        if (mode === 'login') startCooldown(e, () => stopCooldown(e));
-      },
-
-      closeEmail() {
-        const e = this.email;
-        stopCooldown(e);
-        e.open = false;
-        if (e.onCancel) e.onCancel();
-      },
-
-      emailStartCooldown() { startCooldown(this.email, () => stopCooldown(this.email)); },
-      emailStopCooldown() { stopCooldown(this.email); },
-
-      async emailSubmit() {
-        const e = this.email;
-        e.error = '';
-        if (e.mode === 'add' && e.step === 'input') {
-          const email = e.emailInput.trim();
-          if (!email) { e.error = 'Please enter an email address'; return; }
-          e.loading = true;
-          try {
-            const data = await apiFetch('/api/v1/auth/me/emails', { method: 'POST', body: { email: email } });
-            e.emailId = data.email_id;
-            e.step = 'code';
-            e.message = data.message || '';
-            this.emailStartCooldown();
-          } catch (err) { e.error = err.message; }
-          e.loading = false;
-          return;
+        if (mode === 'login') {
+          this.openVerify({ context: 'login-email', tempToken: opts.tempToken || '', message: opts.message || '', onDone: opts.onDone || null, onCancel: opts.onCancel || null });
+        } else if (mode === 'add') {
+          this.openVerify({ context: 'email-add', onDone: opts.onDone || null, onCancel: opts.onCancel || null });
+        } else {
+          this.openVerify({ context: 'email-verify', emailId: opts.emailId || null, onDone: opts.onDone || null, onCancel: opts.onCancel || null });
         }
-        const code = e.code.replace(/\s/g, '');
-        if (code.length !== 6) { e.error = 'Please enter the 6-digit code'; return; }
-        e.loading = true;
-        try {
-          if (e.mode === 'login') {
-            const data = await apiFetch('/api/v1/auth/login/verify-email', {
-              method: 'POST', body: { temp_token: e.tempToken, code: code },
-            });
-            this.emailStopCooldown();
-            e.open = false;
-            if (e.onDone) e.onDone(data);
-          } else {
-            await apiFetch('/api/v1/auth/me/emails/' + e.emailId + '/verify', { method: 'POST', body: { code: code } });
-            this.emailStopCooldown();
-            e.open = false;
-            if (e.onDone) e.onDone();
-          }
-        } catch (err) { e.error = err.message; }
-        e.loading = false;
       },
-
-      async emailResend() {
-        const e = this.email;
-        e.error = '';
-        e.loading = true;
-        try {
-          let data;
-          if (e.mode === 'login') {
-            data = await apiFetch('/api/v1/auth/login/resend-email', { method: 'POST', body: { temp_token: e.tempToken } });
-          } else {
-            data = await apiFetch('/api/v1/auth/me/emails/' + e.emailId + '/resend', { method: 'POST' });
-          }
-          e.message = data.message || e.message;
-          this.emailStartCooldown();
-        } catch (err) { e.error = err.message; }
-        e.loading = false;
-      },
-
       open2FA(opts) {
         opts = opts || {};
-        const t = this.twoFactor;
-        t.open = true;
-        t.context = opts.context || 'operation';
-        t.method = opts.method || 'totp';
-        t.tempToken = opts.tempToken || '';
-        t.hint = opts.hint || '';
-        t.message = opts.message || '';
-        t.code = '';
-        t.error = '';
-        t.loading = false;
-        t.onSuccess = opts.onSuccess || null;
-        t.onCancel = opts.onCancel || null;
-        stopCooldown(t);
-        if (t.method !== 'totp') startCooldown(t, () => stopCooldown(t));
+        if (opts.context === 'login') {
+          this.openVerify({ context: 'login-2fa', method: opts.method || 'totp', tempToken: opts.tempToken || '', onSuccess: opts.onSuccess || null, onCancel: opts.onCancel || null });
+        } else {
+          this.openVerify({
+            context: 'operation', method: opts.method || 'email',
+            available_methods: opts.available_methods || [],
+            tempToken: opts.tempToken || '', hint: opts.hint || '', message: opts.message || '',
+            onSuccess: opts.onSuccess || null, onCancel: opts.onCancel || null,
+          });
+        }
       },
 
-      close2FA() {
-        const t = this.twoFactor;
-        stopCooldown(t);
-        t.open = false;
-        if (t.onCancel) t.onCancel();
+      openVerify(opts) {
+        const v = this.verify;
+        v.open = true;
+        v.context = opts.context || 'operation';
+        v.tempToken = opts.tempToken || '';
+        v.emailId = opts.emailId || null;
+        v.emailInput = '';
+        v.hint = opts.hint || '';
+        v.message = opts.message || '';
+        v.code = '';
+        v.error = '';
+        v.sent = false;
+        v.loading = false;
+        v.step = 'code';
+        v.onSuccess = opts.onSuccess || null;
+        v.onCancel = opts.onCancel || null;
+        v.onDone = opts.onDone || null;
+        if (v.context === 'operation') {
+          const methods = opts.available_methods && opts.available_methods.length ? opts.available_methods : (opts.method ? [opts.method] : ['email']);
+          v.tabs = methods;
+          v.tab = opts.method && methods.indexOf(opts.method) !== -1 ? opts.method : methods[0];
+        } else if (v.context === 'login-email') {
+          v.tabs = ['email']; v.tab = 'email';
+        } else if (v.context === 'email-add' || v.context === 'email-verify') {
+          v.tabs = ['email']; v.tab = 'email';
+          if (v.context === 'email-add') v.step = 'input';
+        } else {
+          v.tabs = [opts.method || 'totp']; v.tab = opts.method || 'totp';
+        }
+        stopCooldown(v);
       },
 
-      twoFactorStartCooldown() { startCooldown(this.twoFactor, () => stopCooldown(this.twoFactor)); },
-      twoFactorStopCooldown() { stopCooldown(this.twoFactor); },
+      closeVerify() {
+        const v = this.verify;
+        stopCooldown(v);
+        v.open = false;
+        const cancel = v.onCancel;
+        v.onCancel = null;
+        if (cancel) cancel();
+      },
 
-      async twoFactorSubmit() {
-        const t = this.twoFactor;
-        t.error = '';
-        const code = t.code.replace(/\s/g, '');
-        if (code.length !== 6) { t.error = 'Please enter the 6-digit code'; return; }
-        t.loading = true;
+      verifyStartCooldown() { startCooldown(this.verify, () => stopCooldown(this.verify)); },
+      verifyStopCooldown() { stopCooldown(this.verify); },
+
+      // Switching verification method resets the code and the delivery state.
+      verifySelect(tab) {
+        const v = this.verify;
+        if (v.context === 'login-2fa' || v.tabs.indexOf(tab) === -1 || v.tab === tab) return;
+        v.tab = tab;
+        v.code = '';
+        v.error = '';
+        v.sent = false;
+        v.hint = '';
+        v.message = '';
+        this.verifyStopCooldown();
+      },
+
+      // Explicitly request the code for the current verification flow. In the
+      // email-add flow the first click submits the new address instead.
+      async verifySend() {
+        const v = this.verify;
+        v.error = '';
+        v.loading = true;
         try {
-          if (t.context === 'login') {
-            await apiFetch('/api/v1/auth/login/totp', { method: 'POST', body: { temp_token: t.tempToken, totp_code: code } });
-            this.twoFactorStopCooldown();
-            t.open = false;
-            if (t.onSuccess) t.onSuccess();
-          } else {
-            await apiFetch('/api/v1/auth/2fa/verify', { method: 'POST', body: { temp_token: t.tempToken, code: code } });
-            this.twoFactorStopCooldown();
-            t.open = false;
-            if (t.onSuccess) t.onSuccess();
+          if (v.context === 'email-add' && v.step === 'input') {
+            const email = v.emailInput.trim();
+            if (!email) { v.error = 'Please enter an email address'; v.loading = false; return; }
+            const data = await apiFetch('/api/v1/auth/me/emails', { method: 'POST', body: { email: email } });
+            v.emailId = data.email_id;
+            v.step = 'code';
+            v.message = data.message || '';
+            v.loading = false;
+            return;
           }
-        } catch (err) { t.error = err.message; }
-        t.loading = false;
+          let data;
+          if (v.context === 'operation') {
+            data = await apiFetch('/api/v1/auth/2fa/send', { method: 'POST', body: { temp_token: v.tempToken, method: v.tab } });
+            if (data.temp_token) v.tempToken = data.temp_token;
+          } else if (v.context === 'login-email') {
+            data = await apiFetch('/api/v1/auth/login/resend-email', { method: 'POST', body: { temp_token: v.tempToken } });
+          } else {
+            data = await apiFetch('/api/v1/auth/me/emails/' + v.emailId + '/resend', { method: 'POST', body: {} });
+          }
+          v.sent = true;
+          v.hint = data.email_hint || v.hint;
+          v.message = data.message || v.message;
+          this.verifyStartCooldown();
+        } catch (err) { v.error = err.message; }
+        v.loading = false;
       },
 
-      async twoFactorResend() {
-        const t = this.twoFactor;
-        t.error = '';
-        t.loading = true;
+      // Submit the 6-digit code for the active flow.
+      async verifySubmit() {
+        const v = this.verify;
+        v.error = '';
+        const code = v.code.replace(/\s/g, '');
+        if (code.length !== 6) { v.error = 'Please enter the 6-digit code'; return; }
+        v.loading = true;
         try {
-          const data = await apiFetch('/api/v1/auth/2fa/resend', { method: 'POST', body: { temp_token: t.tempToken } });
-          t.message = data.message || t.message;
-          this.twoFactorStartCooldown();
-        } catch (err) { t.error = err.message; }
-        t.loading = false;
+          if (v.context === 'login-2fa') {
+            await apiFetch('/api/v1/auth/login/totp', { method: 'POST', body: { temp_token: v.tempToken, totp_code: code } });
+            this.verifyStopCooldown();
+            v.open = false;
+            if (v.onSuccess) v.onSuccess();
+          } else if (v.context === 'login-email') {
+            const data = await apiFetch('/api/v1/auth/login/verify-email', { method: 'POST', body: { temp_token: v.tempToken, code: code } });
+            this.verifyStopCooldown();
+            v.open = false;
+            if (v.onDone) v.onDone(data);
+          } else if (v.context === 'email-add' || v.context === 'email-verify') {
+            await apiFetch('/api/v1/auth/me/emails/' + v.emailId + '/verify', { method: 'POST', body: { code: code } });
+            this.verifyStopCooldown();
+            v.open = false;
+            if (v.onDone) v.onDone();
+          } else {
+            await apiFetch('/api/v1/auth/2fa/verify', { method: 'POST', body: { temp_token: v.tempToken, code: code } });
+            this.verifyStopCooldown();
+            v.open = false;
+            if (v.onSuccess) v.onSuccess();
+          }
+        } catch (err) { v.error = err.message; }
+        v.loading = false;
       },
+
     });
 
     // ── Login page flow (standalone page) ──

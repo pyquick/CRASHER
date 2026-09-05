@@ -18,7 +18,27 @@ import type {
   ReportGroupingRow,
 } from '../model.js';
 
-// ----- Projects and source snapshots -----
+// ----- AI Bash settings -----
+
+export interface AiBashSettingsRow {
+  id: number;
+  enabled: number;
+  policy_json: string;
+  updated_by: number | null;
+  updated_at: string;
+}
+
+export function getAiBashSettings(): AiBashSettingsRow {
+  const row = getDb().prepare('SELECT * FROM ai_bash_settings WHERE id = 1').get() as AiBashSettingsRow | undefined;
+  return row ?? { id: 1, enabled: 0, policy_json: '{"default":"deny","allow":[],"deny":[]}', updated_by: null, updated_at: '' };
+}
+
+export function updateAiBashSettings(enabled: boolean, policyJson: string, updatedBy: number, now: string): AiBashSettingsRow {
+  getDb().prepare(`INSERT INTO ai_bash_settings (id, enabled, policy_json, updated_by, updated_at) VALUES (1, ?, ?, ?, ?)
+    ON CONFLICT(id) DO UPDATE SET enabled = excluded.enabled, policy_json = excluded.policy_json, updated_by = excluded.updated_by, updated_at = excluded.updated_at`).run(enabled ? 1 : 0, policyJson, updatedBy, now);
+  return getAiBashSettings();
+}
+
 
 export function findProjectByName(name: string): Project | undefined {
   return getDb().prepare('SELECT * FROM projects WHERE name = ? COLLATE NOCASE').get(name) as Project | undefined;
@@ -307,13 +327,15 @@ export function updateGroupStatus(
   status: string,
   resolvedVersion?: string
 ): boolean {
-  const stmt = resolvedVersion
+  // undefined skips the version update; '' explicitly clears it (e.g. when
+  // the AI agent reopens an ignored/resolved crash).
+  const stmt = resolvedVersion !== undefined
     ? getDb().prepare(
         'UPDATE crash_groups SET status = ?, resolved_version = ? WHERE id = ?'
       )
     : getDb().prepare('UPDATE crash_groups SET status = ? WHERE id = ?');
 
-  const params = resolvedVersion ? [status, resolvedVersion, id] : [status, id];
+  const params = resolvedVersion !== undefined ? [status, resolvedVersion, id] : [status, id];
   const result = stmt.run(...params);
   return result.changes > 0;
 }

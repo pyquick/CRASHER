@@ -18,7 +18,7 @@ export { createContainer, getContainerById, getContainerByName, listContainers, 
 export { listEmails, addEmail, resendVerificationCode, verifyEmailCode, setPrimaryEmail, deleteEmail, getPrimaryEmail, getAnyEmail, hasVerifiedEmail, isVerifyEmailOnLogin, setVerifyEmailOnLogin, createLoginEmailVerificationSession, consumeLoginEmailVerificationSession, resendLoginEmailVerificationCode } from './email/index.js';
 
 // 2FA
-export { generateTotpSecret, enableTotp, disableTotp, verifyTotp, createTotpTempToken, consumeTotpTempToken, createOperation2FASession, consumeOperation2FASession, resendOperation2FACode, createMfaSession, validateMfaSession, getAvailable2FAMethods, listPhones, addPhone, resendPhoneVerificationCode, verifyPhoneCode, setPrimaryPhone, deletePhone, getPrimaryPhone, hasVerifiedPhone, maskPhone } from './2fa/index.js';
+export { generateTotpSecret, enableTotp, disableTotp, verifyTotp, createTotpTempToken, consumeTotpTempToken, createOperation2FASession, consumeOperation2FASession, resendOperation2FACode, sendOperation2FACode, createMfaSession, validateMfaSession, getAvailable2FAMethods, listPhones, addPhone, resendPhoneVerificationCode, verifyPhoneCode, setPrimaryPhone, deletePhone, getPrimaryPhone, hasVerifiedPhone, maskPhone } from './2fa/index.js';
 
 // Password Reset
 export { createResetRequest, getResetRequest, approveResetRequest, purgeExpiredResetTokens, createAdminResetSession, consumeAdminResetSession, verifyAdminResetEmailCode } from './password-reset.js';

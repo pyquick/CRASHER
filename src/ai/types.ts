@@ -19,6 +19,7 @@ export interface AiProviderRequest {
   messages: AiChatMessage[];
   tools?: unknown[];
   tool_choice?: 'auto' | 'none' | string;
+  thinking?: boolean;
 }
 
 export interface AiProviderResponse {

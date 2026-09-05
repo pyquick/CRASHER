@@ -1,5 +1,6 @@
 import { Router, type Request, type Response } from 'express';
 import * as auth from '../auth.js';
+import type { TwoFactorMethod } from '../model.js';
 import { updateUserTwoFactorMethod } from '../database/auth-store.js';
 import { sendSmsCode, sendVerificationEmail } from '../notification/service.js';
 import {
@@ -8,7 +9,7 @@ import {
   requireCsrf,
   requireRole,
 } from '../middleware.js';
-import { markMfaVerified, maskEmail, maskPhone, resolve2FA } from './auth-common.js';
+import { markMfaVerified, maskEmail, maskPhone, operation2FAMethods, resolve2FA } from './auth-common.js';
 
 const router = Router();
 
@@ -27,31 +28,17 @@ router.post('/2fa/challenge', requireApiAuth, requireCsrf, async (req: Request, 
     return;
   }
   const user = req.authUser!;
-  const methods = auth.getAvailable2FAMethods(user.id);
+  const methods = operation2FAMethods(auth.getAvailable2FAMethods(user.id));
   if (methods.length === 0) {
     res.status(400).json({ error: 'Bad Request', message: 'No 2FA methods available. Set up a verified email or phone number first.' });
     return;
   }
-  const chosenMethod = method && methods.includes(method) ? method : methods[0];
+  const chosenMethod = method && (methods as string[]).includes(method) ? method as TwoFactorMethod : methods[0];
   const { _2fa_token, ...cleanBody } = req.body || {};
   const session = auth.createOperation2FASession(user.id, chosenMethod, action, cleanBody);
   if (!session) {
     res.status(400).json({ error: 'Bad Request', message: 'Could not create 2FA challenge.' });
     return;
-  }
-
-  let emailHint: string | undefined;
-  let phoneHint: string | undefined;
-  if (chosenMethod === 'email' && session.email && session.code) {
-    await sendVerificationEmail(session.email!, session.code!);
-    console.log(`[2fa] EMAIL code for ${user.username} (${session.email}): ${session.code}`);
-    emailHint = maskEmail(session.email!);
-  } else if (chosenMethod === 'sms' && session.phone && session.code) {
-    await sendSmsCode(session.phone!, session.code!);
-    console.log(`[2fa] SMS code for ${user.username} (${session.phone}): ${session.code}`);
-    phoneHint = maskPhone(session.phone!);
-  } else if (chosenMethod === 'totp') {
-    console.log(`[2fa] TOTP challenge for ${user.username} (action: ${action})`);
   }
 
   auth.writeAuditLog(user.id, '2fa.challenged', 'user', String(user.id), req.ip ?? '', { method: chosenMethod, action });
@@ -61,11 +48,9 @@ router.post('/2fa/challenge', requireApiAuth, requireCsrf, async (req: Request, 
     temp_token: session.tempToken,
     method: chosenMethod,
     available_methods: methods,
-    email_hint: emailHint,
-    phone_hint: phoneHint,
     message: chosenMethod === 'totp'
       ? 'Enter your authenticator code.'
-      : `A verification code has been sent to your ${chosenMethod}.`,
+      : `Choose email or SMS verification and request a code.`,
   });
 });
 
@@ -94,6 +79,46 @@ router.post('/2fa/verify', requireApiAuth, rateLimit({
   // Create MFA session (sets cookie so the original request can be retried)
   markMfaVerified(req, res, result.action);
   res.json({ success: true, action: result.action });
+});
+
+/**
+ * POST /api/v1/auth/2fa/send
+ * Explicitly send a verification code for an operation 2FA challenge. The
+ * challenge itself never sends automatically; the user chooses the method
+ * (email/SMS) and clicks send. Switching method issues a fresh challenge.
+ * Body: { temp_token, method: 'email' | 'sms' }
+ */
+router.post('/2fa/send', requireApiAuth, requireCsrf, rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: 3,
+  key: req => `2fa-send:${req.ip}`,
+}), async (req: Request, res: Response): Promise<void> => {
+  const tempToken = typeof req.body?.temp_token === 'string' ? req.body.temp_token.trim() : '';
+  const rawMethod = typeof req.body?.method === 'string' ? req.body.method.trim() : '';
+  if (!tempToken || !['email', 'sms'].includes(rawMethod)) {
+    res.status(400).json({ error: 'Bad Request', message: 'Temp token and method (email or sms) are required' });
+    return;
+  }
+  const method = rawMethod as 'email' | 'sms';
+  const result = auth.sendOperation2FACode(tempToken, method, true);
+  if (!result) {
+    res.status(400).json({ error: 'Bad Request', message: 'Invalid or expired session. Please start again.' });
+    return;
+  }
+  if (result.email) {
+    await sendVerificationEmail(result.email, result.code);
+    console.log(`[2fa] EMAIL code for ${result.email}: ${result.code}`);
+  } else if (result.phone) {
+    await sendSmsCode(result.phone, result.code);
+    console.log(`[2fa] SMS code for ${result.phone}: ${result.code}`);
+  }
+  res.json({
+    success: true,
+    temp_token: result.tempToken,
+    email_hint: result.email ? maskEmail(result.email) : undefined,
+    phone_hint: result.phone ? maskPhone(result.phone) : undefined,
+    message: 'A verification code has been sent.',
+  });
 });
 
 /**

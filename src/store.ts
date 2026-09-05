@@ -13,6 +13,7 @@ export {
   createFeedbackAttachment, getFeedbackAttachments, getFeedbackAttachmentById,
   createSymbol, listSymbols, getSymbolById, deleteSymbol,
   getDashboardStats,
+  getAiBashSettings, updateAiBashSettings,
   listDistinctPlatforms, listDistinctVersions, clearAllCrashes,
 } from './database/store.js';
 

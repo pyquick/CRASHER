@@ -31,13 +31,10 @@ router.post('/me/emails', requireApiAuth, requireCsrf, async (req: Request, res:
   }
   try {
     const result = auth.addEmail(req.authUser!.id, email);
-    const sendResult = await sendVerificationEmail(result.email, result.code);
-    auth.writeAuditLog(req.authUser!.id, 'email.added', 'user', String(req.authUser!.id), req.ip ?? '', { email: result.email, smtp: sendResult.ok });
-    if (sendResult.ok) {
-      res.json({ success: true, email_id: result.id, method: 'smtp', message: `Verification code sent to ${result.email}.` });
-    } else {
-      res.json({ success: true, email_id: result.id, method: 'console', message: `SMTP unavailable: ${sendResult.error || 'not configured'}. Verification code logged to console.` });
-    }
+    // The code is delivered only when the user clicks send in the unified
+    // verification window (/me/emails/:id/resend); it is never sent here.
+    auth.writeAuditLog(req.authUser!.id, 'email.added', 'user', String(req.authUser!.id), req.ip ?? '', { email: result.email });
+    res.json({ success: true, email_id: result.id, message: 'Verification window opened. Click send code to deliver the code to the new address.' });
   } catch (error: any) {
     res.status(400).json({ error: 'Bad Request', message: error.message });
   }
