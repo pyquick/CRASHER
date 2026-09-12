@@ -56,13 +56,6 @@
         </div>
       </details>
 
-      <div x-show="tasks.length > 0" class="ai-chat-tasks">
-        <details class="ai-chat-tasks-details" :open="panelExpanded">
-          <summary class="ai-chat-tasks-summary"><span>Agent tasks</span><span class="ai-chat-tasks-count" x-text="tasks.filter(task => task.status !== 'completed').length + '/' + tasks.length + ' open'"></span></summary>
-          <ul class="ai-chat-tasks-list"><template x-for="task in tasks" :key="task.id"><li class="ai-chat-task" :class="'ai-chat-task-' + task.status" :title="task.notes || ''"><span class="ai-chat-task-dot" aria-hidden="true"></span><span class="ai-chat-task-title" x-text="task.title"></span><span class="ai-chat-task-status" x-text="task.status.replace('_', ' ')"></span></li></template></ul>
-        </details>
-      </div>
-
       <div class="ai-chat-messages" x-ref="messages" aria-live="polite">
         <template x-if="messages.length === 0"><p class="text-xs text-gray-500 text-center py-8">Ask about an attached crash, its analysis, or a safe next step.</p></template>
         <template x-for="item in messages" :key="item.id">

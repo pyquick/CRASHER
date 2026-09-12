@@ -18,8 +18,6 @@
     .tag-unity { background: rgba(167,139,250,0.15); color: #c4b5fd; }
     .tag-device { background: rgba(52,211,153,0.15); color: #6ee7b7; }
     .tag-deprecated { background: rgba(251,191,36,0.15); color: #fcd34d; }
-    .tag-ai { background: rgba(244,114,182,0.15); color: #f9a8d4; }
-    .tag-auth { background: rgba(148,163,184,0.15); color: #cbd5e1; }
     .toc-link { transition: color 0.15s, background 0.15s; display: block; padding: 3px 8px; border-radius: 6px; }
     .toc-link:hover { color: #93c5fd; }
     .toc-link.toc-active { color: #93c5fd; background: rgba(96,165,250,0.12); }
@@ -80,16 +78,6 @@
           <li><a href="#stats" class="toc-link" data-section="stats">10. 项目、统计与工具</a></li>
           <li><a href="#export" class="toc-link" data-section="export">11. 导出 / 导入</a></li>
         </ul>
-
-        <div class="toc-group">AI 助手</div>
-        <ul class="space-y-0.5 text-sm text-gray-400">
-          <li><a href="#ai" class="toc-link" data-section="ai">12. AI 崩溃助手</a></li>
-        </ul>
-
-        <div class="toc-group">账户与安全</div>
-        <ul class="space-y-0.5 text-sm text-gray-400">
-          <li><a href="#account" class="toc-link" data-section="account">13. 账户、2FA 与 API Key</a></li>
-        </ul>
       </nav>
     </aside>
 
@@ -110,8 +98,6 @@
           <li><a href="#dump" class="toc-link">9. Dump 解析</a></li>
           <li><a href="#stats" class="toc-link">10. 项目、统计与工具</a></li>
           <li><a href="#export" class="toc-link">11. 导出 / 导入</a></li>
-          <li><a href="#ai" class="toc-link">12. AI 崩溃助手</a></li>
-          <li><a href="#account" class="toc-link">13. 账户、2FA 与 API Key</a></li>
         </ul>
       </details>
     </div>
@@ -153,8 +139,6 @@ curl -b cookies.txt -c cookies.txt http://localhost:8080/api/v1/auth/csrf</code>
               <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /symbols</code>, <code>GET /symbols/:id/download</code></td><td>Session</td><td>admin/operator</td></tr>
               <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /source-dedup</code></td><td>Session + CSRF</td><td>admin</td></tr>
               <tr class="border-b border-gray-700/30"><td class="py-1"><code>DELETE /symbols/:id</code>, <code>DELETE /player-feedback/:id</code>, <code>POST /clear-crashes</code></td><td>Session + CSRF</td><td>admin</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>/api/v1/ai/*</code></td><td>Session</td><td>admin/operator（仅 session）</td></tr>
-              <tr><td class="py-1"><code>/auth/users</code>, <code>/auth/api-keys</code>, 2FA, 邮箱, 手机, 容器, 密码重置</td><td>Session；写操作需 CSRF</td><td>按端点角色限制</td></tr>
             </tbody>
           </table>
         </div>
@@ -1077,156 +1061,6 @@ curl -X POST "http://localhost:8080/api/v1/import?confirm=true" \
   "group_id": 10
 }</code></pre>
         </div>
-      </section>
-
-      <!-- ============================================================ -->
-      <!-- 12. AI 崩溃助手 -->
-      <!-- ============================================================ -->
-      <section id="ai" class="section-card mb-6">
-        <h2 class="text-xl font-semibold mb-4">
-          <span class="tag tag-ai mr-3 align-middle">AI</span>
-          12. AI 崩溃助手
-        </h2>
-        <p class="text-gray-400 mb-3">面向 <strong>session 登录</strong>的 <code>admin</code>/<code>operator</code> 用户的智能崩溃分析助手。每个用户在 Accounts 页面配置自己的 DeepSeek API Key；Key 永不返回给浏览器，服务端使用 <code>AI_ENCRYPTION_KEY</code> 加密保存。</p>
-        <p class="text-sm text-gray-400 mb-3">助手只读取当前用户有权访问的崩溃、确定性分析以及通过 API 上传的源码快照；没有源码时仅基于崩溃信息推断。</p>
-
-        <h3 class="font-medium mb-2">🤖 Agent 工具</h3>
-        <div class="overflow-x-auto mb-4">
-          <table class="w-full text-sm border-collapse">
-            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2 pr-4">工具</th><th class="text-left py-2 pr-4">说明</th><th class="text-left py-2">安全边界</th></tr></thead>
-            <tbody class="text-gray-400">
-              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>read_source_file</code></td><td class="pr-4">读取已上传的项目源码（路径 / 行号范围 / 列表）</td><td>仅限 DB 中的 <code>relative_path</code>——不接受文件系统路径</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>web_fetch</code></td><td class="pr-4">抓取公开网页（官方文档 / 规范）</td><td>SSRF 防护：连接时校验 IP；拦截私网/环回/链路本地/元数据地址；限制跳数和响应体积</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>run_bash</code></td><td class="pr-4">在每会话独立工作目录复现问题</td><td>默认关闭（<code>AI_BASH_ENABLED=true</code> 开启）；30s 超时、输出上限、最小环境变量、无网络隔离</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>update_tasks</code></td><td class="pr-4">维护自身任务列表</td><td>任务列表加密持久化，跨轮次可见</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>list_crashes</code></td><td class="pr-4">列出用户有权访问的整个崩溃库（可选 search/status/limit 过滤），用于查找崩溃 id</td><td>按容器作用域查询；仅返回摘要字段</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>update_crash_status</code></td><td class="pr-4">修改崩溃状态（open/resolved/ignored，可选 resolved_version）；不带 group_id 时作用于会话绑定崩溃，带 group_id 时作用于指定崩溃</td><td>group_id 写入前按容器作用域复核；子 Agent 不可用</td></tr>
-              <tr><td class="py-1.5 pr-4"><code>spawn_subagent</code></td><td class="pr-4">派子 Agent 调查子问题</td><td>每轮最多 4 个、无嵌套、无 bash；步数计入总预算</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <p class="text-xs text-gray-500 mb-4">循环步数上限：<code>AI_MAX_TOOL_STEPS</code>（默认 12）。Agent 循环会倍增 provider 调用次数，受每用户 <code>AI_RATE_LIMIT</code>（默认 20/分钟）约束。</p>
-
-        <h3 class="font-medium mb-2">🔌 端点</h3>
-        <div class="overflow-x-auto mb-4">
-          <table class="w-full text-sm border-collapse">
-            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">方法与路径</th><th class="text-left py-2">鉴权</th><th class="text-left py-2">说明</th></tr></thead>
-            <tbody class="text-gray-400">
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /ai/status</code></td><td>Session</td><td>AI 可用状态：provider、configured、model、models、会话数</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /ai/crashes</code></td><td>Session</td><td>最近的崩溃分组（25 条），用于绑定会话；查询参数：<code>search</code></td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /ai/crash-context/:groupId</code></td><td>Session</td><td>授权崩溃摘要；查询参数：<code>report_id</code>（可选）</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /ai/conversations</code></td><td>Session</td><td>列出当前用户未过期的会话</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /ai/conversations</code></td><td>Session + CSRF</td><td>创建会话，可选绑定 <code>group_id</code> / <code>report_id</code></td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /ai/conversations/:id/attach</code></td><td>Session + CSRF</td><td>将崩溃绑定到已有会话</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /ai/conversations/:id</code></td><td>Session</td><td>读取自己的会话：<code>messages</code>, <code>events</code>, <code>tasks</code></td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>DELETE /ai/conversations/:id</code></td><td>Session + CSRF</td><td>删除自己的会话（同时删除其 bash 工作目录）</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /ai/conversations/:id/messages</code></td><td>Session + CSRF</td><td>发送消息；以 SSE 流式返回事件</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /auth/ai-provider</code></td><td>Session</td><td>Provider 状态（永不返回 Key）</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>PUT /auth/ai-provider</code></td><td>Session + CSRF</td><td>保存 / 替换 DeepSeek Key</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>DELETE /auth/ai-provider</code></td><td>Session + CSRF</td><td>删除当前用户的 provider</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /auth/ai-provider/keys</code></td><td>Session</td><td>列出已配置的 provider Key（仅元数据）</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /auth/ai-provider/keys</code></td><td>Session + CSRF</td><td>添加 provider Key</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>PATCH /auth/ai-provider/keys/:id</code></td><td>Session + CSRF</td><td>更新 Key（如启用/禁用）</td></tr>
-              <tr><td class="py-1"><code>DELETE /auth/ai-provider/keys/:id</code></td><td>Session + CSRF</td><td>删除 provider Key</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <h3 class="font-medium mb-2">📡 SSE 流事件（POST /ai/conversations/:id/messages）</h3>
-        <div class="overflow-x-auto mb-4">
-          <table class="w-full text-sm border-collapse">
-            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2 pr-4">事件</th><th class="text-left py-2">载荷</th></tr></thead>
-            <tbody class="text-gray-400">
-              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>delta</code> / <code>reasoning</code></td><td>最终答案 / 思考文本分片</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>tool_call</code></td><td><code>{ id, name, args, group }</code></td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>tool_result</code></td><td><code>{ id, name, status, ok, summary, group }</code></td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>subagent</code></td><td><code>{ id, status, prompt, summary, group }</code></td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>tasks</code></td><td><code>{ tasks }</code></td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>done</code></td><td><code>{ message, context, key_id, tasks }</code></td></tr>
-              <tr><td class="py-1.5 pr-4"><code>error</code></td><td><code>{ error, message }</code></td></tr>
-            </tbody>
-          </table>
-        </div>
-        <p class="text-xs text-gray-500">会话在 <code>AI_RETENTION_DAYS</code>（默认 30 天）后过期，仅创建者可见。消息正文与 Agent 事件使用 AES-256-GCM 加密保存，受每用户限流、消息长度和消息数量限制。工具调用之后继续产生的思考会作为 <code>kind=reasoning</code> 的 Agent 事件持久化，UI 据此在对应工具步骤下方回放 "Reasoning returned by DeepSeek" 下拉框；工具调用前的思考仅保存在消息的 <code>reasoning</code> 字段中。</p>
-      </section>
-
-      <!-- ============================================================ -->
-      <!-- 13. 账户、2FA 与 API Key -->
-      <!-- ============================================================ -->
-      <section id="account" class="section-card mb-6">
-        <h2 class="text-xl font-semibold mb-4">
-          <span class="tag tag-auth mr-3 align-middle">Auth</span>
-          13. 账户、2FA 与 API Key
-        </h2>
-        <p class="text-gray-400 mb-3">以下端点均在 <code>/api/v1/auth</code> 下，需要 Session Cookie；修改类请求还需 <code>X-CSRF-Token</code>。访问按角色限制（admin / operator / viewer）。</p>
-
-        <h3 class="font-medium mb-2">🔑 会话与初始化</h3>
-        <div class="overflow-x-auto mb-4">
-          <table class="w-full text-sm border-collapse">
-            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">方法与路径</th><th class="text-left py-2">说明</th></tr></thead>
-            <tbody class="text-gray-400">
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /setup-status</code> · <code>POST /setup</code></td><td>首次运行初始化（UltraAdmin）</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /login</code></td><td>登录；可能返回 <code>email_verification</code> / <code>two_factor</code> 下一步</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /login/verify-email</code> · <code>/login/resend-email</code></td><td>登录邮箱验证步骤（admin）</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /login/totp</code></td><td>登录 TOTP 验证步骤（admin）</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /logout</code> · <code>GET /me</code> · <code>GET /csrf</code></td><td>登出、当前用户信息、CSRF token</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <h3 class="font-medium mb-2">🛡️ 双因素认证（admin）</h3>
-        <div class="overflow-x-auto mb-4">
-          <table class="w-full text-sm border-collapse">
-            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">方法与路径</th><th class="text-left py-2">说明</th></tr></thead>
-            <tbody class="text-gray-400">
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /2fa/challenge</code> · <code>/2fa/verify</code> · <code>/2fa/resend</code></td><td>敏感账户操作的发起挑战 / 验证 / 重发</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>PATCH /me/two-factor-method</code></td><td>切换 2FA 方式（邮箱 / TOTP）</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>PATCH /me/verify-email-on-login</code></td><td>开关「每次登录邮箱验证」（admin）</td></tr>
-              <tr><td class="py-1"><code>GET /me/totp/setup</code> · <code>POST /me/totp/enable</code> · <code>/me/totp/disable</code></td><td>TOTP 管理</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <h3 class="font-medium mb-2">📧 邮箱与手机</h3>
-        <div class="overflow-x-auto mb-4">
-          <table class="w-full text-sm border-collapse">
-            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">方法与路径</th><th class="text-left py-2">说明</th></tr></thead>
-            <tbody class="text-gray-400">
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /me/emails</code> · <code>POST /me/emails</code> · <code>DELETE /me/emails/:id</code></td><td>列出 / 添加 / 删除邮箱</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /me/emails/:id/verify</code> · <code>/primary</code> · <code>/resend</code></td><td>验证、设为主邮箱、重发验证</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /me/phones</code> · <code>POST /me/phones</code> · <code>DELETE /me/phones/:id</code></td><td>列出 / 添加 / 删除手机</td></tr>
-              <tr><td class="py-1"><code>POST /me/phones/:id/verify</code> · <code>/primary</code> · <code>/resend</code></td><td>验证、设为主号码、重发验证</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <h3 class="font-medium mb-2">👥 用户、API Key 与密码</h3>
-        <div class="overflow-x-auto mb-4">
-          <table class="w-full text-sm border-collapse">
-            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">方法与路径</th><th class="text-left py-2">说明</th></tr></thead>
-            <tbody class="text-gray-400">
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /users</code> · <code>POST /users</code> · <code>PATCH /users/:id</code></td><td>用户管理（admin）</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>PUT /users/:id/password</code></td><td>修改密码（自己，或 admin/operator 改他人）</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /forgot-password</code> · <code>/forgot-password/totp</code> · <code>/forgot-password/verify-email</code></td><td>发起密码重置</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /reset-request/:token</code> · <code>POST /reset-request/:token/approve</code></td><td>查看 / 审批重置请求（admin）</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /api-keys</code> · <code>POST /api-keys</code> · <code>DELETE /api-keys/:id</code></td><td>管理 API Key；明文 Key 只在创建时返回一次</td></tr>
-              <tr><td class="py-1"><code>PATCH /api-keys/:id/tier</code> · <code>PATCH /api-keys/:id/limits</code></td><td>修改 Key 层级 / 配额（admin）：<code>minute_limit</code> 和 <code>daily_limit</code>，整数 0–1000000000，<code>0</code> 表示不限量</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <h3 class="font-medium mb-2">🗂️ 容器（UltraAdmin）</h3>
-        <div class="overflow-x-auto mb-4">
-          <table class="w-full text-sm border-collapse">
-            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">方法与路径</th><th class="text-left py-2">说明</th></tr></thead>
-            <tbody class="text-gray-400">
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /containers</code> · <code>POST /containers</code> · <code>DELETE /containers/:id</code></td><td>容器管理（多租户隔离）</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /containers/active</code> · <code>GET /containers/:id/status</code></td><td>容器状态</td></tr>
-              <tr><td class="py-1"><code>POST /containers/:id/ban</code> · <code>/unban</code> · <code>POST /containers/:id/users</code></td><td>封禁 / 解封容器、添加用户</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <p class="text-xs text-gray-500">API Key 层级：<code>admin</code>, <code>operator</code>, <code>viewer</code>。viewer Key 不能写入；operator/admin Key 可以调用上报端点。</p>
       </section>
 
       <!-- 页脚 -->

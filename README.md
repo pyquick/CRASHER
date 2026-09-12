@@ -14,8 +14,7 @@
 - C#、C/C++、Go、Python、JavaScript/TypeScript、Java/Kotlin、Rust、Ruby、PHP、Swift、Dart、Elixir/Erlang、Lua 堆栈解析
 - Unity SymbolMap、ELF 和 dSYM 符号化
 - Android tombstone、iOS crash、Windows minidump、Unity log 解析
-- AI 崩溃助手：DeepSeek Agent 循环，可读源码、抓取官方文档、复现问题
-- 用户角色、Session、CSRF、分级 API Key、2FA/邮箱/手机验证、容器多租户和审计日志
+- 用户角色（admin/operator/viewer）、Session、CSRF、分级 API Key
 
 ## 快速开始
 
@@ -75,7 +74,7 @@ Authorization: Bearer <api-key>
 X-API-Key: <api-key>
 ```
 
-API Key 由登录用户通过账户页面或 `/api/v1/auth/api-keys` 创建，明文只在创建响应中返回一次。管理员可为每把 Key 配置每分钟和每日调用上限，`0` 表示不限量。额度按 Key 在 SQLite 中持久化，服务重启后仍生效。viewer key 不能写入；operator/admin key 可以调用上报端点。
+API Key 由登录用户通过 `/api/v1/auth/api-keys` 创建（账户、登录、API Key 管理端点见 `docs/AUTH.md`），明文只在创建响应中返回一次。管理员可为每把 Key 配置每分钟和每日调用上限，`0` 表示不限量。额度按 Key 在 SQLite 中持久化，服务重启后仍生效。viewer key 不能写入；operator/admin key 可以调用上报端点。
 
 ### 管理 API Session
 
@@ -231,7 +230,7 @@ T4/T5 仅受服务器全局配置上限约束（`MAX_SOURCE_FILES`、`MAX_SOURCE
 
 **上传去重**：同一项目、同一路径下内容与最新版本完全一致的文件跳过处理（响应 `deduplicated` 列出跳过的路径）；内容有改动则写入新行（小改动只存补丁 `accepted[].storage` 为 `patch`，大改动完整存储 `full`），旧行保留作历史备份；新增路径直接入库。全部文件都被去重时不再创建快照，响应 `snapshot_id` 为 `null`。
 
-**源码匹配**：崩溃分析（`GET /crash-reports/:id/analysis` 与 AI 助手）总是读取项目的「当前状态」——每个路径跨快照的最新一行，因此变更文件按新内容匹配、未变文件不丢失、新增文件立即参与。`match_type`（`exact`/`latest`）仍描述匹配到的快照（按 release 精确优先，否则最新）。
+**源码匹配**：崩溃分析（`GET /crash-reports/:id/analysis`）总是读取项目的「当前状态」——每个路径跨快照的最新一行，因此变更文件按新内容匹配、未变文件不丢失、新增文件立即参与。`match_type`（`exact`/`latest`）仍描述匹配到的快照（按 release 精确优先，否则最新）。
 
 压缩包示例：
 
@@ -459,108 +458,7 @@ POST /import?confirm=true
 
 `.crashpkg` 是 tar.gz，包含 manifest、报告 JSON 和附件。导入时先使用 `confirm=false` 检查冲突，再用 `confirm=true` 写入。新格式携带项目名；旧数据包仍可导入。
 
-### 11. 账户、安全验证和 API Key
-
-前缀均为 `/api/v1/auth`：
-
-```http
-GET    /setup-status
-POST   /setup
-POST   /login
-POST   /login/verify-email
-POST   /login/resend-email
-POST   /login/totp
-POST   /logout
-GET    /me
-GET    /csrf
-POST   /2fa/challenge
-POST   /2fa/verify
-POST   /2fa/resend
-PATCH  /me/two-factor-method
-PATCH  /me/verify-email-on-login
-GET    /users
-POST   /users
-PATCH  /users/:id
-PUT    /users/:id/password
-GET    /me/emails
-POST   /me/emails
-POST   /me/emails/:id/verify
-POST   /me/emails/:id/primary
-POST   /me/emails/:id/resend
-DELETE /me/emails/:id
-GET    /me/phones
-POST   /me/phones
-POST   /me/phones/:id/verify
-POST   /me/phones/:id/primary
-POST   /me/phones/:id/resend
-DELETE /me/phones/:id
-GET    /me/totp/setup
-POST   /me/totp/enable
-POST   /me/totp/disable
-POST   /forgot-password
-POST   /forgot-password/totp
-POST   /forgot-password/verify-email
-GET    /reset-request/:token
-POST   /reset-request/:token/approve
-GET    /api-keys
-POST   /api-keys
-DELETE /api-keys/:id
-PATCH  /api-keys/:id/tier
-PATCH  /api-keys/:id/limits
-GET    /containers
-POST   /containers
-GET    /containers/:id/status
-POST   /containers/:id/ban
-POST   /containers/:id/unban
-DELETE /containers/:id
-POST   /containers/:id/users
-GET    /containers/active
-```
-
-具体可用操作由 admin/operator/viewer 角色限制；`/containers*` 仅 UltraAdmin。登录支持邮箱验证（`/login/verify-email`）和 TOTP（`/login/totp`）两步流程；账户敏感操作通过 `/2fa/*` 发起挑战。API Key tier 为 `admin`、`operator`、`viewer`。管理员创建时可传 `minute_limit` 和 `daily_limit`，或通过 `PATCH /api-keys/:id/limits` 更新二者；值必须是 0 到 1000000000 的整数，`0` 表示不限量。
-
-### 12. AI 崩溃助手
-
-AI 功能仅对 session 登录的 `admin` / `operator` 开放。每个用户在 Accounts 页面配置自己的 DeepSeek API Key；Key 不会返回给浏览器，服务端使用 `AI_ENCRYPTION_KEY` 加密保存。请求只读取当前用户有权访问的崩溃、确定性分析和通过 API 上传的源码快照；没有源码时只基于崩溃信息推断。
-
-AI 以 **Agent 循环**运行：模型可调用工具逐步分析——
-
-| 工具 | 说明 | 安全边界 |
-|------|------|----------|
-| `read_source_file` | 读取绑定项目已上传的源码（路径/行号范围/列表） | 仅限 DB 中的 `relative_path`，不接受文件系统路径 |
-| `web_fetch` | 抓取公开网页（官方文档/规范） | SSRF 防护：连接时校验 IP，拦截私网/环回/链路本地/元数据地址，限制跳数与响应体积 |
-| `run_bash` | 在每会话独立工作目录复现问题 | 默认关闭（`AI_BASH_ENABLED=true` 开启）；超时 30s、输出上限、最小环境变量、无网络隔离 |
-| `update_tasks` | 维护自身任务列表 | 任务列表加密持久化，跨轮次可见 |
-| `list_crashes` | 列出用户有权访问的整个崩溃库（可选 search/status/limit 过滤），用于查找崩溃 id | 按容器作用域查询，仅返回摘要字段 |
-| `update_crash_status` | 修改崩溃状态 (open/resolved/ignored，可选 resolved_version)；不带 group_id 时作用于会话绑定崩溃，带 group_id 时作用于指定崩溃 | group_id 写入前按容器作用域复核（getGroupByIdScoped），子 Agent 不可用 |
-| `spawn_subagent` | 派子 Agent 调查子问题 | 每轮最多 4 个、无嵌套、无 bash，步数计入总预算 |
-
-循环步数上限 `AI_MAX_TOOL_STEPS`（默认 12）。Agent 循环会倍增 provider 调用次数，受每用户 `AI_RATE_LIMIT`（20/分钟）约束。
-
-```http
-GET    /auth/ai-provider
-PUT    /auth/ai-provider
-DELETE /auth/ai-provider
-GET    /auth/ai-provider/keys
-POST   /auth/ai-provider/keys
-PATCH  /auth/ai-provider/keys/:id
-DELETE /auth/ai-provider/keys/:id
-GET    /ai/status
-GET    /ai/crashes
-GET    /ai/crash-context/:groupId
-GET    /ai/conversations
-POST   /ai/conversations
-POST   /ai/conversations/:id/attach
-GET    /ai/conversations/:id
-DELETE /ai/conversations/:id
-POST   /ai/conversations/:id/messages
-```
-
-会话默认保留 30 天，仅创建者可见；消息正文与 Agent 事件（工具调用/结果、子 Agent 轨迹、任务更新）使用 AES-256-GCM 加密保存，并受每用户限流、消息长度和会话消息数量限制。
-
-`POST /ai/conversations/:id/messages` 以 SSE 流式返回：`delta` / `reasoning`（最终答案与思考）、`tool_call` `{id, name, args, group}`、`tool_result` `{id, name, status, ok, summary, group}`、`subagent` `{id, status, prompt, summary, group}`、`tasks` `{tasks}`、`done` `{message, context, key_id, tasks}`、`error` `{error, message}`。工具调用之后继续产生的思考作为 `kind=reasoning` 的 Agent 事件持久化，UI 据此在对应工具步骤下方显示 "Reasoning returned by DeepSeek" 下拉框。
-
-### 13. 数据清理和健康检查
+### 11. 数据清理和健康检查
 
 ```http
 POST /clear-crashes
@@ -622,26 +520,6 @@ GET  /health
 | `ALERT_ON_NEW_GROUP` | `true` | 新分组时告警 |
 | `ALERT_THRESHOLD_COUNT` | `10` | 次数阈值告警 |
 | `SMTP_HOST` 等 | 空 | SMTP 和邮件告警配置 |
-| `AI_ENCRYPTION_KEY` | 空 | AI 数据加密密钥；未配置时 AI 功能不可用 |
-| `AI_DEEPSEEK_MODEL` | `deepseek-chat` | AI 默认模型 |
-| `AI_DEEPSEEK_ENDPOINT` | `https://api.deepseek.com/chat/completions` | DeepSeek API 地址 |
-| `AI_RATE_LIMIT` | `20` | 每用户每分钟 AI 请求数 |
-| `AI_MAX_TOOL_STEPS` | `12` | Agent 循环最大工具步数 |
-| `AI_MAX_CONVERSATIONS` | `50` | 每用户最大会话数 |
-| `AI_MAX_MESSAGES_PER_CONVERSATION` | `100` | 每会话最大消息数 |
-| `AI_RETENTION_DAYS` | `30` | 会话保留天数 |
-| `AI_BASH_ENABLED` | `false` | 是否启用 `run_bash` 工具 |
-| `AI_BASH_TIMEOUT_MS` | `30000` | `run_bash` 超时毫秒数 |
-| `AI_BASH_MAX_OUTPUT` | `65536` | `run_bash` 输出上限字节数 |
-| `AI_SUBAGENT_MAX` | `4` | 每轮最大子 Agent 数 |
-| `AI_SUBAGENT_MODEL` | 空 | 子 Agent 使用的模型（默认跟随主模型） |
-| `AI_MESSAGE_MAX_LENGTH` | `10000` | 单条 AI 消息最大字符数 |
-| `AI_HISTORY_MAX_CHARS` | `40000` | 发送给模型的历史消息字符上限 |
-| `AI_CONTEXT_MAX_CHARS` | `120000` | 崩溃上下文字符上限 |
-| `AI_SOURCE_MAX_FILES` | `20` | 提供给 AI 的源码文件数上限 |
-| `AI_REQUEST_TIMEOUT_MS` | `60000` | DeepSeek 请求超时毫秒数 |
-| `AI_WEB_FETCH_TIMEOUT_MS` / `AI_WEB_FETCH_MAX_BYTES` | 空 | `web_fetch` 工具超时与响应体积上限 |
-| `AI_TOOL_RESULT_MAX_CHARS` | 空 | 工具结果回传模型的字符上限 |
 
 ## 数据目录
 
@@ -653,7 +531,7 @@ data/
 └── sources/
 ```
 
-数据库保存用户、Session、API Key、审计日志、项目、源码快照元数据、崩溃、反馈和符号记录；上传的二进制/源码文件保存在对应目录。备份时应同时备份整个 `DATA_DIR`。
+数据库保存项目、源码快照元数据、崩溃、反馈和符号记录；上传的二进制/源码文件保存在对应目录。备份时应同时备份整个 `DATA_DIR`。
 
 ## Web 页面
 
@@ -661,9 +539,7 @@ data/
 |---|---|
 | Dashboard | `/web/` |
 | Crashes（含项目筛选） | `/web/crashes` |
-| Crash Detail（含源码分析、AI 助手） | `/web/crashes/:groupId` |
+| Crash Detail（含源码分析） | `/web/crashes/:groupId` |
 | Player Feedback | `/web/feedback` |
 | Symbols | `/web/symbols` |
-| Accounts/API Keys | `/web/accounts` |
-| Containers（UltraAdmin） | `/web/containers` |
 | HTML API 文档 | `/web/api-doc` |

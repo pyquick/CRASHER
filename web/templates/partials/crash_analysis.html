@@ -14,7 +14,16 @@
             x-text="languageLabel(analysis?.detected_language)"></span>
       <span class="pill bg-green-900/40 text-green-300" x-show="analysis?.source_analysis?.crash_source">Source matched</span>
       <span class="pill bg-yellow-900/40 text-yellow-300" x-show="analysis?.source_analysis && !analysis?.source_analysis?.crash_source">Source snapshot unmatched</span>
-      <span class="ml-auto text-xs text-gray-500" x-text="'Report #' + analysis?.report_id + ' · ' + (analysis?.runtime || 'Unknown runtime')"></span>
+      <div class="ml-auto flex flex-wrap items-center gap-2">
+        <select x-model="reviewModel" class="fc fc-sm" aria-label="AI review model" title="Model used by the AI review (empty = chat selection)">
+          <option value="">Review model (default: chat)</option>
+          <template x-for="option in reviewModels" :key="option.value"><option :value="option.value" x-text="option.label"></option></template>
+        </select>
+        <button type="button" @click="runReview()" :disabled="reviewing" class="btn btn-sm btn-blue">
+          <span x-text="reviewing ? 'Reviewing…' : 'AI Review'"></span>
+        </button>
+        <span class="text-xs text-gray-500" x-text="'Report #' + analysis?.report_id + ' · ' + (analysis?.runtime || 'Unknown runtime')"></span>
+      </div>
     </div>
   </div>
 
@@ -46,7 +55,7 @@
     </div>
 
     <!-- Root cause (single terminal finding) -->
-    <div class="rounded-lg border border-purple-900/40 bg-purple-950/20 p-4" x-show="topRootCause()">
+    <div class="rounded-lg border border-purple-900/40 bg-purple-950/20 p-4" x-show="hasRootCause()">
       <p class="mb-2 text-[10px] font-semibold uppercase tracking-widest text-purple-400">Root cause</p>
       <div class="flex flex-wrap items-center gap-2">
         <span class="pill" :class="rootCauseClass(topRootCause().kind)" x-text="rootCauseLabel(topRootCause().kind)"></span>
@@ -96,6 +105,47 @@
                 <p class="mb-1 text-[10px] font-semibold uppercase tracking-widest text-gray-600">After</p>
                 <pre class="overflow-x-auto rounded-md bg-surface-900 p-2 font-mono text-[11px] leading-relaxed text-green-300" x-text="fix.code_after"></pre>
               </div>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <!-- AI review verdict + learned knowledge (learning mechanism) -->
+    <p class="text-xs text-red-400" x-show="reviewError" x-text="reviewError"></p>
+    <div x-show="aiReview" class="rounded-lg border p-4"
+         :class="aiReview?.correct ? 'border-green-900/50 bg-green-950/20' : 'border-amber-900/50 bg-amber-950/20'">
+      <div class="flex flex-wrap items-center gap-2">
+        <p class="text-[10px] font-semibold uppercase tracking-widest"
+           :class="aiReview?.correct ? 'text-green-400' : 'text-amber-400'"
+           x-text="aiReview?.correct ? 'AI review: passed' : 'AI review: corrections applied'"></p>
+        <span class="pill bg-blue-900/40 text-blue-300" x-show="aiReview?.model" x-text="aiReview?.model"></span>
+        <span class="ml-auto text-[10px] text-gray-600" x-text="aiReview?.created_at"></span>
+      </div>
+      <p class="mt-2 text-xs leading-relaxed text-gray-300" x-show="aiReview?.notes" x-text="aiReview?.notes"></p>
+    </div>
+
+    <!-- Learned knowledge base entries for this exception type -->
+    <div x-show="analysis?.learned?.length">
+      <p class="mb-2 text-[10px] font-semibold uppercase tracking-widest text-gray-600">Learned knowledge</p>
+      <div class="space-y-2">
+        <template x-for="entry in analysis?.learned" :key="entry.kind + entry.title">
+          <div class="rounded-lg border border-cyan-900/40 bg-cyan-950/10 p-3">
+            <div class="flex flex-wrap items-center gap-2">
+              <span class="pill" :class="{
+                'bg-green-900/40 text-green-300': entry.kind === 'suggestion',
+                'bg-purple-900/40 text-purple-300': entry.kind === 'root_cause',
+                'bg-gray-800 text-gray-400': entry.kind === 'hint',
+                'bg-cyan-900/40 text-cyan-300': entry.kind === 'quote'
+              }" x-text="entry.kind"></span>
+              <h4 class="text-xs font-medium text-gray-200" x-text="entry.title"></h4>
+              <span class="ml-auto font-mono text-[10px] text-gray-600" x-text="'conf ' + Number(entry.confidence).toFixed(2)"></span>
+            </div>
+            <p class="mt-1 text-xs leading-relaxed text-gray-400" x-show="entry.description" x-text="entry.description"></p>
+            <div x-show="entry.kind === 'quote'" class="mt-2 border-l-2 border-cyan-700 pl-3 text-xs text-cyan-200">
+              <blockquote class="font-mono" x-text="entry.quote"></blockquote>
+              <p class="mt-1 text-cyan-300/80" x-text="entry.meaning"></p>
+              <p class="mt-1 text-[10px] text-gray-600" x-text="entry.source"></p>
             </div>
           </div>
         </template>

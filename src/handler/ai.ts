@@ -116,6 +116,7 @@ router.get('/status', requireRole('admin', 'operator'), (req: Request, res: Resp
     provider: PROVIDER,
     configured: isAiEncryptionConfigured() && store.listAiProviderKeys(req.authUser!.id, PROVIDER).some(key => key.enabled),
     model: config.aiDeepseekModel,
+    default_model: store.getUserDefaultAiModel(req.authUser!.id),
     conversations: store.countAiConversations(req.authUser!.id, nowSqlDateTime()),
   });
 });
@@ -259,6 +260,9 @@ router.post('/conversations/:id/messages', aiLimiter, requireRole('admin', 'oper
   const message = typeof req.body?.message === 'string' ? req.body.message.trim() : '';
   const requestedModel = typeof req.body?.model === 'string' ? req.body.model : null;
   const thinking = req.body?.thinking === true;
+  // Persist the chat-selected model per user so the code-analysis review
+  // defaults to "the model selected in the chat box".
+  if (requestedModel && requestedModel.trim()) store.setUserDefaultAiModel(req.authUser!.id, requestedModel.trim());
   const isCompact = req.body?.kind === 'compact';
   if (!id || !message || message.length > config.aiMessageMaxLength) {
     res.status(400).json({ error: 'Bad Request', message: `Message must be between 1 and ${config.aiMessageMaxLength} characters` }); return;

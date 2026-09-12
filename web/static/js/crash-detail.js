@@ -20,11 +20,17 @@ document.addEventListener('alpine:init', () => {
     resolvedVersion: '',
     statusMsg: '',
     statusErr: false,
+    reviewModel: '',
+    reviewModels: [],
+    aiReview: null,
+    reviewing: false,
+    reviewError: '',
 
     async init() {
       const id = window.location.pathname.split('/').pop();
       await this.loadGroup(id);
       await this.loadAnalysis();
+      this.loadReviewModels();
     },
 
     async loadGroup(id) {
@@ -155,8 +161,13 @@ document.addEventListener('alpine:init', () => {
       return location.file_path + ':' + location.line_number;
     },
 
+    hasRootCause() {
+      return !!((this.analysis?.source_analysis?.root_cause_candidates || [])[0]);
+    },
+
+    // Always returns an object so template bindings never dereference null.
     topRootCause() {
-      return (this.analysis?.source_analysis?.root_cause_candidates || [])[0] || null;
+      return (this.analysis?.source_analysis?.root_cause_candidates || [])[0] || {};
     },
 
     crashPath() {
@@ -229,14 +240,52 @@ document.addEventListener('alpine:init', () => {
         const res = await fetch('/api/v1/crash-reports/' + this.latestReport.id + '/analysis');
         if (res.ok) {
           this.analysis = await res.json();
+          this.aiReview = this.analysis?.ai_review || null;
           this.expandedNodes = {};
-          this.initExpandedNodes(this.analysis.file_tree);
+          if (this.analysis?.file_tree) this.initExpandedNodes(this.analysis.file_tree);
           this.buildTreeHTML();
         }
       } catch (err) {
         console.error('Failed to load analysis:', err);
       }
     },
+
+    async loadReviewModels() {
+      try {
+        const res = await fetch('/api/v1/ai/models');
+        const data = await res.json();
+        if (res.ok && Array.isArray(data.items)) this.reviewModels = data.items;
+      } catch {}
+    },
+
+    async runReview() {
+      this.reviewError = '';
+      this.reviewing = true;
+      try {
+        const res = await fetch('/api/v1/analysis-review', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ report_id: this.latestReport.id, model: this.reviewModel || undefined }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+          this.analysis = data.data?.analysis ?? data.analysis;
+          this.aiReview = this.analysis?.ai_review || data.data?.ai_review || null;
+          this.expandedNodes = {};
+          if (this.analysis?.file_tree) this.initExpandedNodes(this.analysis.file_tree);
+          this.buildTreeHTML();
+        } else {
+          this.reviewError = data.message || data.error || 'Review failed';
+        }
+      } catch (err) {
+        this.reviewError = 'Network error';
+      } finally {
+        this.reviewing = false;
+      }
+    },
+
+    // Learned knowledge entries are merged server-side into the analysis
+    // response (analysis.learned) — no client-side loading needed.
 
     buildTreeHTML() {
       const nodes = this.analysis?.file_tree;

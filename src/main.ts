@@ -33,11 +33,12 @@ import queryHandler from './handler/query.js';
 import sourceHandler from './handler/source.js';
 import aiProviderHandler from './handler/ai-provider.js';
 import aiHandler from './handler/ai.js';
+import learningHandler from './handler/learning.js';
 import webHandler from './handler/web.js';
 import { testSmtpConnection } from './notification/service.js';
 import { sweepSourceDuplicates } from './service/dedup.js';
 import { regroupCrashReports } from './service/regroup.js';
-import { purgeExpiredAiConversations } from './store.js';
+import { purgeExpiredAiConversations, getRunningAnalysisLearningJob, updateAnalysisLearningJob } from './store.js';
 import { nowSqlDateTime } from './shared/date.js';
 
 initDb();
@@ -61,6 +62,16 @@ try {
   }
 } catch (err) {
   console.error('[regroup] startup sweep failed:', err);
+}
+
+try {
+  const stale = getRunningAnalysisLearningJob();
+  if (stale) {
+    updateAnalysisLearningJob(stale.id, { status: 'failed', errorMessage: 'Server restarted during self-improvement', now: nowSqlDateTime() });
+    console.log(`[self-improve] marked stale job ${stale.id} as failed`);
+  }
+} catch (err) {
+  console.error('[self-improve] startup sweep failed:', err);
 }
 
 const app = express();
@@ -150,6 +161,7 @@ const apiLimiter = rateLimit({ windowMs: 60 * 1000, limit: config.apiRateLimit }
 app.use('/api/v1', apiLimiter, requireApiAuth, requireContainerAccess, requireCsrf, requireApiKeyDeleteAccess, queryHandler);
 app.use('/api/v1', apiLimiter, requireApiAuth, requireContainerAccess, requireCsrf, requireApiKeyDeleteAccess, symbolHandler);
 app.use('/api/v1/ai', apiLimiter, requireApiAuth, requireContainerAccess, requireCsrf, aiHandler);
+app.use('/api/v1', apiLimiter, requireApiAuth, requireContainerAccess, requireCsrf, learningHandler);
 
 app.get('/', (_req, res) => res.redirect('/web/'));
 app.get('/health', (_req, res) => res.json({ status: 'ok' }));

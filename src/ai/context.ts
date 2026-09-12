@@ -23,10 +23,41 @@ function safeSourceContent(file: SourceFile): string | null {
       const path = resolve(file.storage_path);
       if (!path.startsWith(root)) return null;
     }
-    return bounded(readSourceFileContent(file), Math.min(config.maxSourceFileSize, 20000));
+    return readSourceFileContent(file);
   } catch {
     return null;
   }
+}
+
+function sourcePathsForAnalysis(analysis: NonNullable<ScopedCrashContext['analysis']>): Set<string> {
+  const paths = new Set<string>();
+  const add = (value: string | null | undefined) => {
+    if (value) paths.add(value);
+  };
+  add(analysis.trigger_point.file_path);
+  for (const frame of analysis.stack_chain) add(frame.file_path);
+  for (const step of analysis.crash_path ?? []) add(step.file_path);
+  const source = analysis.source_analysis;
+  if (source) {
+    add(source.crash_source?.file_path);
+    add(source.function_definition?.file_path);
+    for (const reference of source.references) add(reference.file_path);
+    for (const related of source.related_functions) add(related.file_path);
+    for (const related of source.related_files) add(related.file_path);
+    for (const candidate of source.root_cause_candidates ?? []) add(candidate.file_path);
+  }
+  return paths;
+}
+
+function promptSourceFiles(
+  files: Array<{ relative_path: string; language: string; content: string }>,
+  analysis: NonNullable<ScopedCrashContext['analysis']> | null,
+): Array<{ relative_path: string; language: string; content: string }> {
+  if (!analysis) return files.slice(0, config.aiSourceMaxFiles);
+  const relevant = sourcePathsForAnalysis(analysis);
+  const relevantFiles = files.filter(file => relevant.has(file.relative_path));
+  const otherFiles = files.filter(file => !relevant.has(file.relative_path));
+  return [...relevantFiles, ...otherFiles].slice(0, config.aiSourceMaxFiles);
 }
 
 function reportForContext(
@@ -57,10 +88,11 @@ export function loadScopedCrashContext(
     ? store.findSourceSnapshotScoped(report.project_id, report.release, scope)
     : undefined;
   // Source matching reads the project's current state (latest row per path
-  // across all snapshots), not just the matched snapshot's delta.
-  const sourceFiles = snapshot && report.project_id !== null
+  // across all snapshots), not just the matched snapshot's delta. The
+  // analysis derives from ALL readable files (so crash_source matching works
+  // regardless of the prompt-size cap); only the prompt copy is capped.
+  const readableFiles = snapshot && report.project_id !== null
     ? store.getCurrentSourceFilesForProject(report.project_id, scope)
-      .slice(0, config.aiSourceMaxFiles)
       .map(file => ({ file, content: safeSourceContent(file) }))
       .filter((entry): entry is { file: SourceFile; content: string } => entry.content !== null)
       .map(entry => ({
@@ -84,13 +116,14 @@ export function loadScopedCrashContext(
     snapshot_release: snapshot.release,
     snapshot_id: snapshot.id,
     match_type: snapshot.match_type,
-    files: sourceFiles,
+    files: readableFiles,
   } : undefined);
+  const sourceFiles = promptSourceFiles(readableFiles, analysis);
   return {
     group,
     report,
     analysis,
-    sourceAvailable: sourceFiles.length > 0,
+    sourceAvailable: readableFiles.length > 0,
     sourceSnapshotId: snapshot?.id ?? null,
     sourceFiles,
   };
@@ -137,7 +170,7 @@ export function crashContextForPrompt(context: ScopedCrashContext): string {
         warnings: context.analysis.source_analysis.warnings.slice(0, 10),
       } : null,
     } : null,
-    uploaded_source_files: context.sourceFiles.map(file => ({
+    uploaded_source_files: promptSourceFiles(context.sourceFiles, context.analysis).map(file => ({
       path: file.relative_path,
       language: file.language,
       content: file.content,

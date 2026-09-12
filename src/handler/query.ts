@@ -9,6 +9,7 @@ import { requireRole } from '../middleware.js';
 import { importCrashPackage, extractImportBuffer } from '../service/import.js';
 import { getContainerScope } from '../shared/container.js';
 import { readSourceFileContent, sweepSourceDuplicates } from '../service/dedup.js';
+import { applyKnowledgeToAnalysis, applyReviewToAnalysis, normalizeReviewPayload } from '../learning/index.js';
 import type { CrashReport, CrashAttachment } from '../model.js';
 
 /**
@@ -169,7 +170,46 @@ router.get('/crash-reports/:id/analysis', requireRole('admin', 'operator'), (req
     return;
   }
 
-  res.json(analysis);
+  // Merge the latest AI review (approved suggestions + corrections) when one exists.
+  let merged = analysis;
+  let aiReview: { correct: boolean; notes: string; model: string; created_at: string } | null = null;
+  const latestReview = store.getLatestAnalysisReview(id);
+  if (latestReview) {
+    let reviewPayload: ReturnType<typeof normalizeReviewPayload> = null;
+    try {
+      reviewPayload = normalizeReviewPayload({
+        correct: Boolean(latestReview.correct),
+        notes: latestReview.notes,
+        corrections: JSON.parse(latestReview.corrections_json || '{}'),
+        suggestions: JSON.parse(latestReview.suggestions_json || '[]'),
+      });
+    } catch {}
+    if (reviewPayload) {
+      merged = applyReviewToAnalysis(analysis, reviewPayload);
+      aiReview = {
+        correct: Boolean(latestReview.correct),
+        notes: latestReview.notes,
+        model: latestReview.model,
+        created_at: latestReview.created_at,
+      };
+    }
+  }
+
+  // Enrich with the learnable knowledge base for this exception type.
+  const knowledgeEntries = store.listAnalysisKnowledge(merged.exception_type, merged.detected_language, report.project_id).map(row => {
+    let payload: unknown = {};
+    try { payload = JSON.parse(row.payload_json || '{}'); } catch {}
+    return {
+      kind: row.kind,
+      title: row.title,
+      description: row.description,
+      confidence: row.confidence,
+      payload: typeof payload === 'object' && payload !== null && !Array.isArray(payload) ? payload as Record<string, unknown> : {},
+    };
+  });
+  const enriched = applyKnowledgeToAnalysis(merged, knowledgeEntries);
+
+  res.json(aiReview ? { ...enriched, ai_review: aiReview } : enriched);
 });
 
 // ── Export / Import ──

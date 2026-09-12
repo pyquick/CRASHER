@@ -86,6 +86,10 @@ router.get('/accounts', requireAuth, requireRole('admin', 'operator'), (_req: Re
   res.type('html').send(renderTemplate('pages/app/account_list.html', 'Account Security - Crash Report Server'));
 });
 
+router.get('/ai-settings', requireAuth, requireRole('admin', 'operator'), (_req: Request, res: Response): void => {
+  res.type('html').send(renderTemplate('pages/app/ai_settings.html', 'AI Settings - Crash Report Server'));
+});
+
 router.get('/containers', requireAuth, requireUltraAdmin, (_req: Request, res: Response): void => {
   res.type('html').send(renderTemplate('pages/app/container_list.html', 'Container Management - Crash Report Server'));
 });

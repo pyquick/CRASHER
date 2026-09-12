@@ -100,6 +100,6 @@ export interface PySnapshotModel {
   classes_by_name: Map<string, PyClass[]>;        // lowercase simple name
   imports_by_name: Map<string, PyImport[]>;       // lowercase bound name
   class_edges: Map<string, { bases: string[]; subclasses: string[] }>; // qualified_name keyed
-  skipped_files: number;  // Python files not indexed because a limit was hit
-  truncated: boolean;     // true when the file or function limit was hit
+  skipped_files: number;  // retained for compatibility; no code-size cap is applied
+  truncated: boolean;     // reserved for parser failures or future diagnostic states
 }

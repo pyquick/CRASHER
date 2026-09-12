@@ -939,3 +939,43 @@ export function clearAllCrashes(containerId?: number | null): string[] {
 
   return attachmentPaths.map((a: { file_path: string }) => a.file_path);
 }
+
+// ── Code-analysis self-improvement: unlearned reports + learned markers ──
+
+function unlearnedCondition(containerId?: number | null): { condition: string; params: unknown[] } {
+  if (containerId === undefined) return { condition: '(cr.analysis_learned IS NULL OR cr.analysis_learned = 0)', params: [] };
+  if (containerId === null) return { condition: '(cr.analysis_learned IS NULL OR cr.analysis_learned = 0) AND cr.container_id IS NULL', params: [] };
+  return { condition: '(cr.analysis_learned IS NULL OR cr.analysis_learned = 0) AND cr.container_id = ?', params: [containerId] };
+}
+
+export function listUnlearnedReports(containerId?: number | null, limit = 25): CrashReport[] {
+  const { condition, params } = unlearnedCondition(containerId);
+  return getDb().prepare(`
+    SELECT cr.*, p.name AS project_name
+    FROM crash_reports cr
+    LEFT JOIN projects p ON p.id = cr.project_id
+    WHERE ${condition}
+    ORDER BY cr.id
+    LIMIT ?
+  `).all(...params, limit) as CrashReport[];
+}
+
+export function countUnlearnedReports(containerId?: number | null): number {
+  const { condition, params } = unlearnedCondition(containerId);
+  return (getDb().prepare(`SELECT COUNT(*) AS total FROM crash_reports cr WHERE ${condition}`).get(...params) as { total: number }).total;
+}
+
+export function markReportLearned(reportId: number, learnedAt: string): void {
+  getDb().prepare('UPDATE crash_reports SET analysis_learned = 1, analysis_learned_at = ? WHERE id = ?').run(learnedAt, reportId);
+}
+
+/** Overwrites the stored exception values with AI-review corrections. */
+export function updateReportException(reportId: number, fields: { exceptionType?: string; exceptionMessage?: string; now: string }): boolean {
+  const sets: string[] = [];
+  const values: unknown[] = [];
+  if (fields.exceptionType !== undefined) { sets.push('exception_type = ?'); values.push(fields.exceptionType); }
+  if (fields.exceptionMessage !== undefined) { sets.push('exception_message = ?'); values.push(fields.exceptionMessage); }
+  if (!sets.length) return true;
+  values.push(reportId);
+  return getDb().prepare(`UPDATE crash_reports SET ${sets.join(', ')} WHERE id = ?`).run(...values).changes > 0;
+}

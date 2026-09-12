@@ -12,7 +12,7 @@ import type {
   SourceLocation,
   StackFrame,
 } from '../../types.js';
-import { buildSnapshotModel, MODEL_LIMITS } from './code-model/index.js';
+import { buildSnapshotModel } from './code-model/index.js';
 import { buildCallGraph, callersOf } from './dependencies/call-graph.js';
 import { transitiveSubclasses } from './dependencies/class-graph.js';
 import { fileOfFunction } from './dependencies/imports.js';
@@ -57,10 +57,7 @@ export function analyzePythonDeep(
     return empty;
   }
   if (model.truncated) {
-    warnings.push(
-      `Python deep analysis was limited to the first ${MODEL_LIMITS.maxFiles} files / ${MODEL_LIMITS.maxFunctions} functions ` +
-      `(${model.skipped_files} Python files skipped) — results may be incomplete for large snapshots`
-    );
+    warnings.push('Python deep analysis was incomplete while indexing the source snapshot');
   }
 
   const crashFrame = frames.find(frame => frame.file_path && frame.line_number) ?? frames[0];

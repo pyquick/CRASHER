@@ -222,16 +222,16 @@ test('parses one-line function bodies and annotated assignments', () => {
   assert.ok(model.name_defs.has('x'), 'annotated assignment recorded in name_defs');
 });
 
-test('caps very large snapshots at the model limits', () => {
+test('indexes all files in large snapshots', () => {
   const many = Array.from({ length: 305 }, (_, i) => ({
     relative_path: `pkg/mod${i}.py`,
     language: 'python',
     content: 'def f():\n    return 1\n',
   }));
   const model = buildSnapshotModel(snapshotOfFiles(many));
-  assert.equal(model.files.length, 300);
-  assert.equal(model.skipped_files, 5);
-  assert.equal(model.truncated, true);
+  assert.equal(model.files.length, 305);
+  assert.equal(model.skipped_files, 0);
+  assert.equal(model.truncated, false);
 });
 
 test('prioritizes an exception-named definition beyond the snapshot parse cap', () => {
@@ -247,8 +247,8 @@ test('prioritizes an exception-named definition beyond the snapshot parse cap', 
     priorityDefinitionNames: ['Constants'],
   });
 
-  assert.equal(model.files.length, 300);
-  assert.equal(model.skipped_files, 6);
+  assert.equal(model.files.length, 306);
+  assert.equal(model.skipped_files, 0);
   assert.ok(model.by_path.has('late/constants.py'), 'definition found by scanning all files before capping');
   assert.ok(model.classes_by_name.has('constants'));
 });

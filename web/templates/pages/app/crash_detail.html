@@ -12,6 +12,7 @@
                 'badge-ignored': group.status === 'ignored'
               }"
               x-text="group.status"></span>
+        <span x-show="latestReport?.analysis_learned" class="badge badge-open" title="The AI self-improvement already learned from this crash">Self-learned</span>
       </div>
     </template>
   </div>
@@ -105,7 +106,7 @@
         </template>
         <!-- Download dump info JSON -->
         <div class="mt-3 text-right" x-show="latestReport">
-          <a :href="'/api/v1/download/dump/' + latestReport.id"
+          <a :href="'/api/v1/download/dump/' + (latestReport?.id ?? '')"
              class="text-xs text-blue-400 hover:text-blue-300 transition-colors">
             ⬇ Download Dump Info (JSON)
           </a>
@@ -156,7 +157,7 @@
       <!-- Player Log -->
       <section class="bg-surface-900 rounded-xl p-5 border border-gray-800" x-show="latestReport?.log_text">
         <h2 class="text-sm font-semibold text-gray-300 mb-3">📝 Log Output</h2>
-        <pre class="stack-trace text-gray-400 bg-surface-950 rounded-lg p-4 max-h-96 overflow-y-auto" x-text="latestReport.log_text"></pre>
+        <pre class="stack-trace text-gray-400 bg-surface-950 rounded-lg p-4 max-h-96 overflow-y-auto" x-text="latestReport?.log_text"></pre>
       </section>
 
       <!-- Runtime Info -->
@@ -166,7 +167,7 @@
           <div class="bg-surface-950 rounded-lg p-3" x-show="latestReport?.runtime">
             <p class="text-xs text-gray-500">Runtime</p>
             <p class="text-gray-200 font-medium" x-text="latestReport?.runtime || '-'"></p>
-            <p class="text-xs text-gray-600" x-show="latestReport?.runtime_version" x-text="'v' + latestReport.runtime_version"></p>
+            <p class="text-xs text-gray-600" x-show="latestReport?.runtime_version" x-text="'v' + latestReport?.runtime_version"></p>
           </div>
           <div class="bg-surface-950 rounded-lg p-3" x-show="latestReport?.framework">
             <p class="text-xs text-gray-500">Framework</p>
@@ -398,29 +399,29 @@
         </button>
       </div>
       <div class="p-5 space-y-4" x-show="selectedReport">
-        <template x-if="selectedReport.stack_trace">
+        <template x-if="selectedReport?.stack_trace">
           <div>
             <h4 class="text-xs font-medium text-gray-500 mb-2">STACK TRACE</h4>
             <pre class="stack-trace text-gray-400 bg-surface-950 rounded-lg p-3 overflow-x-auto" x-text="selectedReport.stack_trace"></pre>
           </div>
         </template>
-        <template x-if="selectedReport.log_text">
+        <template x-if="selectedReport?.log_text">
           <div>
             <h4 class="text-xs font-medium text-gray-500 mb-2">PLAYER LOG</h4>
             <pre class="stack-trace text-gray-400 bg-surface-950 rounded-lg p-3 max-h-60 overflow-y-auto overflow-x-auto" x-text="selectedReport.log_text"></pre>
           </div>
         </template>
-        <template x-if="selectedReport.custom_data">
+        <template x-if="selectedReport?.custom_data">
           <div>
             <h4 class="text-xs font-medium text-gray-500 mb-2">CUSTOM DATA</h4>
             <pre class="stack-trace text-gray-400 bg-surface-950 rounded-lg p-3" x-text="JSON.stringify(JSON.parse(selectedReport.custom_data || '{}'), null, 2)"></pre>
           </div>
         </template>
-        <template x-if="selectedReport.attachments?.length">
+        <template x-if="selectedReport?.attachments?.length">
           <div>
             <h4 class="text-xs font-medium text-gray-500 mb-2">ATTACHMENTS</h4>
             <ul class="text-sm text-gray-400 space-y-1">
-              <template x-for="a in selectedReport.attachments" :key="a.id">
+              <template x-for="a in (selectedReport?.attachments || [])" :key="a.id">
                 <li class="flex items-center justify-between gap-2 py-1">
                   <span>
                     <span x-text="a.filename"></span>
@@ -435,7 +436,7 @@
         </template>
         <!-- Download dump info from modal -->
         <div x-show="selectedReport">
-          <a :href="'/api/v1/download/dump/' + selectedReport.id"
+          <a :href="'/api/v1/download/dump/' + (selectedReport?.id || '')"
              class="text-xs text-blue-400 hover:text-blue-300">
             ⬇ Download Dump Info (JSON)
           </a>

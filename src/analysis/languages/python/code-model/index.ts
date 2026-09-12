@@ -10,12 +10,11 @@ import { parsePythonFile } from './parser.js';
 export { parsePythonFile, parsePythonSource } from './parser.js';
 export * from './types.js';
 
-// Per-request safety caps: the model is rebuilt on every analysis request,
-// so very large snapshots are partially indexed instead of exhausting time.
-export const MODEL_LIMITS = { maxFiles: 300, maxFunctions: 2000 } as const;
+// The model indexes every uploaded Python file and function. Upload limits and
+// request-level resource controls remain the boundary for untrusted snapshots.
 
 export interface BuildSnapshotModelOptions {
-  /** Definition names to locate across the whole snapshot before applying the file cap. */
+  /** Definition names to prioritize in traversal order. */
   priorityDefinitionNames?: string[];
   /** Stack/source paths that must be indexed before unrelated files. */
   priorityFilePaths?: string[];
@@ -44,24 +43,17 @@ export function buildSnapshotModel(
     truncated: false,
   };
 
-  let functionCount = 0;
-
   const indexFile = (fileModel: PyFileModel): void => {
     model.files.push(fileModel);
     model.by_path.set(fileModel.file_path, fileModel);
 
     const allFunctions = [...fileModel.functions, ...fileModel.classes.flatMap(cls => cls.methods)];
-    if (functionCount + allFunctions.length > MODEL_LIMITS.maxFunctions) {
-      model.truncated = true;
-    } else {
-      for (const func of allFunctions) {
-        const key = func.name.toLowerCase();
-        const list = model.functions_by_name.get(key) ?? [];
-        list.push(func);
-        model.functions_by_name.set(key, list);
-        model.qualified_functions.set(func.qualified_name, func);
-      }
-      functionCount += allFunctions.length;
+    for (const func of allFunctions) {
+      const key = func.name.toLowerCase();
+      const list = model.functions_by_name.get(key) ?? [];
+      list.push(func);
+      model.functions_by_name.set(key, list);
+      model.qualified_functions.set(func.qualified_name, func);
     }
 
     for (const cls of fileModel.classes) {
@@ -88,9 +80,8 @@ export function buildSnapshotModel(
     orderedFiles.push(file);
   };
 
-  // This deliberately scans every Python file before applying the parse cap:
-  // exception-named definitions must not disappear merely because a large
-  // snapshot listed their files after MODEL_LIMITS.maxFiles.
+  // Prioritized files are ordered first for deterministic traversal, then all
+  // remaining Python files are indexed without a code-size cap.
   const patterns = [...new Set(options.priorityDefinitionNames ?? [])]
     .filter(Boolean)
     .map(definitionPattern);
@@ -108,11 +99,9 @@ export function buildSnapshotModel(
 
   for (const file of pythonFiles) addFile(file);
 
-  const indexed = orderedFiles.slice(0, MODEL_LIMITS.maxFiles);
-  model.skipped_files = pythonFiles.length - indexed.length;
-  if (model.skipped_files > 0) model.truncated = true;
+  model.skipped_files = 0;
 
-  for (const file of indexed) {
+  for (const file of orderedFiles) {
     try {
       indexFile(parsePythonFile(file));
     } catch {

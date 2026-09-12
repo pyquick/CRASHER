@@ -56,11 +56,16 @@ document.addEventListener('alpine:init', () => {
       }
       this.clampPanelDimensions();
       window.addEventListener('resize', () => this.clampPanelDimensions());
-      if (!['/web/', '/web', '/web/crashes', '/web/feedback', '/web/symbols', '/web/accounts', '/web/containers', '/web/api-doc'].some(path => window.location.pathname === path || window.location.pathname.startsWith(path + '/'))) return;
+      if (!['/web/', '/web', '/web/crashes', '/web/feedback', '/web/symbols', '/web/accounts', '/web/ai-settings', '/web/containers', '/web/api-doc'].some(path => window.location.pathname === path || window.location.pathname.startsWith(path + '/'))) return;
       try {
         const status = await this.request('/api/v1/ai/status');
         this.available = !!status.configured;
         if (!this.available) return;
+        // Restore the persisted chat-selected model (used as the default by
+        // the code-analysis review) when the user has not picked one yet.
+        if (!this.model && typeof status.default_model === 'string' && status.default_model) {
+          this.model = status.default_model;
+        }
         this.loadModels();
         await this.loadConversations();
         const match = window.location.pathname.match(/^\/web\/crashes\/(\d+)$/);
@@ -227,7 +232,7 @@ document.addEventListener('alpine:init', () => {
           body: JSON.stringify(groupId ? { group_id: groupId } : {}),
         });
         this.applyConversation(data);
-        this.selectedId = String(this.conversation.id);
+        this.selectedId = String(this.conversation?.id ?? '');
         await this.loadConversations();
       } catch (error) { this.error = error.message; }
     },

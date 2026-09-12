@@ -223,6 +223,10 @@ export interface CrashReport {
   id: number;
   group_id: number | null;
   project_id: number | null;
+  container_id?: number | null;
+  /** Whether the code-analysis self-improvement already learned from this report. */
+  analysis_learned?: number;
+  analysis_learned_at?: string | null;
   project_name?: string;
   exception_type: string;
   exception_message: string;

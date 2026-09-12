@@ -205,3 +205,185 @@ export function insertAiMessageExchange(
 export function purgeExpiredAiConversations(now: string): number {
   return getDb().prepare('DELETE FROM ai_conversations WHERE expires_at <= ?').run(now).changes;
 }
+
+// ── Learnable code-analysis knowledge base ──
+
+export interface AnalysisKnowledgeRow {
+  id: number;
+  exception_type: string;
+  language: string;
+  project_id: number | null;
+  kind: 'suggestion' | 'root_cause' | 'hint' | 'quote';
+  title: string;
+  description: string;
+  payload_json: string;
+  confidence: number;
+  source_review_id: number | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export function upsertAnalysisKnowledge(
+  exceptionType: string,
+  language: string,
+  kind: AnalysisKnowledgeRow['kind'],
+  title: string,
+  description: string,
+  payloadJson: string,
+  confidence: number,
+  sourceReviewId: number | null,
+  now: string,
+  projectId: number | null = null,
+): AnalysisKnowledgeRow {
+  getDb().transaction(() => {
+    const db = getDb();
+    const existing = db.prepare('SELECT id FROM analysis_knowledge WHERE exception_type = ? AND language = ? AND project_id IS ? AND kind = ? AND title = ?')
+      .get(exceptionType, language, projectId, kind, title) as { id: number } | undefined;
+    if (existing) {
+      db.prepare(`UPDATE analysis_knowledge
+        SET description = ?, payload_json = ?, confidence = ?, source_review_id = ?, updated_at = ?
+        WHERE id = ?`).run(description, payloadJson, confidence, sourceReviewId, now, existing.id);
+    } else {
+      db.prepare(`INSERT INTO analysis_knowledge
+        (exception_type, language, project_id, kind, title, description, payload_json, confidence, source_review_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).run(
+        exceptionType, language, projectId, kind, title, description, payloadJson, confidence, sourceReviewId, now, now,
+      );
+    }
+  })();
+  return getDb().prepare('SELECT * FROM analysis_knowledge WHERE exception_type = ? AND language = ? AND project_id IS ? AND kind = ? AND title = ?')
+    .get(exceptionType, language, projectId, kind, title) as AnalysisKnowledgeRow;
+}
+
+export function listAnalysisKnowledge(exceptionType: string, language: string, projectId: number | null = null): AnalysisKnowledgeRow[] {
+  return getDb().prepare(`
+    SELECT * FROM analysis_knowledge
+    WHERE exception_type = ? AND (language = '' OR language = ?) AND (project_id IS NULL OR project_id IS ?)
+    ORDER BY confidence DESC, id DESC
+  `).all(exceptionType, language, projectId) as AnalysisKnowledgeRow[];
+}
+
+// ── Code-analysis self-improvement jobs ──
+
+export interface AnalysisLearningJobRow {
+  id: number;
+  user_id: number;
+  container_id: number | null;
+  model: string;
+  status: 'running' | 'completed' | 'failed' | 'cancelled';
+  total_count: number;
+  processed_count: number;
+  knowledge_count: number;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export function createAnalysisLearningJob(
+  userId: number,
+  containerId: number | null,
+  model: string,
+  totalCount: number,
+  now: string,
+): AnalysisLearningJobRow {
+  const result = getDb().prepare(`
+    INSERT INTO analysis_learning_jobs (user_id, container_id, model, status, total_count, created_at, updated_at)
+    VALUES (?, ?, ?, 'running', ?, ?, ?)
+  `).run(userId, containerId, model, totalCount, now, now);
+  return getDb().prepare('SELECT * FROM analysis_learning_jobs WHERE id = ?').get(Number(result.lastInsertRowid)) as AnalysisLearningJobRow;
+}
+
+export function getAnalysisLearningJob(id: number): AnalysisLearningJobRow | undefined {
+  return getDb().prepare('SELECT * FROM analysis_learning_jobs WHERE id = ?').get(id) as AnalysisLearningJobRow | undefined;
+}
+
+export function getRunningAnalysisLearningJob(): AnalysisLearningJobRow | undefined {
+  return getDb().prepare("SELECT * FROM analysis_learning_jobs WHERE status = 'running' ORDER BY id DESC LIMIT 1").get() as AnalysisLearningJobRow | undefined;
+}
+
+export function getLatestAnalysisLearningJob(): AnalysisLearningJobRow | undefined {
+  return getDb().prepare('SELECT * FROM analysis_learning_jobs ORDER BY id DESC LIMIT 1').get() as AnalysisLearningJobRow | undefined;
+}
+
+export function updateAnalysisLearningJob(id: number, fields: { status?: AnalysisLearningJobRow['status']; processedCount?: number; knowledgeCount?: number; errorMessage?: string | null; now: string }): boolean {
+  const sets: string[] = ['updated_at = ?'];
+  const values: unknown[] = [fields.now];
+  if (fields.status !== undefined) { sets.push('status = ?'); values.push(fields.status); }
+  if (fields.processedCount !== undefined) { sets.push('processed_count = ?'); values.push(fields.processedCount); }
+  if (fields.knowledgeCount !== undefined) { sets.push('knowledge_count = ?'); values.push(fields.knowledgeCount); }
+  if (fields.errorMessage !== undefined) { sets.push('error_message = ?'); values.push(fields.errorMessage); }
+  values.push(id);
+  return getDb().prepare(`UPDATE analysis_learning_jobs SET ${sets.join(', ')} WHERE id = ?`).run(...values).changes > 0;
+}
+
+// ── Per-crash log lines for self-improvement jobs ──
+
+export interface AnalysisLearningJobLogRow {
+  id: number;
+  job_id: number;
+  report_id: number | null;
+  attempt: number | null;
+  message: string;
+  created_at: string;
+}
+
+export function insertAnalysisLearningJobLog(jobId: number, reportId: number | null, attempt: number | null, message: string, now: string): void {
+  getDb().prepare(`
+    INSERT INTO analysis_learning_job_logs (job_id, report_id, attempt, message, created_at)
+    VALUES (?, ?, ?, ?, ?)
+  `).run(jobId, reportId, attempt, message.slice(0, 2000), now);
+}
+
+export function listAnalysisLearningJobLogs(jobId: number, limit = 200): AnalysisLearningJobLogRow[] {
+  return getDb().prepare(`
+    SELECT * FROM analysis_learning_job_logs
+    WHERE job_id = ?
+    ORDER BY id DESC LIMIT ?
+  `).all(jobId, limit).reverse() as AnalysisLearningJobLogRow[];
+}
+
+// ── Code-analysis learning: reviews, fine-tune jobs, user default model ──
+
+export interface AnalysisReviewRow {
+  id: number;
+  report_id: number;
+  user_id: number;
+  model: string;
+  correct: number;
+  notes: string;
+  corrections_json: string;
+  suggestions_json: string;
+  context_json: string;
+  exception_type: string;
+  created_at: string;
+}
+
+export function insertAnalysisReview(
+  reportId: number,
+  userId: number,
+  model: string,
+  correct: boolean,
+  notes: string,
+  correctionsJson: string,
+  suggestionsJson: string,
+  exceptionType: string,
+  now: string,
+): AnalysisReviewRow {
+  const result = getDb().prepare(`
+    INSERT INTO analysis_reviews (report_id, user_id, model, correct, notes, corrections_json, suggestions_json, context_json, exception_type, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, '', ?, ?)
+  `).run(reportId, userId, model, correct ? 1 : 0, notes, correctionsJson, suggestionsJson, exceptionType, now);
+  return getDb().prepare('SELECT * FROM analysis_reviews WHERE id = ?').get(Number(result.lastInsertRowid)) as AnalysisReviewRow;
+}
+
+export function getLatestAnalysisReview(reportId: number): AnalysisReviewRow | undefined {
+  return getDb().prepare('SELECT * FROM analysis_reviews WHERE report_id = ? ORDER BY id DESC LIMIT 1').get(reportId) as AnalysisReviewRow | undefined;
+}
+
+export function setUserDefaultAiModel(userId: number, model: string): void {
+  getDb().prepare('UPDATE users SET default_ai_model = ? WHERE id = ?').run(model, userId);
+}
+
+export function getUserDefaultAiModel(userId: number): string {
+  return (getDb().prepare('SELECT default_ai_model FROM users WHERE id = ?').get(userId) as { default_ai_model: string } | undefined)?.default_ai_model ?? '';
+}

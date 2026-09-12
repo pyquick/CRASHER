@@ -350,6 +350,154 @@ const migrations: Migration[] = [
       `);
     },
   },
+  {
+    version: 22,
+    description: 'Add code-analysis review history, fine-tune jobs and per-user default AI model',
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS analysis_reviews (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          report_id INTEGER NOT NULL REFERENCES crash_reports(id) ON DELETE CASCADE,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          model TEXT NOT NULL DEFAULT '',
+          correct INTEGER NOT NULL CHECK(correct IN (0,1)),
+          notes TEXT NOT NULL DEFAULT '',
+          corrections_json TEXT NOT NULL DEFAULT '{}',
+          suggestions_json TEXT NOT NULL DEFAULT '[]',
+          context_json TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_analysis_reviews_report ON analysis_reviews(report_id, id);
+        CREATE TABLE IF NOT EXISTS fine_tune_jobs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          base_model TEXT NOT NULL DEFAULT '',
+          deepseek_job_id TEXT NOT NULL UNIQUE,
+          status TEXT NOT NULL DEFAULT 'pending' CHECK(status IN ('pending','running','succeeded','failed','cancelled')),
+          fine_tuned_model TEXT,
+          samples_count INTEGER NOT NULL DEFAULT 0,
+          error_message TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_fine_tune_jobs_user ON fine_tune_jobs(user_id, id DESC);
+      `);
+      addColumn(db, 'users', 'default_ai_model', "TEXT NOT NULL DEFAULT ''");
+    },
+  },
+  {
+    version: 23,
+    description: 'Scope code-analysis reviews and fine-tune jobs by exception type',
+    up: (db) => {
+      addColumn(db, 'analysis_reviews', 'exception_type', "TEXT NOT NULL DEFAULT ''");
+      addColumn(db, 'fine_tune_jobs', 'exception_type', "TEXT NOT NULL DEFAULT ''");
+    },
+  },
+  {
+    version: 24,
+    description: 'Add the learnable code-analysis knowledge base',
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS analysis_knowledge (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          exception_type TEXT NOT NULL,
+          language TEXT NOT NULL DEFAULT '',
+          kind TEXT NOT NULL CHECK(kind IN ('suggestion','root_cause','hint','quote')),
+          title TEXT NOT NULL DEFAULT '',
+          description TEXT NOT NULL DEFAULT '',
+          payload_json TEXT NOT NULL DEFAULT '{}',
+          confidence REAL NOT NULL DEFAULT 0.5,
+          source_review_id INTEGER REFERENCES analysis_reviews(id) ON DELETE SET NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_analysis_knowledge_unique
+          ON analysis_knowledge(exception_type, language, kind, title);
+      `);
+    },
+  },
+  {
+    version: 25,
+    description: 'Add code-analysis self-improvement jobs and learned markers on crash reports',
+    up: (db) => {
+      addColumn(db, 'crash_reports', 'analysis_learned', "INTEGER NOT NULL DEFAULT 0");
+      addColumn(db, 'crash_reports', 'analysis_learned_at', "TEXT");
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS analysis_learning_jobs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          container_id INTEGER REFERENCES containers(id) ON DELETE SET NULL,
+          model TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL DEFAULT 'running' CHECK(status IN ('running','completed','failed','cancelled')),
+          total_count INTEGER NOT NULL DEFAULT 0,
+          processed_count INTEGER NOT NULL DEFAULT 0,
+          knowledge_count INTEGER NOT NULL DEFAULT 0,
+          error_message TEXT,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_analysis_learning_jobs_user ON analysis_learning_jobs(user_id, id DESC);
+        CREATE INDEX IF NOT EXISTS idx_crash_reports_learned ON crash_reports(container_id, analysis_learned, id);
+      `);
+    },
+  },
+  {
+    version: 26,
+    description: 'Add per-crash log lines for code-analysis self-improvement jobs',
+    up: (db) => {
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS analysis_learning_job_logs (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          job_id INTEGER NOT NULL REFERENCES analysis_learning_jobs(id) ON DELETE CASCADE,
+          report_id INTEGER REFERENCES crash_reports(id) ON DELETE SET NULL,
+          attempt INTEGER,
+          message TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE INDEX IF NOT EXISTS idx_analysis_learning_job_logs_job ON analysis_learning_job_logs(job_id, id);
+      `);
+    },
+  },
+  {
+    version: 27,
+    description: 'Scope learned code-analysis knowledge to projects and support quote entries',
+    up: (db) => {
+      const table = db.prepare(
+        "SELECT sql FROM sqlite_master WHERE type='table' AND name='analysis_knowledge'"
+      ).get() as { sql: string } | undefined;
+      if (!table) return;
+      const needsProjectScope = !table.sql.includes('project_id');
+      const supportsQuotes = table.sql.includes("'quote'");
+      if (!needsProjectScope && supportsQuotes) return;
+      const projectExpression = needsProjectScope ? 'NULL' : 'project_id';
+      db.exec(`
+        CREATE TABLE analysis_knowledge_new (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          exception_type TEXT NOT NULL,
+          language TEXT NOT NULL DEFAULT '',
+          project_id INTEGER REFERENCES projects(id) ON DELETE CASCADE,
+          kind TEXT NOT NULL CHECK(kind IN ('suggestion','root_cause','hint','quote')),
+          title TEXT NOT NULL DEFAULT '',
+          description TEXT NOT NULL DEFAULT '',
+          payload_json TEXT NOT NULL DEFAULT '{}',
+          confidence REAL NOT NULL DEFAULT 0.5,
+          source_review_id INTEGER REFERENCES analysis_reviews(id) ON DELETE SET NULL,
+          created_at TEXT NOT NULL DEFAULT (datetime('now')),
+          updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO analysis_knowledge_new
+          (id, exception_type, language, project_id, kind, title, description, payload_json, confidence, source_review_id, created_at, updated_at)
+        SELECT id, exception_type, language, ${projectExpression}, kind, title, description, payload_json, confidence, source_review_id, created_at, updated_at
+        FROM analysis_knowledge;
+        DROP TABLE analysis_knowledge;
+        ALTER TABLE analysis_knowledge_new RENAME TO analysis_knowledge;
+        CREATE UNIQUE INDEX idx_analysis_knowledge_unique
+          ON analysis_knowledge(exception_type, language, project_id, kind, title);
+        CREATE INDEX idx_analysis_knowledge_scope
+          ON analysis_knowledge(exception_type, language, project_id, confidence DESC);
+      `);
+    },
+  },
 ];
 
 function addColumn(db: Database.Database, table: string, column: string, definition: string): void {

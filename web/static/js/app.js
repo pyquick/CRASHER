@@ -108,6 +108,7 @@ async function secureLogout() {
       document.getElementById('containers-link').remove();
       if (data.user.role === 'admin' || data.user.role === 'operator') {
         document.getElementById('accounts-link').style.display = '';
+        document.getElementById('ai-settings-link').style.display = '';
       }
       if (data.user.role === 'admin') {
         document.querySelectorAll('.admin-only').forEach(function (n) { n.style.display = ''; });

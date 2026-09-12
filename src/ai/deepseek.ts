@@ -66,10 +66,17 @@ function parseToolCalls(message: Record<string, unknown> | null | undefined): Ai
   return calls;
 }
 
-const DSML_TOOL_BLOCK_START = '<｜｜DSML｜｜toolcalls>';
-const DSML_TOOL_BLOCK_END = /<\/｜｜DSML｜｜tool(?:calls|[_-]calls|▁calls)>/;
-const DSML_INVOKE_RE = /<｜｜DSML｜｜invoke\b([^>]*)>([\s\S]*?)<\/｜｜DSML｜｜invoke>/g;
-const DSML_PARAMETER_RE = /<｜｜DSML｜｜parameter\b([^>]*)>([\s\S]*?)<\/｜｜DSML｜｜parameter>/g;
+// DeepSeek-compatible models emit text tool calls in two dialects:
+// 1) plain/Anthropic-style XML: <toolcalls><invoke name="x"><parameter name="p" string="true">v</parameter></invoke></toolcalls>
+// 2) official special-token DSML: <｜tool▁calls▁begin｜><｜tool▁call▁begin｜>name<｜tool▁sep｜>{json}<｜tool▁call▁end｜><｜tool▁calls▁end｜>
+const DSML_PLAIN_STARTS = ['<toolcalls>', '<tool_calls>', '<tool-calls>'] as const;
+const DSML_TOOL_BLOCK_END = /<\/tool(?:calls|[_-]calls)>/;
+const DSML_INVOKE_RE = /<invoke\b([^>]*)>([\s\S]*?)<\/invoke>/g;
+const DSML_PARAMETER_RE = /<parameter\b([^>]*)>([\s\S]*?)<\/parameter>/g;
+const DSML_OFFICIAL_START = '<\uFF5Ctool\u2581calls\u2581begin\uFF5C>';
+const DSML_OFFICIAL_END = '<\uFF5Ctool\u2581calls\u2581end\uFF5C>';
+const DSML_OFFICIAL_CALL_RE = /<\uFF5Ctool\u2581call\u2581begin\uFF5C>([\s\S]*?)<\uFF5Ctool\u2581sep\uFF5C>([\s\S]*?)<\uFF5Ctool\u2581call\u2581end\uFF5C>/g;
+const DSML_START_MARKERS: readonly string[] = [...DSML_PLAIN_STARTS, DSML_OFFICIAL_START];
 const DSML_NAME_ALIASES: Record<string, string> = {
   readsourcefile: 'read_source_file',
   webfetch: 'web_fetch',
@@ -80,12 +87,26 @@ const DSML_NAME_ALIASES: Record<string, string> = {
   spawnsubagent: 'spawn_subagent',
 };
 
-function dsmlStartPrefixLength(value: string): number {
-  const max = Math.min(value.length, DSML_TOOL_BLOCK_START.length - 1);
-  for (let length = max; length > 0; length--) {
-    if (value.endsWith(DSML_TOOL_BLOCK_START.slice(0, length))) return length;
+/** Earliest occurrence of any DSML block start marker, or null. */
+function findDsmlStart(value: string, markers: readonly string[]): { index: number; marker: string } | null {
+  let best: { index: number; marker: string } | null = null;
+  for (const marker of markers) {
+    const index = value.indexOf(marker);
+    if (index !== -1 && (!best || index < best.index)) best = { index, marker };
   }
-  return 0;
+  return best;
+}
+
+/** Longest suffix of `value` that is a prefix of any DSML start marker (partial-marker safety). */
+function dsmlStartPrefixLength(value: string): number {
+  let longest = 0;
+  for (const marker of DSML_START_MARKERS) {
+    const max = Math.min(value.length, marker.length - 1);
+    for (let length = max; length > longest; length--) {
+      if (value.endsWith(marker.slice(0, length))) { longest = length; break; }
+    }
+  }
+  return longest;
 }
 
 function decodeDsmlText(value: string): string {
@@ -108,23 +129,21 @@ function dsmlAttributes(source: string): Record<string, string> {
   return attributes;
 }
 
-/**
- * DeepSeek-compatible models can sometimes emit the older DSML function-call
- * protocol as assistant content instead of OpenAI-compatible tool_calls.
- * Convert that protocol before the agent sees it, otherwise the loop treats
- * the invocation as a completed text answer and stops after the first call.
- */
-export function parseDsmlToolCalls(content: string): { content: string; toolCalls: AiToolCall[] } | null {
-  const start = content.indexOf(DSML_TOOL_BLOCK_START);
-  if (start < 0) return null;
-  const endMatch = DSML_TOOL_BLOCK_END.exec(content.slice(start + DSML_TOOL_BLOCK_START.length));
+function dsmlNormalizedName(value: string | undefined): string {
+  return DSML_NAME_ALIASES[value?.replace(/[_-]/g, '').toLowerCase() ?? ''] ?? value ?? '';
+}
+
+function parsePlainDsmlToolCalls(content: string): { content: string; toolCalls: AiToolCall[] } | null {
+  const start = findDsmlStart(content, DSML_PLAIN_STARTS);
+  if (!start) return null;
+  const endMatch = DSML_TOOL_BLOCK_END.exec(content.slice(start.index + start.marker.length));
   if (!endMatch) return null;
-  const blockEnd = start + DSML_TOOL_BLOCK_START.length + endMatch.index + endMatch[0].length;
-  const block = content.slice(start + DSML_TOOL_BLOCK_START.length, blockEnd - endMatch[0].length);
+  const blockEnd = start.index + start.marker.length + endMatch.index + endMatch[0].length;
+  const block = content.slice(start.index + start.marker.length, blockEnd - endMatch[0].length);
   const toolCalls: AiToolCall[] = [];
   for (const invoke of block.matchAll(DSML_INVOKE_RE)) {
     const invokeAttributes = dsmlAttributes(invoke[1]);
-    const name = DSML_NAME_ALIASES[invokeAttributes.name?.replace(/[_-]/g, '').toLowerCase()] ?? invokeAttributes.name;
+    const name = dsmlNormalizedName(invokeAttributes.name);
     if (!name) continue;
     const args: Record<string, unknown> = {};
     for (const parameter of invoke[2].matchAll(DSML_PARAMETER_RE)) {
@@ -140,8 +159,40 @@ export function parseDsmlToolCalls(content: string): { content: string; toolCall
     toolCalls.push({ id: `dsml-${toolCalls.length + 1}`, name, arguments: JSON.stringify(args) });
   }
   if (!toolCalls.length) return null;
-  const withoutBlock = `${content.slice(0, start)}${content.slice(blockEnd)}`.trim();
+  const withoutBlock = `${content.slice(0, start.index)}${content.slice(blockEnd)}`.trim();
   return { content: withoutBlock, toolCalls };
+}
+
+function parseOfficialDsmlToolCalls(content: string): { content: string; toolCalls: AiToolCall[] } | null {
+  const start = content.indexOf(DSML_OFFICIAL_START);
+  if (start < 0) return null;
+  const end = content.indexOf(DSML_OFFICIAL_END, start + DSML_OFFICIAL_START.length);
+  if (end < 0) return null;
+  const block = content.slice(start + DSML_OFFICIAL_START.length, end);
+  const toolCalls: AiToolCall[] = [];
+  for (const call of block.matchAll(DSML_OFFICIAL_CALL_RE)) {
+    const name = dsmlNormalizedName(call[1].trim());
+    if (!name) continue;
+    let args: Record<string, unknown> = {};
+    try {
+      const parsed = JSON.parse(call[2].trim()) as unknown;
+      if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) args = parsed as Record<string, unknown>;
+    } catch {}
+    toolCalls.push({ id: `dsml-${toolCalls.length + 1}`, name, arguments: JSON.stringify(args) });
+  }
+  if (!toolCalls.length) return null;
+  const withoutBlock = `${content.slice(0, start)}${content.slice(end + DSML_OFFICIAL_END.length)}`.trim();
+  return { content: withoutBlock, toolCalls };
+}
+
+/**
+ * DeepSeek-compatible models can sometimes emit the older DSML function-call
+ * protocol as assistant content instead of OpenAI-compatible tool_calls.
+ * Convert that protocol before the agent sees it, otherwise the loop treats
+ * the invocation as a completed text answer and stops after the first call.
+ */
+export function parseDsmlToolCalls(content: string): { content: string; toolCalls: AiToolCall[] } | null {
+  return parsePlainDsmlToolCalls(content) ?? parseOfficialDsmlToolCalls(content);
 }
 
 
@@ -302,7 +353,7 @@ export async function* streamDeepSeek(
         if (reasoning) yield { type: 'reasoning', content: reasoning };
         if (content) {
           streamedContent += content;
-          const dsmlStart = streamedContent.indexOf(DSML_TOOL_BLOCK_START);
+          const dsmlStart = findDsmlStart(streamedContent, DSML_START_MARKERS)?.index ?? -1;
           if (dsmlStart < 0) {
             const safeLength = streamedContent.length - dsmlStartPrefixLength(streamedContent);
             if (safeLength > emittedContentLength) {

@@ -10,6 +10,11 @@ test('fresh database includes AI key, encrypted reasoning and agent event schema
     const keyColumns = db.prepare("SELECT name FROM pragma_table_info('ai_provider_keys')").all() as Array<{ name: string }>;
     const messageColumns = db.prepare("SELECT name FROM pragma_table_info('ai_messages')").all() as Array<{ name: string }>;
     const eventColumns = db.prepare("SELECT name FROM pragma_table_info('ai_agent_events')").all() as Array<{ name: string }>;
+    const reportColumns = db.prepare("SELECT name FROM pragma_table_info('crash_reports')").all() as Array<{ name: string }>;
+    const knowledgeColumns = db.prepare("SELECT name FROM pragma_table_info('analysis_knowledge')").all() as Array<{ name: string }>;
+    const knowledgeSchema = db.prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'analysis_knowledge'").get() as { sql: string };
+    const learningJobs = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'analysis_learning_jobs'").get() as { name: string } | undefined;
+    const jobLogs = db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'analysis_learning_job_logs'").get() as { name: string } | undefined;
     const version = (db.prepare('SELECT MAX(version) AS version FROM schema_version').get() as { version: number }).version;
 
     assert.ok(keyColumns.some(column => column.name === 'encryption_aad'));
@@ -18,7 +23,12 @@ test('fresh database includes AI key, encrypted reasoning and agent event schema
     for (const column of ['conversation_id', 'message_id', 'owner_user_id', 'kind', 'name', 'status', 'group_id', 'encrypted_payload', 'created_at']) {
       assert.ok(eventColumns.some(entry => entry.name === column), `ai_agent_events.${column} missing`);
     }
-    assert.equal(version, 21);
+    assert.ok(reportColumns.some(column => column.name === 'analysis_learned'), 'crash_reports.analysis_learned missing');
+    assert.ok(learningJobs, 'analysis_learning_jobs table missing');
+    assert.ok(jobLogs, 'analysis_learning_job_logs table missing');
+    assert.ok(knowledgeColumns.some(column => column.name === 'project_id'));
+    assert.ok(knowledgeSchema.sql.includes("'quote'"));
+    assert.equal(version, 27);
   } finally {
     db.close();
   }

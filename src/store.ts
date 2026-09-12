@@ -15,6 +15,7 @@ export {
   getDashboardStats,
   getAiBashSettings, updateAiBashSettings,
   listDistinctPlatforms, listDistinctVersions, clearAllCrashes,
+  listUnlearnedReports, countUnlearnedReports, markReportLearned, updateReportException,
 } from './database/store.js';
 
 export {
@@ -32,6 +33,11 @@ export {
   getAiConversationForOwner, deleteAiConversation, updateAiConversationBinding,
   touchAiConversation, countAiMessages, listAiMessages, insertAiMessage, insertAiMessageExchange,
   purgeExpiredAiConversations,
+  insertAnalysisReview, getLatestAnalysisReview,
+  upsertAnalysisKnowledge, listAnalysisKnowledge,
+  createAnalysisLearningJob, getAnalysisLearningJob, getRunningAnalysisLearningJob, getLatestAnalysisLearningJob, updateAnalysisLearningJob,
+  insertAnalysisLearningJobLog, listAnalysisLearningJobLogs,
+  setUserDefaultAiModel, getUserDefaultAiModel,
 } from './database/ai-store.js';
 
 export {

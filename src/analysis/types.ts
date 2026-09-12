@@ -216,6 +216,24 @@ export interface CrashAnalysis {
    * snapshot. Source-analysis fixes take precedence in the UI.
    */
   suggestions?: FixSuggestion[];
+
+  /**
+   * Knowledge-base entries the AI review distilled for this exception type
+   * (see src/learning/knowledge.ts). Attached when the analysis response is
+   * enriched with matching learned entries.
+   */
+  learned?: LearnedKnowledgeItem[];
+}
+
+/** One entry of the learnable knowledge base, as surfaced in an analysis. */
+export interface LearnedKnowledgeItem {
+  kind: 'suggestion' | 'root_cause' | 'hint' | 'quote';
+  title: string;
+  description: string;
+  confidence: number;
+  quote?: string;
+  meaning?: string;
+  source?: string;
 }
 
 /** An uploaded source file in a project source snapshot. */

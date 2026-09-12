@@ -18,8 +18,6 @@
     .tag-unity { background: rgba(167,139,250,0.15); color: #c4b5fd; }
     .tag-device { background: rgba(52,211,153,0.15); color: #6ee7b7; }
     .tag-deprecated { background: rgba(251,191,36,0.15); color: #fcd34d; }
-    .tag-ai { background: rgba(244,114,182,0.15); color: #f9a8d4; }
-    .tag-auth { background: rgba(148,163,184,0.15); color: #cbd5e1; }
     .toc-link { transition: color 0.15s, background 0.15s; display: block; padding: 3px 8px; border-radius: 6px; }
     .toc-link:hover { color: #93c5fd; }
     .toc-link.toc-active { color: #93c5fd; background: rgba(96,165,250,0.12); }
@@ -79,16 +77,6 @@
           <li><a href="#stats" class="toc-link" data-section="stats">10. Projects, Stats &amp; Utilities</a></li>
           <li><a href="#export" class="toc-link" data-section="export">11. Export / Import</a></li>
         </ul>
-
-        <div class="toc-group">AI Assistant</div>
-        <ul class="space-y-0.5 text-sm text-gray-400">
-          <li><a href="#ai" class="toc-link" data-section="ai">12. AI Crash Assistant</a></li>
-        </ul>
-
-        <div class="toc-group">Account &amp; Security</div>
-        <ul class="space-y-0.5 text-sm text-gray-400">
-          <li><a href="#account" class="toc-link" data-section="account">13. Account, 2FA &amp; API Keys</a></li>
-        </ul>
       </nav>
     </aside>
 
@@ -109,8 +97,6 @@
           <li><a href="#dump" class="toc-link">9. Dump Parsing</a></li>
           <li><a href="#stats" class="toc-link">10. Projects, Stats &amp; Utilities</a></li>
           <li><a href="#export" class="toc-link">11. Export / Import</a></li>
-          <li><a href="#ai" class="toc-link">12. AI Crash Assistant</a></li>
-          <li><a href="#account" class="toc-link">13. Account, 2FA &amp; API Keys</a></li>
         </ul>
       </details>
     </div>
@@ -152,8 +138,6 @@ curl -b cookies.txt -c cookies.txt http://localhost:8080/api/v1/auth/csrf</code>
               <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /symbols</code>, <code>GET /symbols/:id/download</code></td><td>Session</td><td>admin/operator</td></tr>
               <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /source-dedup</code></td><td>Session + CSRF</td><td>admin</td></tr>
               <tr class="border-b border-gray-700/30"><td class="py-1"><code>DELETE /symbols/:id</code>, <code>DELETE /player-feedback/:id</code>, <code>POST /clear-crashes</code></td><td>Session + CSRF</td><td>admin</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>/api/v1/ai/*</code></td><td>Session</td><td>admin/operator (session only)</td></tr>
-              <tr><td class="py-1"><code>/auth/users</code>, <code>/auth/api-keys</code>, 2FA, emails, phones, containers, password reset</td><td>Session; CSRF for writes</td><td>Role-restricted per endpoint</td></tr>
             </tbody>
           </table>
         </div>
@@ -1077,156 +1061,6 @@ curl -X POST "http://localhost:8080/api/v1/import?confirm=true" \
   "group_id": 10
 }</code></pre>
         </div>
-      </section>
-
-      <!-- ============================================================ -->
-      <!-- 12. AI Crash Assistant -->
-      <!-- ============================================================ -->
-      <section id="ai" class="section-card mb-6">
-        <h2 class="text-xl font-semibold mb-4">
-          <span class="tag tag-ai mr-3 align-middle">AI</span>
-          12. AI Crash Assistant
-        </h2>
-        <p class="text-gray-400 mb-3">An agentic crash-analysis assistant available to <strong>session-logged-in</strong> <code>admin</code>/<code>operator</code> users. Each user configures their own DeepSeek API key on the Accounts page; keys are never returned to the browser and are stored encrypted with <code>AI_ENCRYPTION_KEY</code>.</p>
-        <p class="text-sm text-gray-400 mb-3">The assistant only reads crashes the current user is authorized to access, deterministic analyses, and source snapshots uploaded via the API. Without sources it infers from the crash information alone.</p>
-
-        <h3 class="font-medium mb-2">🤖 Agent Tools</h3>
-        <div class="overflow-x-auto mb-4">
-          <table class="w-full text-sm border-collapse">
-            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2 pr-4">Tool</th><th class="text-left py-2 pr-4">Description</th><th class="text-left py-2">Safety Boundary</th></tr></thead>
-            <tbody class="text-gray-400">
-              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>read_source_file</code></td><td class="pr-4">Read uploaded project sources (path / line range / listing)</td><td>DB <code>relative_path</code> only — no filesystem paths</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>web_fetch</code></td><td class="pr-4">Fetch public web pages (official docs / specs)</td><td>SSRF guard: IP validated at connect time; private/loopback/link-local/metadata addresses blocked; redirect and response-size limits</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>run_bash</code></td><td class="pr-4">Reproduce issues in a per-conversation workspace</td><td>Off by default (<code>AI_BASH_ENABLED=true</code>); 30s timeout, output cap, minimal env, no network isolation</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>update_tasks</code></td><td class="pr-4">Maintain its own task list</td><td>Task list persisted encrypted, visible across turns</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>list_crashes</code></td><td class="pr-4">List crash groups across the whole library (optional search/status/limit) to find crash ids</td><td>Container-scoped query; summary fields only</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>update_crash_status</code></td><td class="pr-4">Change a crash's status (open/resolved/ignored, optional resolved_version); without group_id changes the bound crash, with group_id the specified one</td><td>group_id re-checked against the container scope before writing; sub-agents cannot use it</td></tr>
-              <tr><td class="py-1.5 pr-4"><code>spawn_subagent</code></td><td class="pr-4">Delegate focused sub-investigations</td><td>Max 4 per turn, no nesting, no bash; steps count toward the budget</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <p class="text-xs text-gray-500 mb-4">Loop step limit: <code>AI_MAX_TOOL_STEPS</code> (default 12). The agent loop multiplies provider calls, bounded per-user by <code>AI_RATE_LIMIT</code> (default 20/min).</p>
-
-        <h3 class="font-medium mb-2">🔌 Endpoints</h3>
-        <div class="overflow-x-auto mb-4">
-          <table class="w-full text-sm border-collapse">
-            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">Method &amp; Path</th><th class="text-left py-2">Auth</th><th class="text-left py-2">Description</th></tr></thead>
-            <tbody class="text-gray-400">
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /ai/status</code></td><td>Session</td><td>AI availability: provider, configured, model, models, conversation count</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /ai/crashes</code></td><td>Session</td><td>Recent crash groups (25) for attaching to a conversation; query: <code>search</code></td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /ai/crash-context/:groupId</code></td><td>Session</td><td>Authorized crash summary; query: <code>report_id</code> (optional)</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /ai/conversations</code></td><td>Session</td><td>List the current user's unexpired conversations</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /ai/conversations</code></td><td>Session + CSRF</td><td>Create a conversation, optionally bound to <code>group_id</code> / <code>report_id</code></td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /ai/conversations/:id/attach</code></td><td>Session + CSRF</td><td>Attach a crash to an existing conversation</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /ai/conversations/:id</code></td><td>Session</td><td>Read own conversation: <code>messages</code>, <code>events</code>, <code>tasks</code></td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>DELETE /ai/conversations/:id</code></td><td>Session + CSRF</td><td>Delete own conversation (also drops its bash workspace)</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /ai/conversations/:id/messages</code></td><td>Session + CSRF</td><td>Send a message; streams back SSE events</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /auth/ai-provider</code></td><td>Session</td><td>Provider status (never returns the key)</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>PUT /auth/ai-provider</code></td><td>Session + CSRF</td><td>Save / replace the DeepSeek key</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>DELETE /auth/ai-provider</code></td><td>Session + CSRF</td><td>Delete the current user's provider</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /auth/ai-provider/keys</code></td><td>Session</td><td>List configured provider keys (metadata only)</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /auth/ai-provider/keys</code></td><td>Session + CSRF</td><td>Add a provider key</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>PATCH /auth/ai-provider/keys/:id</code></td><td>Session + CSRF</td><td>Update a key (e.g. enable/disable)</td></tr>
-              <tr><td class="py-1"><code>DELETE /auth/ai-provider/keys/:id</code></td><td>Session + CSRF</td><td>Delete a provider key</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <h3 class="font-medium mb-2">📡 SSE Stream Events (POST /ai/conversations/:id/messages)</h3>
-        <div class="overflow-x-auto mb-4">
-          <table class="w-full text-sm border-collapse">
-            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2 pr-4">Event</th><th class="text-left py-2">Payload</th></tr></thead>
-            <tbody class="text-gray-400">
-              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>delta</code> / <code>reasoning</code></td><td>Final answer / thinking text chunks</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>tool_call</code></td><td><code>{ id, name, args, group }</code></td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>tool_result</code></td><td><code>{ id, name, status, ok, summary, group }</code></td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>subagent</code></td><td><code>{ id, status, prompt, summary, group }</code></td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>tasks</code></td><td><code>{ tasks }</code></td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1.5 pr-4"><code>done</code></td><td><code>{ message, context, key_id, tasks }</code></td></tr>
-              <tr><td class="py-1.5 pr-4"><code>error</code></td><td><code>{ error, message }</code></td></tr>
-            </tbody>
-          </table>
-        </div>
-        <p class="text-xs text-gray-500">Conversations expire after <code>AI_RETENTION_DAYS</code> (default 30 days) and are visible only to their creator. Message bodies and agent events are stored AES-256-GCM encrypted, bounded by per-user rate limits, message length, and message-count limits. Reasoning produced after a tool call is persisted as <code>kind=reasoning</code> agent events, so the UI replays a "Reasoning returned by DeepSeek" dropdown below the corresponding tool step; pre-tool reasoning stays only in the message's <code>reasoning</code> field.</p>
-      </section>
-
-      <!-- ============================================================ -->
-      <!-- 13. Account & Security -->
-      <!-- ============================================================ -->
-      <section id="account" class="section-card mb-6">
-        <h2 class="text-xl font-semibold mb-4">
-          <span class="tag tag-auth mr-3 align-middle">Auth</span>
-          13. Account, 2FA &amp; API Keys
-        </h2>
-        <p class="text-gray-400 mb-3">All endpoints below live under <code>/api/v1/auth</code> and require a session Cookie; mutating requests additionally require <code>X-CSRF-Token</code>. Access is restricted per role (admin / operator / viewer).</p>
-
-        <h3 class="font-medium mb-2">🔑 Session &amp; Setup</h3>
-        <div class="overflow-x-auto mb-4">
-          <table class="w-full text-sm border-collapse">
-            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">Method &amp; Path</th><th class="text-left py-2">Description</th></tr></thead>
-            <tbody class="text-gray-400">
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /setup-status</code> · <code>POST /setup</code></td><td>First-run initialization (UltraAdmin)</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /login</code></td><td>Login; may return <code>email_verification</code> / <code>two_factor</code> next step</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /login/verify-email</code> · <code>/login/resend-email</code></td><td>Login email verification step (admin)</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /login/totp</code></td><td>Login TOTP verification step (admin)</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /logout</code> · <code>GET /me</code> · <code>GET /csrf</code></td><td>Logout, current user info, CSRF token</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <h3 class="font-medium mb-2">🛡️ Two-Factor Authentication (admin)</h3>
-        <div class="overflow-x-auto mb-4">
-          <table class="w-full text-sm border-collapse">
-            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">Method &amp; Path</th><th class="text-left py-2">Description</th></tr></thead>
-            <tbody class="text-gray-400">
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /2fa/challenge</code> · <code>/2fa/verify</code> · <code>/2fa/resend</code></td><td>Challenge / verify / resend for sensitive account operations</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>PATCH /me/two-factor-method</code></td><td>Switch 2FA method (email / TOTP)</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>PATCH /me/verify-email-on-login</code></td><td>Toggle "verify email on every login" (admin)</td></tr>
-              <tr><td class="py-1"><code>GET /me/totp/setup</code> · <code>POST /me/totp/enable</code> · <code>/me/totp/disable</code></td><td>TOTP management</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <h3 class="font-medium mb-2">📧 Emails &amp; Phones</h3>
-        <div class="overflow-x-auto mb-4">
-          <table class="w-full text-sm border-collapse">
-            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">Method &amp; Path</th><th class="text-left py-2">Description</th></tr></thead>
-            <tbody class="text-gray-400">
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /me/emails</code> · <code>POST /me/emails</code> · <code>DELETE /me/emails/:id</code></td><td>List / add / remove emails</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /me/emails/:id/verify</code> · <code>/primary</code> · <code>/resend</code></td><td>Verify, set primary, resend verification</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /me/phones</code> · <code>POST /me/phones</code> · <code>DELETE /me/phones/:id</code></td><td>List / add / remove phones</td></tr>
-              <tr><td class="py-1"><code>POST /me/phones/:id/verify</code> · <code>/primary</code> · <code>/resend</code></td><td>Verify, set primary, resend verification</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <h3 class="font-medium mb-2">👥 Users, API Keys &amp; Password</h3>
-        <div class="overflow-x-auto mb-4">
-          <table class="w-full text-sm border-collapse">
-            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">Method &amp; Path</th><th class="text-left py-2">Description</th></tr></thead>
-            <tbody class="text-gray-400">
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /users</code> · <code>POST /users</code> · <code>PATCH /users/:id</code></td><td>User management (admin)</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>PUT /users/:id/password</code></td><td>Change password (self, or admin/operator for others)</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>POST /forgot-password</code> · <code>/forgot-password/totp</code> · <code>/forgot-password/verify-email</code></td><td>Initiate password reset</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /reset-request/:token</code> · <code>POST /reset-request/:token/approve</code></td><td>View / approve a reset request (admin)</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /api-keys</code> · <code>POST /api-keys</code> · <code>DELETE /api-keys/:id</code></td><td>Manage API keys; the plaintext key is returned only once at creation</td></tr>
-              <tr><td class="py-1"><code>PATCH /api-keys/:id/tier</code> · <code>PATCH /api-keys/:id/limits</code></td><td>Change key tier / quota (admin): <code>minute_limit</code> and <code>daily_limit</code>, integers 0–1000000000, <code>0</code> = unlimited</td></tr>
-            </tbody>
-          </table>
-        </div>
-
-        <h3 class="font-medium mb-2">🗂️ Containers (UltraAdmin)</h3>
-        <div class="overflow-x-auto mb-4">
-          <table class="w-full text-sm border-collapse">
-            <thead><tr class="border-b border-gray-700 text-gray-500"><th class="text-left py-2">Method &amp; Path</th><th class="text-left py-2">Description</th></tr></thead>
-            <tbody class="text-gray-400">
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /containers</code> · <code>POST /containers</code> · <code>DELETE /containers/:id</code></td><td>Container management (multi-tenant isolation)</td></tr>
-              <tr class="border-b border-gray-700/30"><td class="py-1"><code>GET /containers/active</code> · <code>GET /containers/:id/status</code></td><td>Container status</td></tr>
-              <tr><td class="py-1"><code>POST /containers/:id/ban</code> · <code>/unban</code> · <code>POST /containers/:id/users</code></td><td>Ban / unban a container, add users</td></tr>
-            </tbody>
-          </table>
-        </div>
-        <p class="text-xs text-gray-500">API Key tiers: <code>admin</code>, <code>operator</code>, <code>viewer</code>. Viewer keys cannot write; operator/admin keys can call the ingest endpoints.</p>
       </section>
 
       <!-- Footer -->

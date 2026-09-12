@@ -236,16 +236,34 @@ test('streamDeepSeek accumulates fragmented tool-call deltas', async () => {
   ]);
 });
 
-test('DeepSeek adapter parses DSML tool calls and normalizes tool names', () => {
-  const result = parseDsmlToolCalls('<｜｜DSML｜｜toolcalls><｜｜DSML｜｜invoke name="readsourcefile"><｜｜DSML｜｜parameter name="path">appentry.py</｜｜DSML｜｜parameter><｜｜DSML｜｜parameter name="startline">1</｜｜DSML｜｜parameter><｜｜DSML｜｜parameter name="endline">80</｜｜DSML｜｜parameter></｜｜DSML｜｜invoke></｜｜DSML｜｜toolcalls>');
+test('DeepSeek adapter parses the plain DSML dialect the model emits (leaked tool-call text)', () => {
+  const leaked = '<toolcalls><invoke name="readsourcefile"> <parameter name="path" string="true">detections/deviceprobe.py</parameter> <parameter name="startline" string="false">1100</parameter> <parameter name="endline" string="false">1225</parameter> </invoke> </toolcalls>';
+  const result = parseDsmlToolCalls(leaked);
   assert.deepEqual(result, {
     content: '',
-    toolCalls: [{ id: 'dsml-1', name: 'read_source_file', arguments: '{"path":"appentry.py","start_line":1,"end_line":80}' }],
+    toolCalls: [{ id: 'dsml-1', name: 'read_source_file', arguments: '{"path":"detections/deviceprobe.py","start_line":1100,"end_line":1225}' }],
   });
 });
 
-test('DeepSeek adapter parses DSML tool calls from a streamed content turn', async () => {
-  const dsml = '<｜｜DSML｜｜toolcalls><｜｜DSML｜｜invoke name="readsourcefile"><｜｜DSML｜｜parameter name="path">appentry.py</｜｜DSML｜｜parameter></｜｜DSML｜｜invoke></｜｜DSML｜｜toolcalls>';
+test('DeepSeek adapter parses the official special-token DSML dialect', () => {
+  const official = 'Check the docs.<\uFF5Ctool\u2581calls\u2581begin\uFF5C><\uFF5Ctool\u2581call\u2581begin\uFF5C>web_fetch<\uFF5Ctool\u2581sep\uFF5C>{"url":"https://example.com/docs"}<\uFF5Ctool\u2581call\u2581end\uFF5C><\uFF5Ctool\u2581calls\u2581end\uFF5C>';
+  const result = parseDsmlToolCalls(official);
+  assert.deepEqual(result, {
+    content: 'Check the docs.',
+    toolCalls: [{ id: 'dsml-1', name: 'web_fetch', arguments: '{"url":"https://example.com/docs"}' }],
+  });
+});
+
+test('DSML parsing strips the protocol block but keeps surrounding prose', () => {
+  const result = parseDsmlToolCalls('Before.<toolcalls><invoke name="webfetch"><parameter name="url" string="true">https://a.b</parameter></invoke></toolcalls>After.');
+  assert.deepEqual(result, {
+    content: 'Before.After.',
+    toolCalls: [{ id: 'dsml-1', name: 'web_fetch', arguments: '{"url":"https://a.b"}' }],
+  });
+});
+
+test('DeepSeek adapter parses DSML tool calls from a streamed content turn without leaking the markup', async () => {
+  const dsml = 'Let me look at the file.<toolcalls><invoke name="readsourcefile"><parameter name="path">appentry.py</parameter></invoke></toolcalls>';
   const fakeFetch = async () => sseResponse([
     `data: {"choices":[{"delta":{"content":${JSON.stringify(dsml.slice(0, 90))}}}]}
 
@@ -256,7 +274,37 @@ test('DeepSeek adapter parses DSML tool calls from a streamed content turn', asy
     'data: [DONE]\n\n',
   ]);
   const events = await collectStream(fakeFetch);
-  assert.deepEqual(events, [{ type: 'done', toolCalls: [{ id: 'dsml-1', name: 'read_source_file', arguments: '{"path":"appentry.py"}' }] }]);
+  assert.deepEqual(events, [
+    { type: 'delta', content: 'Let me look at the file.' },
+    { type: 'done', toolCalls: [{ id: 'dsml-1', name: 'read_source_file', arguments: '{"path":"appentry.py"}' }] },
+  ]);
+});
+
+test('streamDeepSeek holds back and converts the official special-token DSML dialect', async () => {
+  const dsml = 'Checking.<\uFF5Ctool\u2581calls\u2581begin\uFF5C><\uFF5Ctool\u2581call\u2581begin\uFF5C>web_fetch<\uFF5Ctool\u2581sep\uFF5C>{"url":"https://example.com"}<\uFF5Ctool\u2581call\u2581end\uFF5C><\uFF5Ctool\u2581calls\u2581end\uFF5C>';
+  const fakeFetch = async () => sseResponse([
+    `data: {"choices":[{"delta":{"content":${JSON.stringify(dsml.slice(0, 40))}}}]}
+
+`,
+    `data: {"choices":[{"delta":{"content":${JSON.stringify(dsml.slice(40))}}}]}
+
+`,
+    'data: [DONE]\n\n',
+  ]);
+  const events = await collectStream(fakeFetch);
+  assert.deepEqual(events, [
+    { type: 'delta', content: 'Checking.' },
+    { type: 'done', toolCalls: [{ id: 'dsml-1', name: 'web_fetch', arguments: '{"url":"https://example.com"}' }] },
+  ]);
+});
+
+test('completeWithDeepSeek converts DSML content into tool calls', async () => {
+  const fakeFetch = async () => new Response(JSON.stringify({
+    choices: [{ message: { content: '<toolcalls><invoke name="runbash"><parameter name="command" string="true">ls</parameter></invoke></toolcalls>' } }],
+  }), { status: 200 });
+  const result = await completeWithDeepSeek('test-key', request, fakeFetch);
+  assert.equal(result.content, '');
+  assert.deepEqual(result.toolCalls, [{ id: 'dsml-1', name: 'run_bash', arguments: '{"command":"ls"}' }]);
 });
 
 test('streamDeepSeek reports client cancellation separately', async () => {
