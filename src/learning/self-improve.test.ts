@@ -79,7 +79,7 @@ test('runSelfImproveCrash rotates to the next key on auth failures', async () =>
     if (auth.includes('sk-1')) return new Response(JSON.stringify({ error: { message: 'bad key' } }), { status: 401 });
     return responses.shift() ?? textTurn(VALID_PAYLOAD);
   }) as AiFetch;
-  const outcome = await runSelfImproveCrash(fakeContext(), undefined, keys, NOW, {
+  const outcome = await runSelfImproveCrash(fakeContext(), 'deepseek-chat', keys, NOW, {
     loadSourceFiles: noSources,
     fetchImpl,
     onFailure: (keyId, code) => failures.push({ keyId, code }),
@@ -94,21 +94,21 @@ test('runSelfImproveCrash retries once when the output is not valid JSON', async
     bodies.push(String(init?.body ?? ''));
     return bodies.length === 1 ? textTurn('not json') : textTurn(VALID_PAYLOAD);
   }) as AiFetch;
-  const outcome = await runSelfImproveCrash(fakeContext(), undefined, [keys[0]], NOW, { loadSourceFiles: noSources, fetchImpl });
+  const outcome = await runSelfImproveCrash(fakeContext(), 'deepseek-chat', [keys[0]], NOW, { loadSourceFiles: noSources, fetchImpl });
   assert.equal(outcome.knowledge.length, 2);
   assert.equal(bodies.length, 2);
 });
 
 test('runSelfImproveCrash fails with 502 when the output stays invalid', async () => {
   await assert.rejects(
-    runSelfImproveCrash(fakeContext(), undefined, [keys[0]], NOW, { loadSourceFiles: noSources, fetchImpl: queueFetch([textTurn('nope'), textTurn('still nope')]) }),
+    runSelfImproveCrash(fakeContext(), 'deepseek-chat', [keys[0]], NOW, { loadSourceFiles: noSources, fetchImpl: queueFetch([textTurn('nope'), textTurn('still nope')]) }),
     (error: unknown) => error instanceof SelfImproveError && error.code === 'AI_PROVIDER_RESPONSE' && error.status === 502,
   );
 });
 
 test('runSelfImproveCrash reports the raw output snippet when the response stays invalid', async () => {
   await assert.rejects(
-    runSelfImproveCrash(fakeContext(), undefined, [keys[0]], NOW, { loadSourceFiles: noSources, fetchImpl: queueFetch([textTurn('nope'), textTurn('raw <toolcalls> garbage')]) }),
+    runSelfImproveCrash(fakeContext(), 'deepseek-chat', [keys[0]], NOW, { loadSourceFiles: noSources, fetchImpl: queueFetch([textTurn('nope'), textTurn('raw <toolcalls> garbage')]) }),
     (error: unknown) => error instanceof SelfImproveError
       && error.code === 'AI_PROVIDER_RESPONSE'
       && error.message.includes('raw <toolcalls> garbage'),
@@ -117,14 +117,14 @@ test('runSelfImproveCrash reports the raw output snippet when the response stays
 
 test('runSelfImproveCrash picks the last JSON object that carries the knowledge array', async () => {
   const content = '{"plan": "read the file first"}\n' + VALID_PAYLOAD;
-  const outcome = await runSelfImproveCrash(fakeContext(), undefined, [keys[0]], NOW, { loadSourceFiles: noSources, fetchImpl: queueFetch([textTurn(content)]) });
+  const outcome = await runSelfImproveCrash(fakeContext(), 'deepseek-chat', [keys[0]], NOW, { loadSourceFiles: noSources, fetchImpl: queueFetch([textTurn(content)]) });
   assert.equal(outcome.language, 'typescript');
   assert.equal(outcome.knowledge.length, 2);
 });
 
 test('runSelfImproveCrash skips earlier knowledge-less objects and accepts a trailing payload', async () => {
   const content = '{"step": 1}\n{"step": 2}\n' + VALID_PAYLOAD;
-  const outcome = await runSelfImproveCrash(fakeContext(), undefined, [keys[0]], NOW, { loadSourceFiles: noSources, fetchImpl: queueFetch([textTurn(content)]) });
+  const outcome = await runSelfImproveCrash(fakeContext(), 'deepseek-chat', [keys[0]], NOW, { loadSourceFiles: noSources, fetchImpl: queueFetch([textTurn(content)]) });
   assert.equal(outcome.knowledge.length, 2);
 });
 
@@ -138,7 +138,7 @@ test('runSelfImproveCrash throws 409 when no keys are configured', async () => {
 test('runSelfImproveCrash surfaces non-rotatable provider errors as 502', async () => {
   const fetchImpl: AiFetch = (async () => new Response(JSON.stringify({ error: { message: 'boom' } }), { status: 500 })) as AiFetch;
   await assert.rejects(
-    runSelfImproveCrash(fakeContext(), undefined, [keys[0]], NOW, { loadSourceFiles: noSources, fetchImpl }),
+    runSelfImproveCrash(fakeContext(), 'deepseek-chat', [keys[0]], NOW, { loadSourceFiles: noSources, fetchImpl }),
     (error: unknown) => error instanceof SelfImproveError && error.code === 'AI_PROVIDER_HTTP' && error.status === 502,
   );
 });
@@ -149,7 +149,7 @@ test('the self-improve prompt includes the knowledge schema and tool guidance', 
     if (!firstBody) firstBody = String(init?.body ?? '');
     return textTurn(VALID_PAYLOAD);
   }) as AiFetch;
-  await runSelfImproveCrash(fakeContext(), undefined, [keys[0]], NOW, { loadSourceFiles: noSources, fetchImpl });
+  await runSelfImproveCrash(fakeContext(), 'deepseek-chat', [keys[0]], NOW, { loadSourceFiles: noSources, fetchImpl });
   const parsed = JSON.parse(firstBody);
   assert.equal(parsed.messages[0].content, SELF_IMPROVE_SYSTEM_PROMPT);
   assert.ok(parsed.messages[0].content.includes('knowledge'));

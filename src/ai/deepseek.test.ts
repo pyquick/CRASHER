@@ -1,11 +1,25 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { completeWithDeepSeek, streamDeepSeek, AiProviderError, parseDsmlToolCalls } from './deepseek.js';
+import { completeWithDeepSeek, streamDeepSeek, AiProviderError, parseDsmlToolCalls, buildRequestBody } from './deepseek.js';
 import type { AiFetch } from './deepseek.js';
 import type { AiStreamEvent } from './types.js';
 
 const request = { messages: [{ role: 'user' as const, content: 'question' }] };
 
+test('DeepSeek adapter serializes assistant reasoning for tool turns', () => {
+  const body = JSON.parse(buildRequestBody({ thinking: true, messages: [{ role: 'assistant', content: '', reasoning_content: 'think', tool_calls: [{ id: '1', name: 'read_source_file', arguments: '{}' }] }] }, false));
+  assert.equal(body.messages[0].reasoning_content, 'think');
+  const empty = JSON.parse(buildRequestBody({ thinking: true, messages: [{ role: 'assistant', content: '', reasoning_content: '', tool_calls: [] }] }, false));
+  assert.equal(empty.messages[0].reasoning_content, '');
+});
+
+test('streamDeepSeek drops incomplete fragmented tool calls', async () => {
+  const stream = new ReadableStream({ start(controller) { controller.enqueue(new TextEncoder().encode('data: {"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{}"}}]}}]}\n\ndata: [DONE]\n\n')); controller.close(); } });
+  const fakeFetch = async () => new Response(stream, { status: 200 });
+  const events = [];
+  for await (const event of streamDeepSeek('key', { messages: [{ role: 'user', content: 'x' }] }, fakeFetch as AiFetch)) events.push(event);
+  assert.deepEqual(events.at(-1), { type: 'done' });
+});
 test('DeepSeek adapter preserves the original answer and provider reasoning', async () => {
   const fakeFetch = async () => new Response(JSON.stringify({
     choices: [{ message: { content: ' answer ', reasoning_content: ' evidence-based reasoning ' } }],
@@ -236,6 +250,10 @@ test('streamDeepSeek accumulates fragmented tool-call deltas', async () => {
   ]);
 });
 
+test('DeepSeek adapter parses alternate DSML calls dialect', () => {
+  const parsed = parseDsmlToolCalls('<｜｜DSML｜｜ calls><｜｜DSML｜｜ invoke name="read_source_file"><｜｜DSML｜｜ parameter name="path" string="true">constants.py<｜｜DSML｜｜ parameter><｜｜DSML｜｜ parameter name="start_line" string="false">200<｜｜DSML｜｜ parameter><｜｜DSML｜｜ parameter name="end_line" string="false">520<｜｜DSML｜｜ parameter><｜｜DSML｜｜ invoke></｜｜DSML｜｜ calls>');
+  assert.deepEqual(parsed?.toolCalls, [{ id: 'dsml-1', name: 'read_source_file', arguments: '{"path":"constants.py","start_line":200,"end_line":520}' }]);
+});
 test('DeepSeek adapter parses the plain DSML dialect the model emits (leaked tool-call text)', () => {
   const leaked = '<toolcalls><invoke name="readsourcefile"> <parameter name="path" string="true">detections/deviceprobe.py</parameter> <parameter name="startline" string="false">1100</parameter> <parameter name="endline" string="false">1225</parameter> </invoke> </toolcalls>';
   const result = parseDsmlToolCalls(leaked);

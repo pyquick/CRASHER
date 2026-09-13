@@ -131,14 +131,13 @@
       },
     }));
     Alpine.data('aiSelfImprove', () => ({
-      job: null,
-      active: false,
-      logs: [],
+      job: null, active: false, selectedModel: '', models: [],
       message: '',
       failed: false,
       loading: false,
       pollTimer: null,
-      async init() { await this.load(); },
+      logs: [],
+      async init() { await this.load(); try { const r = await fetch('/api/v1/ai/models'); const d = await r.json(); this.models = (d.items || d.data?.items || d.data?.models || []).map(item => typeof item === 'string' ? { id: item, value: item, label: item } : { id: item.value || item.id, value: item.value || item.id, label: item.label || item.value || item.id }); this.selectedModel = this.models[0]?.value || ''; } catch {} },
       async load() {
         try {
           const res = await fetch('/api/v1/analysis-self-improve');
@@ -153,7 +152,7 @@
         if (!await Modal.confirm('Start self-improvement', 'The AI will iterate over every crash not yet learned, read the crash code, and distill knowledge into the internal code-analysis knowledge base. This may take a while and consumes provider quota.', 'Start')) return;
         this.loading = true; this.message = ''; this.failed = false;
         try {
-          const res = await fetch('/api/v1/analysis-self-improve', { method: 'POST' });
+          const res = await fetch('/api/v1/analysis-self-improve', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model: this.selectedModel || undefined }) });
           const data = await res.json();
           if (!res.ok) throw new Error(data.message || 'Request failed');
           this.job = data.data?.job ?? data.job;

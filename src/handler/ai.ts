@@ -115,7 +115,7 @@ router.get('/status', requireRole('admin', 'operator'), (req: Request, res: Resp
   res.json({
     provider: PROVIDER,
     configured: isAiEncryptionConfigured() && store.listAiProviderKeys(req.authUser!.id, PROVIDER).some(key => key.enabled),
-    model: config.aiDeepseekModel,
+    model: store.getUserDefaultAiModel(req.authUser!.id),
     default_model: store.getUserDefaultAiModel(req.authUser!.id),
     conversations: store.countAiConversations(req.authUser!.id, nowSqlDateTime()),
   });
@@ -337,7 +337,8 @@ router.post('/conversations/:id/messages', aiLimiter, requireRole('admin', 'oper
     let selectedKeyId: number | null = null;
     let selectedKey: string | null = null;
     let lastProviderError: AiProviderError | null = null;
-    const model = (selectedModel ?? config.aiDeepseekModel) as string;
+    const model = selectedModel;
+    if (!model) throw new AiProviderError('Select a model returned by the provider model API', 'AI_MODEL_NOT_SELECTED', 400);
     const stream = async function* (messages: AiChatMessage[], stepModel: string, tools: unknown[]): AsyncGenerator<AiStreamEvent> {
       if (selectedKey === null) {
         // Key rotation is only decided on the first event of the first
@@ -389,7 +390,7 @@ router.post('/conversations/:id/messages', aiLimiter, requireRole('admin', 'oper
       stream,
       model,
       system: prompt,
-      history: previous.map(item => ({ role: item.role, content: item.content })),
+      history: previous.map(item => ({ role: item.role, content: item.content, ...(item.role === 'assistant' && item.reasoning ? { reasoning_content: item.reasoning } : {}) })),
       userMessage: isCompact ? COMPACT_REQUEST_PROMPT : message,
       signal: controller.signal,
       workspaceDir: resolve(config.dataDir, 'ai-bash', String(id)),

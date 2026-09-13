@@ -76,7 +76,8 @@ export async function runReview(
   if (!keys.length) {
     throw new ReviewError('Configure an available DeepSeek API key first', 'AI_PROVIDER_NOT_CONFIGURED', 409);
   }
-  const modelUsed = (model || config.aiDeepseekModel || '').trim();
+  const modelUsed = (model || '').trim();
+  if (!modelUsed) throw new ReviewError('Select a model returned by the provider model API', 'AI_MODEL_NOT_SELECTED', 400);
   const userContent = crashContextForPrompt(context);
   const fetchImpl = options.fetchImpl;
   let lastProviderError: AiProviderError | null = null;

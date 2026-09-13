@@ -115,7 +115,8 @@ router.post('/analysis-self-improve', reviewLimiter, requireRole('admin', 'opera
   }
   const keys = readConfiguredProviderKeys(req.authUser!.id, now);
   if (!keys.length) { sendError(res, 409, 'Configure an available DeepSeek API key first', 'AI_PROVIDER_NOT_CONFIGURED'); return; }
-  const model = (bodyModel(req) ?? store.getUserDefaultAiModel(req.authUser!.id) ?? (config.aiDeepseekModel || '')).trim();
+  const model = bodyModel(req) ?? store.getUserDefaultAiModel(req.authUser!.id);
+  if (!model) { sendError(res, 400, 'Select a model from the provider model list', 'AI_MODEL_NOT_SELECTED'); return; }
   const job = store.createAnalysisLearningJob(req.authUser!.id, req.authUser!.container_id ?? null, model, total, now);
   const controller = new AbortController();
   activeSelfImproveJob = { id: job.id, abort: () => controller.abort() };
@@ -128,6 +129,7 @@ router.post('/analysis-self-improve', reviewLimiter, requireRole('admin', 'opera
       : store.getCurrentSourceFilesForProject(projectId, scope)),
     onUse: (keyId, at) => store.recordAiProviderUse(keyId, user.id, PROVIDER, at),
     onFailure: (keyId, code, retryAfterAt, at) => store.recordAiProviderFailure(keyId, user.id, PROVIDER, code, retryAfterAt, at),
+    onProgress: (message) => store.insertAnalysisLearningJobLog(job.id, null, null, message, nowSqlDateTime()),
     isCancelled: () => store.getAnalysisLearningJob(job.id)?.status === 'cancelled',
     signal: controller.signal,
   }).finally(() => {

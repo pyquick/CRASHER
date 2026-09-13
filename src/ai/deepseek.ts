@@ -26,7 +26,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 // request must always state it explicitly, otherwise reasoning appears even
 // when the user turned it off.
 export function buildRequestBody(request: AiProviderRequest, stream: boolean): string {
-  const modelId = (request.model || config.aiDeepseekModel).trim();
+  const modelId = (request.model || '').trim();
+  if (!modelId) throw new AiProviderError('Select a model returned by the provider model API', 'AI_MODEL_NOT_SELECTED', 400);
   return JSON.stringify({
     ...(modelId ? { model: modelId.replace('[1m]', '') } : {}),
     ...(request.thinking !== undefined ? { thinking: { type: request.thinking ? 'enabled' : 'disabled' } } : {}),
@@ -35,6 +36,7 @@ export function buildRequestBody(request: AiProviderRequest, stream: boolean): s
     messages: request.messages.map(message => ({
       role: message.role,
       content: message.content,
+      ...(message.reasoning_content !== undefined ? { reasoning_content: message.reasoning_content } : {}),
       ...(message.tool_calls
         ? {
             tool_calls: message.tool_calls.map(call => ({
@@ -76,7 +78,11 @@ const DSML_PARAMETER_RE = /<parameter\b([^>]*)>([\s\S]*?)<\/parameter>/g;
 const DSML_OFFICIAL_START = '<\uFF5Ctool\u2581calls\u2581begin\uFF5C>';
 const DSML_OFFICIAL_END = '<\uFF5Ctool\u2581calls\u2581end\uFF5C>';
 const DSML_OFFICIAL_CALL_RE = /<\uFF5Ctool\u2581call\u2581begin\uFF5C>([\s\S]*?)<\uFF5Ctool\u2581sep\uFF5C>([\s\S]*?)<\uFF5Ctool\u2581call\u2581end\uFF5C>/g;
-const DSML_START_MARKERS: readonly string[] = [...DSML_PLAIN_STARTS, DSML_OFFICIAL_START];
+const DSML_ALT_CALLS_START = '<｜｜DSML｜｜ calls>';
+const DSML_ALT_CALLS_END = '</｜｜DSML｜｜ calls>';
+const DSML_ALT_INVOKE_RE = /<｜｜DSML｜｜ invoke\b([^>]*)>([\s\S]*?)(?:<\/｜｜DSML｜｜ invoke>|<｜｜DSML｜｜ invoke>)/g;
+const DSML_ALT_PARAMETER_RE = /<｜｜DSML｜｜ parameter\b([^>]*)>([\s\S]*?)(?:<\/｜｜DSML｜｜ parameter>|<｜｜DSML｜｜ parameter>)/g;
+const DSML_START_MARKERS: readonly string[] = [...DSML_PLAIN_STARTS, DSML_OFFICIAL_START, DSML_ALT_CALLS_START];
 const DSML_NAME_ALIASES: Record<string, string> = {
   readsourcefile: 'read_source_file',
   webfetch: 'web_fetch',
@@ -163,6 +169,31 @@ function parsePlainDsmlToolCalls(content: string): { content: string; toolCalls:
   return { content: withoutBlock, toolCalls };
 }
 
+function parseAltDsmlToolCalls(content: string): { content: string; toolCalls: AiToolCall[] } | null {
+  const start = content.indexOf(DSML_ALT_CALLS_START);
+  if (start < 0) return null;
+  const end = content.indexOf(DSML_ALT_CALLS_END, start + DSML_ALT_CALLS_START.length);
+  if (end < 0) return null;
+  const block = content.slice(start + DSML_ALT_CALLS_START.length, end);
+  const toolCalls: AiToolCall[] = [];
+  for (const invoke of block.matchAll(DSML_ALT_INVOKE_RE)) {
+    const attrs = dsmlAttributes(invoke[1]);
+    const name = dsmlNormalizedName(attrs.name);
+    if (!name) continue;
+    const args: Record<string, unknown> = {};
+    for (const parameter of invoke[2].matchAll(DSML_ALT_PARAMETER_RE)) {
+      const p = dsmlAttributes(parameter[1]);
+      if (p.name) {
+        const key = dsmlParameterName(p.name);
+        const value = dsmlParameterValue(parameter[2], p);
+        args[key] = (key === 'start_line' || key === 'end_line') && typeof value === 'string' && /^\d+$/.test(value) ? Number(value) : value;
+      }
+    }
+    toolCalls.push({ id: `dsml-${toolCalls.length + 1}`, name, arguments: JSON.stringify(args) });
+  }
+  if (!toolCalls.length) return null;
+  return { content: `${content.slice(0, start)}${content.slice(end + DSML_ALT_CALLS_END.length)}`.trim(), toolCalls };
+}
 function parseOfficialDsmlToolCalls(content: string): { content: string; toolCalls: AiToolCall[] } | null {
   const start = content.indexOf(DSML_OFFICIAL_START);
   if (start < 0) return null;
@@ -192,7 +223,7 @@ function parseOfficialDsmlToolCalls(content: string): { content: string; toolCal
  * the invocation as a completed text answer and stops after the first call.
  */
 export function parseDsmlToolCalls(content: string): { content: string; toolCalls: AiToolCall[] } | null {
-  return parsePlainDsmlToolCalls(content) ?? parseOfficialDsmlToolCalls(content);
+  return parsePlainDsmlToolCalls(content) ?? parseOfficialDsmlToolCalls(content) ?? parseAltDsmlToolCalls(content);
 }
 
 
@@ -322,8 +353,13 @@ export async function* streamDeepSeek(
     const toolParts = new Map<number, { id: string; name: string; args: string }>();
     while (true) {
       const chunk = await reader.read();
-      if (chunk.done) break;
-      buffer += decoder.decode(chunk.value, { stream: true });
+      if (chunk.done) {
+        buffer += decoder.decode();
+        if (buffer && !buffer.endsWith('\n')) buffer += '\n';
+        // Process the flushed final SSE line below before exiting.
+      } else {
+        buffer += decoder.decode(chunk.value, { stream: true });
+      }
       let newlineIndex;
       while ((newlineIndex = buffer.indexOf('\n')) !== -1) {
         const line = buffer.slice(0, newlineIndex).replace(/\r$/, '');
@@ -371,7 +407,8 @@ export async function* streamDeepSeek(
     if (!receivedDone) throw new AiProviderError('The AI provider stream ended unexpectedly', 'AI_PROVIDER_RESPONSE');
       const toolCalls = [...toolParts.entries()]
         .sort(([a], [b]) => a - b)
-        .map(([, part]) => ({ id: part.id, name: part.name, arguments: part.args }));
+        .map(([, part]) => ({ id: part.id, name: part.name, arguments: part.args }))
+        .filter(call => call.id && call.name && call.arguments);
       const dsml = parseDsmlToolCalls(streamedContent);
       if (dsml) {
         // DSML invocations are encoded in content, so remove the protocol

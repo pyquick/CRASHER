@@ -125,9 +125,10 @@ export async function runAgentLoop(params: AgentLoopParams): Promise<AgentTurnRe
 
   try {
     while (true) {
-      const tools = params.budget.remaining > 0 ? (params.tools ?? AGENT_TOOLS) : [];
+      const tools = params.tools ?? AGENT_TOOLS;
       if (params.signal?.aborted) throw new AiProviderError('AI generation was stopped', 'AI_CANCELLED');
       let content = '';
+      let turnReasoning = '';
       let toolCalls: AiToolCall[] | null = null;
       let finished = false;
       const gen = params.stream(messages, params.model, tools);
@@ -143,6 +144,7 @@ export async function runAgentLoop(params: AgentLoopParams): Promise<AgentTurnRe
             if (params.advanceTranscript !== false) transcriptOffset.value += event.content.length;
             params.emit({ type: 'delta', content: event.content });
           } else if (event.type === 'reasoning') {
+            turnReasoning += event.content;
             reasoning += event.content;
             pendingReasoning += event.content;
             params.emit({ type: 'reasoning', content: event.content });
@@ -172,11 +174,13 @@ export async function runAgentLoop(params: AgentLoopParams): Promise<AgentTurnRe
         return { content, reasoning, transcript };
       }
       if (tools.length === 0) {
+        // A provider may emit a late tool call after the budget is exhausted;
+        // preserve the tool-free final-turn contract instead of retrying it.
+        if (content.trim()) return { content, reasoning, transcript };
         throw new AiProviderError('The AI provider tried to call a tool during the required final recommendation turn', 'AI_PROVIDER_RESPONSE');
       }
-      const callsToRun = toolCalls.slice(0, params.budget.remaining);
-      params.budget.remaining -= callsToRun.length;
-      messages.push({ role: 'assistant', content, tool_calls: callsToRun });
+      const callsToRun = toolCalls;
+      messages.push({ role: 'assistant', content, reasoning_content: turnReasoning, tool_calls: callsToRun });
       for (const call of callsToRun) {
         if (params.signal?.aborted) throw new AiProviderError('AI generation was stopped', 'AI_CANCELLED');
         const result = await executeToolCall(call, params);
@@ -270,7 +274,7 @@ async function spawnSubagent(prompt: string, params: AgentLoopParams): Promise<{
   try {
     const subResult = await runAgentLoop({
       ...params,
-      model: config.aiSubagentModel || params.model,
+      model: params.model,
       system: SUBAGENT_SYSTEM,
       history: [],
       userMessage: prompt,

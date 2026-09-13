@@ -10,6 +10,7 @@ export interface AiToolCall {
 export interface AiChatMessage {
   role: AiMessageRole | 'system' | 'tool';
   content: string;
+  reasoning_content?: string;
   tool_calls?: AiToolCall[];
   tool_call_id?: string;
 }

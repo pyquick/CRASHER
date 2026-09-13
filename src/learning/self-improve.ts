@@ -23,7 +23,7 @@ import type { ProviderKey } from './review.js';
 
 export const SELF_IMPROVE_SYSTEM_PROMPT = 'You are improving the code-analysis engine of a crash report server. '
   + 'You receive one crash report, the deterministic analysis produced by the engine, and optionally the uploaded project sources. '
-  + 'Workflow: start update_tasks with a short plan; read the crash code with read_source_file (first list: true, then read the relevant ranges); consult official language/library documentation with web_fetch when needed; use spawn_subagent for focused verification of key claims. '
+  + 'Workflow: first use read_source_file with list=true, then read only the relevant source ranges; consult official documentation with web_fetch only when needed; do not spawn sub-agents. '
   + 'Do NOT run commands and do NOT change crash statuses. '
   + 'Identify the language of the crashing code from the stack trace and source extensions. '
   + 'Then output ONLY one JSON object (no prose after it): {"language": string, "knowledge": array}. '
@@ -43,7 +43,7 @@ export const SELF_IMPROVE_RETRY_FEEDBACK = 'Your previous output was not a valid
 const SELF_IMPROVE_TOOLS: unknown[] = AGENT_TOOLS.filter((entry) => {
   const fn = (entry as { function?: { name?: string } }).function;
   const name = fn?.name ?? '';
-  return name === 'read_source_file' || name === 'web_fetch' || name === 'update_tasks' || name === 'spawn_subagent';
+  return name === 'read_source_file' || name === 'web_fetch' || name === 'update_tasks';
 });
 
 /** Per-crash agent attempts before the crash is skipped without a learned marker. */
@@ -62,6 +62,7 @@ export interface SelfImproveCrashOptions {
   loadSourceFiles: () => Promise<SourceFile[]>;
   onUse?: (keyId: number, now: string) => void;
   onFailure?: (keyId: number, code: string, retryAfterAt: string | null, now: string) => void;
+  onProgress?: (message: string) => void;
 }
 
 export interface SelfImproveCrashOutcome {
@@ -80,10 +81,13 @@ export async function runSelfImproveCrash(
   if (!keys.length) {
     throw new SelfImproveError('Configure an available DeepSeek API key first', 'AI_PROVIDER_NOT_CONFIGURED', 409);
   }
-  const modelUsed = (model || config.aiDeepseekModel || '').trim();
+  const modelUsed = (model || '').trim();
+  if (!modelUsed) throw new SelfImproveError('Select a model returned by the provider model API', 'AI_MODEL_NOT_SELECTED', 400);
   const userContent = crashContextForPrompt(context);
-  const fetchImpl: AiFetch = options.fetchImpl ?? fetch;
+  const emitProgress = (message: string) => options.onProgress?.(message.slice(0, 4000));
+  emitProgress(`model=${modelUsed} phase=start`);
   // Per-crash safety timeout, combined with any job-level cancellation signal.
+  const fetchImpl: AiFetch = options.fetchImpl ?? fetch;
   const signal = options.signal
     ? AbortSignal.any([options.signal, AbortSignal.timeout(10 * 60 * 1000)])
     : AbortSignal.timeout(10 * 60 * 1000);
@@ -150,7 +154,11 @@ export async function runSelfImproveCrash(
     signal,
     workspaceDir: resolve(config.dataDir, 'ai-self-improve'),
     loadSourceFiles: options.loadSourceFiles,
-    emit: () => {},
+    emit: (event) => {
+      if (event.type === 'delta') options.onProgress?.(`phase=agent_output content=${event.content}`);
+      else if (event.type === 'tool_call') options.onProgress?.(`phase=tool_call tool=${event.name} args=${event.args}`);
+      else if (event.type === 'tool_result') options.onProgress?.(`phase=tool_result tool=${event.name} status=${event.status} output=${event.summary}`);
+    },
     persist: () => null,
     tasks: [] as AiAgentTask[],
     budget: { remaining: config.aiMaxToolSteps },
@@ -185,6 +193,7 @@ export async function runSelfImproveCrash(
   };
 
   let result = await runLoop([], userContent);
+  emitProgress(`model=${modelUsed} phase=output content=${result.content.slice(-2000)}`);
   if (result.recoveredError) {
     throw new SelfImproveError(state.lastThrown?.message ?? `Self-improvement failed: ${result.recoveredError}`, state.lastThrown?.code ?? 'AI_PROVIDER_RESPONSE', 502);
   }
@@ -217,6 +226,7 @@ export interface SelfImproveJobOptions {
   loadSourceFiles: (projectId: number | null) => Promise<SourceFile[]>;
   onUse?: (keyId: number, now: string) => void;
   onFailure?: (keyId: number, code: string, retryAfterAt: string | null, now: string) => void;
+  onProgress?: (message: string) => void;
   /** Returns true when the job was cancelled (status flipped via the cancel endpoint). */
   isCancelled: () => boolean;
   /** Aborted by the cancel endpoint; aborts the in-flight crash processing promptly. */
@@ -263,7 +273,7 @@ export async function runSelfImproveJob(
                   loadSourceFiles: () => options.loadSourceFiles(report.project_id),
                   onUse: options.onUse,
                   onFailure: options.onFailure,
-                  signal: options.signal,
+                  onProgress: (message) => log(report.id, attempt, `model=${options.model || 'provider-selected'} ${message}`, nowSqlDateTime()),
                 });
                 for (const entry of result.knowledge) {
                   store.upsertAnalysisKnowledge(
